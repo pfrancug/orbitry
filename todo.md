@@ -4,7 +4,7 @@
 
 - **The whole app is Rust.** The scanner (including `package.json` via `serde_json`), script detection, process manager (`portable-pty`), port detection, git/build/version info, and the HTTP/WebSocket server are all Rust. The Rust server serves the UI. Later, the Tauri tray app reuses the same Rust core.
 - **One exception: an optional Node config-bridge plugin.** It acts as an intermediary that evaluates code-based configs (`vite.config.ts`, `next.config.js`, and similar) and returns resolved ports and settings to the Rust core as JSON. When the plugin is not available, the core falls back to regex, framework default ports, and live PID/log detection. The plugin is not a foundation of the app — Orbitry must work fully without it.
-- **The UI stays React + Vite**, served by the Rust server. `package.json` exists only for the UI and the optional plugin, not for the application itself.
+- **The UI is Svelte 5 + SvelteKit** (static SPA, adapter-static), served by the Rust server. We switched away from React so the dashboard stays light and can later sit inside Tauri without change. `package.json` exists only for the UI and the optional plugin, not for the application itself.
 - **Run scripts only.** Test, lint, and similar scripts are out of scope and must not be scanned. Detect only what actually runs an app: **dev** and **preview/start**.
 - **Patterns live in the dashboard.** Defaults ship with the scanner. Extra script patterns per category (shared / FE / BE, dev / preview) are added in the UI — no hand-written config required. The scanner uses defaults plus whatever the user added.
 - **Environment-independent.** The user picks one or more project root folders in the dashboard. That choice is stored in user config, never hardcoded to a machine.
@@ -40,7 +40,7 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 ### 1. Scaffold the Rust workspace + UI
 
 - [x] Grow the Cargo workspace: `orbitry-core` plus the `orbitry` server binary
-- [x] Minimal Rust HTTP server that serves a React + Vite UI
+- [x] Minimal Rust HTTP server that serves the Svelte UI
 - [x] Local-first: one binary should eventually open the dashboard in the browser
 
 ### 2. Project root picker and config
@@ -97,7 +97,7 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 ### 10. Dashboard UI polish
 
 - [x] First visible slice: custom dark, iOS-like cards (not a generic component kit), search, root picker, settings sheet
-- [ ] Further polish and denser / grouped layouts as the app grows
+- [x] Group workspace packages and FE/BE parts under their repository, with single-package repos still as one card
 - [ ] Clear per-app cards: version, git, build, running state, ports, FE/BE split
 - [ ] Calm, precise, instrument-panel feel
 - [x] The Rust server serves the built UI
@@ -111,4 +111,4 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 ### 12. Later: Tauri tray app
 
 - [ ] Menu-bar / tray companion with a Rust backend
-- [ ] Reuse `orbitry-core`; the React UI stays
+- [ ] Reuse `orbitry-core`; the Svelte UI stays

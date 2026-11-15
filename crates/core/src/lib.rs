@@ -1,8 +1,9 @@
-//! Orbitry core — scanner, process manager, port detection, and project metadata.
+//! Orbitry core - scanner, process manager, port detection, and project metadata.
 
 mod artifacts;
 mod config;
 mod git;
+mod group;
 mod scan;
 mod scripts;
 
@@ -11,6 +12,7 @@ pub use config::{
     canonical, config_path, default_kind_patterns, display_path, load_config, save_config,
     Config, ScriptKind, ScriptPattern, ScriptScope,
 };
-pub use git::GitInfo;
+pub use git::{find_git_root, GitInfo};
+pub use group::{group_projects, PartRole, ProjectPart, RepoGroup};
 pub use scan::{scan, Project, ProjectKind};
 pub use scripts::DetectedScript;

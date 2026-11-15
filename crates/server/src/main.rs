@@ -8,7 +8,7 @@ use axum::response::{IntoResponse, Json};
 use axum::routing::get;
 use axum::Router;
 use clap::Parser;
-use orbitry_core::{config_path, load_config, save_config, scan, Config};
+use orbitry_core::{config_path, group_projects, load_config, save_config, scan, Config, RepoGroup};
 use serde::Serialize;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -39,6 +39,7 @@ struct AppState {
 
 #[derive(Serialize)]
 struct ProjectsResponse {
+    groups: Vec<RepoGroup>,
     projects: Vec<orbitry_core::Project>,
 }
 
@@ -113,9 +114,9 @@ async fn get_projects(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ProjectsResponse>, (StatusCode, String)> {
     let config = load_config(&state.config_path).map_err(internal)?;
-    Ok(Json(ProjectsResponse {
-        projects: scan(&config),
-    }))
+    let projects = scan(&config);
+    let groups = group_projects(projects.clone(), &config.roots);
+    Ok(Json(ProjectsResponse { groups, projects }))
 }
 
 async fn get_config(

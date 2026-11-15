@@ -22,7 +22,7 @@ pub fn detect_git(path: &Path) -> Option<GitInfo> {
     })
 }
 
-fn find_git_root(start: &Path) -> Option<PathBuf> {
+pub fn find_git_root(start: &Path) -> Option<PathBuf> {
     for dir in start.ancestors() {
         if dir.join(".git").exists() {
             return Some(dir.to_path_buf());

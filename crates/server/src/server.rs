@@ -104,6 +104,7 @@ async fn serve(
         .route("/api/config", get(get_config).put(put_config))
         .route("/api/run", post(post_run))
         .route("/api/stop", post(post_stop))
+        .route("/api/stop-all", post(post_stop_all))
         .route("/api/runs", get(get_runs))
         .route("/api/runs/{id}/logs", get(logs_ws))
         .fallback(ui::serve_ui)
@@ -280,6 +281,13 @@ async fn post_stop(
         Err(err) if err == "run not found" => Err((StatusCode::NOT_FOUND, "run not found".into())),
         Err(err) => Err(internal(err)),
     }
+}
+
+async fn post_stop_all(State(state): State<Arc<AppState>>) -> Json<RunsResponse> {
+    state.manager.stop_all().await;
+    Json(RunsResponse {
+        runs: state.manager.list().await,
+    })
 }
 
 async fn get_runs(State(state): State<Arc<AppState>>) -> Json<RunsResponse> {

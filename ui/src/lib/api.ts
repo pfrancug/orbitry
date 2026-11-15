@@ -52,8 +52,11 @@ export function stopRun(runId: string): Promise<Run> {
   });
 }
 
+export function stopAllRuns(): Promise<{ runs: Run[] }> {
+  return request("/api/stop-all", { method: "POST" });
+}
+
 export function logsSocket(runId: string): WebSocket {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   return new WebSocket(`${protocol}://${location.host}/api/runs/${runId}/logs`);
 }
-

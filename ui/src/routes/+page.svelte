@@ -1,263 +1,318 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { fetchConfig, fetchProjects, saveConfig } from "$lib/api";
-  import ControlPanel from "$lib/components/ControlPanel.svelte";
-  import ProjectRow from "$lib/components/ProjectRow.svelte";
-  import SettingsPanel from "$lib/components/SettingsPanel.svelte";
-  import { loadExpanded, toggleExpanded } from "$lib/expand";
-  import { groupSearchText } from "$lib/format";
-  import { openRun, refreshRuns, restoreSelection, runState } from "$lib/runs.svelte";
-  import type { AppConfig, RepoGroup as RepoGroupType, ScriptPattern } from "$lib/types";
+  import { goto } from "$app/navigation";
+  import { dash } from "$lib/dashboard.svelte";
+  import {
+    findPart,
+    formatUptime,
+    groupNameFor,
+    healthLabel,
+    partTitle,
+    preferredPort,
+    portUrl,
+  } from "$lib/format";
+  import { favoriteKey, loadFavorites, loadRecent, toggleFavorite, type RecentScript } from "$lib/recent";
+  import {
+    isPending,
+    openRun,
+    restartScript,
+    runState,
+    selectPart,
+    startScript,
+    stopAll,
+    stopScript,
+  } from "$lib/runs.svelte";
+  import type { Run } from "$lib/types";
+  import Icon from "$lib/components/Icon.svelte";
 
-  let groups = $state<RepoGroupType[]>([]);
-  let config = $state<AppConfig | null>(null);
-  let query = $state("");
-  let rootDraft = $state("");
-  let settingsOpen = $state(false);
-  let error = $state<string | null>(null);
-  let loading = $state(true);
-  let saving = $state(false);
-  let refreshing = $state(false);
-  let expanded = $state<string[]>([]);
+  let now = $state(Date.now());
+  let confirmStop = $state(false);
+  let recent = $state<RecentScript[]>(loadRecent());
+  let favorites = $state<string[]>(loadFavorites());
+  let clock: ReturnType<typeof setInterval> | undefined;
 
-  const visible = $derived.by(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return groups;
-    return groups
-      .map((group) => {
-        const groupHit = [group.name, group.folder, group.path, group.git?.branch ?? ""]
-          .join(" ")
-          .toLowerCase()
-          .includes(needle);
-        if (groupHit || groupSearchText(group).includes(needle)) {
-          if (groupHit) return group;
-          const parts = group.parts.filter((part) =>
-            [
-              part.name,
-              part.path,
-              part.relativePath,
-              part.framework ?? "",
-              part.role,
-              ...part.scripts.map((script) => script.name),
-            ]
-              .join(" ")
-              .toLowerCase()
-              .includes(needle),
-          );
-          return parts.length ? { ...group, parts } : null;
-        }
-        return null;
-      })
-      .filter((group): group is RepoGroupType => group !== null);
+  $effect(() => {
+    clock = setInterval(() => {
+      now = Date.now();
+      recent = loadRecent();
+      favorites = loadFavorites();
+    }, 1000);
+    return () => clearInterval(clock);
   });
 
-  const allParts = $derived(groups.flatMap((group) => group.parts));
-  const partCount = $derived(groups.reduce((sum, group) => sum + group.parts.length, 0));
-  const runningCount = $derived(runState.runs.filter((run) => run.status === "running").length);
-  const errorCount = $derived(
-    runState.runs.filter((run) => run.status === "failed").length +
-      runState.runs.filter((run) => run.status === "running" && run.health?.status === "fail").length,
+  const running = $derived(runState.runs.filter((run) => run.status === "running"));
+  const portsInUse = $derived(
+    new Set(running.flatMap((run) => (preferredPort(run.ports) != null ? [preferredPort(run.ports)!] : []))).size,
   );
-  const selectedPart = $derived(
-    allParts.find((part) => part.id === runState.selectedPartId) ?? null,
+  const healthy = $derived(running.filter((run) => run.health?.status === "ok").length);
+  const unhealthy = $derived(
+    running.filter((run) => run.health?.status === "fail").length +
+      runState.runs.filter((run) => run.status === "failed").length,
+  );
+  const recentDone = $derived(
+    runState.runs
+      .filter((run) => run.status === "exited" || run.status === "failed")
+      .slice()
+      .sort((a, b) => (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt))
+      .slice(0, 8),
   );
 
-  function isOpen(group: RepoGroupType): boolean {
-    if (query.trim()) return true;
-    return expanded.includes(group.id);
-  }
-
-  async function refresh() {
-    const [nextConfig, nextProjects] = await Promise.all([fetchConfig(), fetchProjects()]);
-    config = nextConfig;
-    groups = nextProjects.groups;
-    restoreSelection(nextProjects.groups.flatMap((group) => group.parts));
-  }
-
-  async function refreshAll() {
-    refreshing = true;
-    error = null;
-    try {
-      await Promise.all([refresh(), refreshRuns()]);
-    } catch (err: unknown) {
-      error = err instanceof Error ? err.message : "Could not reach Orbitry.";
-    } finally {
-      refreshing = false;
-    }
-  }
-
-  onMount(() => {
-    expanded = loadExpanded();
-    const wanted = new URLSearchParams(location.search).get("run");
-    refresh()
-      .then(() => refreshRuns())
-      .then(() => {
-        if (wanted) openRun(wanted);
+  const quickStarts = $derived.by(() => {
+    const fav = favorites
+      .map((key) => {
+        const at = key.indexOf("::");
+        if (at < 0) return null;
+        const partId = key.slice(0, at);
+        const script = key.slice(at + 2);
+        const part = findPart(partId, dash.groups);
+        if (!part) return null;
+        return {
+          partId,
+          partName: partTitle(part),
+          groupName: groupNameFor(partId, dash.groups),
+          script,
+          favorite: true,
+        };
       })
-      .catch((err: unknown) => {
-        error = err instanceof Error ? err.message : "Could not reach Orbitry.";
-      })
-      .finally(() => {
-        loading = false;
-      });
-    const timer = setInterval(() => {
-      refreshRuns().catch(() => {
-        // Keep the last known process list if a poll fails.
-      });
-    }, 2000);
-    return () => clearInterval(timer);
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+    const rest = recent.filter(
+      (item) => !favorites.includes(favoriteKey(item.partId, item.script)) && findPart(item.partId, dash.groups),
+    );
+    return [...fav, ...rest].slice(0, 8);
   });
 
-  async function persist(next: { roots: string[]; scriptPatterns: ScriptPattern[] }) {
-    saving = true;
-    error = null;
-    try {
-      config = await saveConfig(next);
-      const { groups: nextGroups } = await fetchProjects();
-      groups = nextGroups;
-    } catch (err: unknown) {
-      error = err instanceof Error ? err.message : "Could not save settings.";
-    } finally {
-      saving = false;
-    }
+  function partLabel(run: Run): string {
+    const part = findPart(run.partId, dash.groups);
+    return part ? partTitle(part) : run.partName;
   }
 
-  async function addRoot(event: Event) {
-    event.preventDefault();
-    const root = rootDraft.trim();
-    if (!root || !config) return;
-    if (config.roots.some((existing) => existing.toLowerCase() === root.toLowerCase())) {
-      rootDraft = "";
+  function showLogs(run: Run) {
+    openRun(run.id, false);
+    void goto("/logs?run=" + encodeURIComponent(run.id));
+  }
+
+  function inspect(run: Run) {
+    selectPart(run.partId, run.script, true);
+  }
+
+  async function onStopAll() {
+    if (!confirmStop) {
+      confirmStop = true;
+      setTimeout(() => (confirmStop = false), 3000);
       return;
     }
-    await persist({ roots: [...config.roots, root], scriptPatterns: config.scriptPatterns });
-    rootDraft = "";
-  }
-
-  async function removeRoot(root: string) {
-    if (!config) return;
-    await persist({
-      roots: config.roots.filter((item) => item !== root),
-      scriptPatterns: config.scriptPatterns,
-    });
-  }
-
-  async function addPattern(pattern: ScriptPattern) {
-    if (!config) return;
-    const exists = config.scriptPatterns.some(
-      (item) =>
-        item.kind === pattern.kind &&
-        item.scope === pattern.scope &&
-        item.pattern.toLowerCase() === pattern.pattern.toLowerCase(),
-    );
-    if (exists) return;
-    await persist({
-      roots: config.roots,
-      scriptPatterns: [...config.scriptPatterns, pattern],
-    });
-  }
-
-  async function removePattern(index: number) {
-    if (!config) return;
-    await persist({
-      roots: config.roots,
-      scriptPatterns: config.scriptPatterns.filter((_, i) => i !== index),
-    });
+    confirmStop = false;
+    await stopAll();
   }
 </script>
 
-<div class="shell" class:panel-open={runState.panelOpen}>
-  <div class="glow glow-a"></div>
-  <div class="glow glow-b"></div>
-
-  <header class="topbar">
-    <div class="brand">
-      <span class="mark" aria-hidden="true"></span>
-      <div>
-        <p class="logo">Orbitry</p>
-        <p class="tagline">All your apps. One orbit.</p>
-      </div>
-    </div>
-
-    <div class="stats" aria-label="Summary">
-      <div class="stat">
-        <b>{loading ? "—" : groups.length}</b>
-        <span>Projects</span>
-      </div>
-      <div class="stat">
-        <b>{loading ? "—" : partCount}</b>
-        <span>Apps</span>
-      </div>
-      <div class="stat" class:live={runningCount > 0}>
-        <b>{runningCount}</b>
-        <span>Running</span>
-      </div>
-      <div class="stat" class:alert={errorCount > 0}>
-        <b>{errorCount}</b>
-        <span>Errors</span>
-      </div>
-    </div>
-
-    <label class="search">
-      <span class="sr-only">Search projects</span>
-      <input bind:value={query} placeholder="Search projects, apps, branches..." />
-    </label>
-
-    <div class="top-actions">
-      <button class="icon-btn" type="button" disabled={refreshing || loading} onclick={refreshAll}>
-        {refreshing ? "Refreshing..." : "Refresh"}
+<div class="page-head">
+  <div>
+    <h1>Overview</h1>
+    <p>Everything currently running, in one place.</p>
+  </div>
+  <div class="page-actions">
+    {#if running.length > 0}
+      <button class="btn danger" type="button" disabled={runState.stoppingAll} onclick={onStopAll}>
+        <Icon name="stop" size={12} />
+        {#if runState.stoppingAll}
+          Stopping...
+        {:else if confirmStop}
+          Confirm stop all
+        {:else}
+          Stop all
+        {/if}
       </button>
-      <button class="icon-btn" type="button" onclick={() => (settingsOpen = true)}>Settings</button>
-    </div>
+    {/if}
+  </div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi" class:live={running.length > 0}>
+    <span class="kpi-label"><Icon name="activity" size={14} /> Running</span>
+    <b>{running.length}</b>
+    <em>{dash.loading ? "Scanning..." : `${dash.groups.length} projects`}</em>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label"><Icon name="port" size={14} /> Ports in use</span>
+    <b>{portsInUse}</b>
+    <em>live bindings</em>
+  </div>
+  <div class="kpi" class:ok={healthy > 0}>
+    <span class="kpi-label"><Icon name="heart" size={14} /> Healthy</span>
+    <b>{healthy}</b>
+    <em>of {running.length} running</em>
+  </div>
+  <div class="kpi" class:alert={unhealthy > 0}>
+    <span class="kpi-label"><Icon name="alert" size={14} /> Issues</span>
+    <b>{unhealthy}</b>
+    <em>down or failed</em>
+  </div>
+</div>
+
+<section class="section">
+  <header class="section-head">
+    <h2>Running processes</h2>
+    <span class="muted">{running.length === 0 ? "None" : running.length === 1 ? "1 process" : `${running.length} processes`}</span>
   </header>
 
-  {#if error || runState.error}
-    <div class="banner">{error || runState.error}</div>
-  {/if}
-
-  <div class="workspace">
-    <main class="list-pane">
-      {#if loading}
-        <div class="project-list">
-          {#each Array(8) as _, index (index)}
-            <div class="project skeleton"></div>
+  {#if running.length === 0}
+    <div class="empty-card">
+      <strong>Nothing is running.</strong>
+      <p>Start a recent script here, or open Projects to pick an app.</p>
+      {#if quickStarts.length > 0}
+        <div class="quick-list">
+          {#each quickStarts as item (`${item.partId}::${item.script}`)}
+            <button
+              class="quick-item"
+              type="button"
+              disabled={isPending(item.partId, item.script)}
+              onclick={() => startScript(item.partId, item.script, dash.groups)}
+            >
+              <Icon name="play" size={12} />
+              <span>
+                <strong>{item.partName}</strong>
+                <em>{item.groupName} · {item.script}</em>
+              </span>
+            </button>
           {/each}
-        </div>
-      {:else if visible.length === 0}
-        <div class="empty">
-          <strong>{groups.length === 0 ? "Nothing in orbit yet." : "No matches."}</strong>
-          <p>
-            {groups.length === 0
-              ? "Open Settings and add a folder of projects."
-              : "Try a different name, branch, or script."}
-          </p>
         </div>
       {:else}
-        <div class="project-list">
-          {#each visible as group (group.id)}
-            <ProjectRow
-              {group}
-              open={isOpen(group)}
-              ontoggle={() => (expanded = toggleExpanded(expanded, group.id))}
-            />
-          {/each}
-        </div>
+        <a class="btn primary" href="/projects">Open projects</a>
       {/if}
-    </main>
-
-    <ControlPanel part={selectedPart} />
-  </div>
-
-  {#if settingsOpen && config}
-    <SettingsPanel
-      {config}
-      {saving}
-      bind:rootDraft
-      onclose={() => (settingsOpen = false)}
-      onadd={addPattern}
-      onremove={removePattern}
-      onaddroot={addRoot}
-      onremoveroot={removeRoot}
-    />
+    </div>
+  {:else}
+    <div class="table-wrap">
+      <table class="run-table">
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>App</th>
+            <th>Script</th>
+            <th>Health</th>
+            <th>Port</th>
+            <th>Uptime</th>
+            <th>PID</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each running as run (run.id)}
+            {@const port = preferredPort(run.ports)}
+            {@const pending = isPending(run.partId, run.script)}
+            <tr class:selected={runState.selectedId === run.id && runState.panelOpen}>
+              <td class="muted">{groupNameFor(run.partId, dash.groups) || "—"}</td>
+              <td>
+                <button class="linkish" type="button" onclick={() => inspect(run)}>
+                  {partLabel(run)}
+                </button>
+              </td>
+              <td><span class="badge quiet">{run.script}</span></td>
+              <td>
+                <span class="health-cell health-{run.health?.status ?? 'unknown'}">
+                  <span class="status-dot" class:on={run.health?.status === "ok"} class:fail={run.health?.status === "fail"}></span>
+                  {healthLabel(run.health)}
+                </span>
+              </td>
+              <td>
+                {#if port}
+                  <a class="port-link" href={portUrl(port)} target="_blank" rel="noopener noreferrer">:{port}</a>
+                {:else}
+                  <span class="muted">—</span>
+                {/if}
+              </td>
+              <td class="tabular">{formatUptime(run.startedAt, now)}</td>
+              <td class="tabular muted">{run.pid ?? "—"}</td>
+              <td class="row-actions">
+                {#if port}
+                  <a class="icon-btn ghost" href={portUrl(port)} target="_blank" rel="noopener noreferrer" title="Open in browser">
+                    <Icon name="external" />
+                  </a>
+                {/if}
+                <button class="icon-btn ghost" type="button" title="Logs" onclick={() => showLogs(run)}>
+                  <Icon name="logs" />
+                </button>
+                <button
+                  class="icon-btn ghost"
+                  type="button"
+                  title="Restart"
+                  disabled={pending}
+                  onclick={() => restartScript(run.partId, run.script, dash.groups)}
+                >
+                  <Icon name="restart" />
+                </button>
+                <button
+                  class="icon-btn ghost danger"
+                  type="button"
+                  title="Stop"
+                  disabled={pending}
+                  onclick={() => stopScript(run.partId, run.script)}
+                >
+                  <Icon name="stop" size={12} />
+                </button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   {/if}
-</div>
+</section>
+
+{#if recentDone.length > 0}
+  <section class="section">
+    <header class="section-head">
+      <h2>Recently stopped</h2>
+    </header>
+    <div class="table-wrap">
+      <table class="run-table compact">
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>App</th>
+            <th>Script</th>
+            <th>Status</th>
+            <th>Ended</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each recentDone as run (run.id)}
+            <tr>
+              <td class="muted">{groupNameFor(run.partId, dash.groups) || "—"}</td>
+              <td>{partLabel(run)}</td>
+              <td><span class="badge quiet">{run.script}</span></td>
+              <td>
+                <span class="log-status status-{run.status}">
+                  {run.status}{run.exitCode != null ? ` (${run.exitCode})` : ""}
+                </span>
+              </td>
+              <td class="muted">{formatUptime(run.endedAt, now)} ago</td>
+              <td class="row-actions">
+                <button class="icon-btn ghost" type="button" title="Logs" onclick={() => showLogs(run)}>
+                  <Icon name="logs" />
+                </button>
+                <button
+                  class="icon-btn ghost"
+                  type="button"
+                  title="Start again"
+                  disabled={isPending(run.partId, run.script)}
+                  onclick={() => startScript(run.partId, run.script, dash.groups)}
+                >
+                  <Icon name="play" size={12} />
+                </button>
+                <button
+                  class="icon-btn ghost"
+                  type="button"
+                  title={favorites.includes(favoriteKey(run.partId, run.script)) ? "Unfavorite" : "Favorite"}
+                  onclick={() => (favorites = toggleFavorite(run.partId, run.script))}
+                >
+                  <Icon name={favorites.includes(favoriteKey(run.partId, run.script)) ? "star-fill" : "star"} />
+                </button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{/if}

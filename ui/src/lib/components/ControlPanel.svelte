@@ -1,7 +1,17 @@
 <script lang="ts">
-  import { ansiToHtml } from "$lib/ansi";
-  import { logsSocket } from "$lib/api";
-  import { formatPorts, healthLabel, partTitle, portsFor, roleLabel, shortPath, timeAgo } from "$lib/format";
+  import { dash } from "$lib/dashboard.svelte";
+  import {
+    formatPorts,
+    healthLabel,
+    partTitle,
+    portsFor,
+    preferredPort,
+    portUrl,
+    roleLabel,
+    shortPath,
+    timeAgo,
+    formatUptime,
+  } from "$lib/format";
   import {
     closePanel,
     isPending,
@@ -12,16 +22,12 @@
     selectPart,
     startScript,
     stopScript,
-    upsertRun,
   } from "$lib/runs.svelte";
-  import type { LogLine, ProjectPart, Run } from "$lib/types";
+  import type { ProjectPart } from "$lib/types";
+  import Icon from "./Icon.svelte";
+  import LogViewer from "./LogViewer.svelte";
 
   let { part }: { part: ProjectPart | null } = $props();
-
-  let lines = $state<LogLine[]>([]);
-  let scroller = $state<HTMLElement | undefined>(undefined);
-  let pinned = $state(true);
-  let socket: WebSocket | null = null;
 
   const scriptName = $derived.by(() => {
     if (!part) return null;
@@ -35,7 +41,7 @@
     if (!part) return null;
     return (
       (scriptName ? runningFor(part.id, scriptName) : null) ??
-      (runState.selectedId ? runState.runs.find((run) => run.id === runState.selectedId) ?? null : null) ??
+      (runState.selectedId ? (runState.runs.find((run) => run.id === runState.selectedId) ?? null) : null) ??
       latestRun(part.id, scriptName) ??
       null
     );
@@ -45,60 +51,9 @@
   const pending = $derived(part && scriptName ? isPending(part.id, scriptName) : false);
   const ports = $derived(part ? portsFor(part, runState.runs) : []);
   const health = $derived(live?.health ?? current?.health);
+  const port = $derived(preferredPort(current?.ports ?? ports));
 
-  $effect(() => {
-    const id = current?.id;
-    const open = runState.panelOpen;
-    if (!open || !id) {
-      socket?.close();
-      socket = null;
-      return;
-    }
-    lines = [];
-    pinned = true;
-    const next = logsSocket(id);
-    socket = next;
-    next.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data as string) as
-          | { type: "replay"; run: Run; lines: LogLine[] }
-          | (LogLine & { type: "line" })
-          | { type: "status"; run: Run };
-        if (message.type === "replay") {
-          upsertRun(message.run);
-          lines = message.lines;
-        } else if (message.type === "line") {
-          const { type: _type, ...line } = message;
-          lines = [...lines, line];
-          if (lines.length > 2500) lines = lines.slice(-2000);
-        } else if (message.type === "status") {
-          upsertRun(message.run);
-        }
-      } catch {
-        // Ignore a malformed log frame.
-      }
-    };
-    return () => {
-      next.close();
-      if (socket === next) socket = null;
-    };
-  });
-
-  $effect(() => {
-    lines;
-    if (!pinned || !scroller) return;
-    requestAnimationFrame(() => {
-      if (scroller && pinned) scroller.scrollTop = scroller.scrollHeight;
-    });
-  });
-
-  function onScroll() {
-    if (!scroller) return;
-    const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-    pinned = distance < 48;
-  }
-
-  function statusLabel(run: Run | null): string {
+  function statusLabel(run: typeof current): string {
     if (!run) return "idle";
     if (run.status === "running") return "running";
     if (run.status === "failed") return run.exitCode == null ? "failed" : `failed (${run.exitCode})`;
@@ -107,23 +62,29 @@
 </script>
 
 <aside class="control-panel" aria-label="Control panel">
-  {#if !part}
-    <div class="panel-empty">
-      <strong>Control panel</strong>
-      <p>Select an app to start, stop, and watch its logs.</p>
-    </div>
-  {:else}
-    <header class="panel-head">
-      <div>
+  <header class="panel-head">
+    <div>
+      {#if part}
         <div class="title-row">
           <span class="badge role role-{part.role}">{roleLabel(part.role)}</span>
           <h2 title={part.name}>{partTitle(part)}</h2>
         </div>
         <p class="path" title={part.path}>{shortPath(part.path)}</p>
-      </div>
-      <button class="text-btn panel-close" type="button" onclick={closePanel}>Close</button>
-    </header>
+      {:else}
+        <h2>Control panel</h2>
+        <p class="path">Select an app to inspect it</p>
+      {/if}
+    </div>
+    <button class="icon-btn ghost" type="button" onclick={closePanel} title="Close panel" aria-label="Close panel">
+      <Icon name="close" />
+    </button>
+  </header>
 
+  {#if !part}
+    <div class="panel-empty">
+      <p>Pick an app from Projects or a running process from Overview.</p>
+    </div>
+  {:else}
     <div class="panel-meta">
       {#if part.version}<span class="badge quiet">v{part.version}</span>{/if}
       {#if part.framework}<span class="badge framework">{part.framework}</span>{/if}
@@ -148,7 +109,7 @@
             value={scriptName ?? ""}
             onchange={(event) => {
               const value = (event.currentTarget as HTMLSelectElement).value;
-              if (value) selectPart(part.id, value);
+              if (value) selectPart(part.id, value, true);
             }}
           >
             {#each part.scripts as script (script.kind + script.name)}
@@ -164,25 +125,30 @@
               disabled={pending}
               onclick={() => scriptName && stopScript(part.id, scriptName)}
             >
-              Stop
+              <Icon name="stop" size={12} /> Stop
             </button>
             <button
               class="btn"
               type="button"
               disabled={pending}
-              onclick={() => scriptName && restartScript(part.id, scriptName)}
+              onclick={() => scriptName && restartScript(part.id, scriptName, dash.groups)}
             >
-              Restart
+              <Icon name="restart" size={14} /> Restart
             </button>
           {:else}
             <button
               class="btn primary"
               type="button"
               disabled={pending || !scriptName}
-              onclick={() => scriptName && startScript(part.id, scriptName)}
+              onclick={() => scriptName && startScript(part.id, scriptName, dash.groups)}
             >
-              Start
+              <Icon name="play" size={12} /> Start
             </button>
+          {/if}
+          {#if port}
+            <a class="btn" href={portUrl(port)} target="_blank" rel="noopener noreferrer">
+              <Icon name="external" size={14} /> :{port}
+            </a>
           {/if}
         </div>
       {/if}
@@ -197,21 +163,11 @@
       {#if current?.pid}
         <span class="muted">pid {current.pid}</span>
       {/if}
-    </div>
-
-    {#if !pinned}
-      <p class="scroll-hint">Auto-scroll paused</p>
-    {/if}
-    <div class="log-body" bind:this={scroller} onscroll={onScroll}>
-      {#if !current}
-        <p class="hint">Start a script to stream logs here.</p>
-      {:else if lines.length === 0}
-        <p class="hint">Waiting for output...</p>
-      {:else}
-        {#each lines as line (line.seq)}
-          <div class="log-line stream-{line.stream}">{@html ansiToHtml(line.text)}</div>
-        {/each}
+      {#if current?.status === "running"}
+        <span class="muted">{formatUptime(current.startedAt)}</span>
       {/if}
     </div>
+
+    <LogViewer runId={current?.id ?? null} />
   {/if}
 </aside>

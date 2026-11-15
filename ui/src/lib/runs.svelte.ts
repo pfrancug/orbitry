@@ -1,8 +1,11 @@
-import { fetchRuns, startRun, stopRun } from "./api";
-import type { ProjectPart, Run } from "./types";
+import { fetchRuns, startRun, stopAllRuns, stopRun } from "./api";
+import { groupNameFor } from "./format";
+import { rememberRecent } from "./recent";
+import type { ProjectPart, RepoGroup, Run } from "./types";
 
 const SELECTED_PART_KEY = "orbitry.selectedPart";
 const SELECTED_SCRIPT_KEY = "orbitry.selectedScript";
+const PANEL_KEY = "orbitry.panelOpen";
 
 export const runState = $state({
   runs: [] as Run[],
@@ -12,10 +15,21 @@ export const runState = $state({
   panelOpen: false,
   error: null as string | null,
   pending: {} as Record<string, boolean>,
+  stoppingAll: false,
 });
 
 function keyOf(partId: string, script: string): string {
   return `${partId}::${script}`;
+}
+
+function persistSelection() {
+  try {
+    if (runState.selectedPartId) localStorage.setItem(SELECTED_PART_KEY, runState.selectedPartId);
+    if (runState.selectedScript) localStorage.setItem(SELECTED_SCRIPT_KEY, runState.selectedScript);
+    localStorage.setItem(PANEL_KEY, runState.panelOpen ? "1" : "0");
+  } catch {
+    // Private mode can block storage.
+  }
 }
 
 export function upsertRun(run: Run) {
@@ -44,54 +58,65 @@ export function latestRun(partId: string, script?: string | null): Run | undefin
   );
 }
 
-export function selectPart(partId: string, script?: string) {
+export function setPanelOpen(open: boolean) {
+  runState.panelOpen = open;
+  persistSelection();
+}
+
+export function closePanel() {
+  setPanelOpen(false);
+}
+
+export function selectPart(partId: string, script?: string, openPanel = true) {
   runState.selectedPartId = partId;
   if (script) {
     runState.selectedScript = script;
-  } else if (runState.selectedScript) {
-    // Keep the current script if it still belongs to a later caller.
-  } else {
+  } else if (!runState.selectedScript) {
     const live = runningFor(partId);
     runState.selectedScript = live?.script ?? null;
   }
   const run =
     runningFor(partId, runState.selectedScript) ?? latestRun(partId, runState.selectedScript);
   runState.selectedId = run?.id ?? null;
-  runState.panelOpen = true;
-  try {
-    localStorage.setItem(SELECTED_PART_KEY, partId);
-    if (runState.selectedScript) {
-      localStorage.setItem(SELECTED_SCRIPT_KEY, runState.selectedScript);
-    }
-  } catch {
-    // Private mode can block storage.
+  if (openPanel) runState.panelOpen = true;
+  persistSelection();
+}
+
+/** Select an app, or close the panel if this app is already selected and open. */
+export function togglePart(partId: string, script?: string) {
+  const samePart = runState.selectedPartId === partId;
+  const sameScript = !script || script === runState.selectedScript;
+  if (samePart && sameScript && runState.panelOpen) {
+    closePanel();
+    return;
   }
+  selectPart(partId, script, true);
 }
 
 export function restoreSelection(parts: ProjectPart[]) {
   try {
     const partId = localStorage.getItem(SELECTED_PART_KEY);
     const script = localStorage.getItem(SELECTED_SCRIPT_KEY);
+    const panel = localStorage.getItem(PANEL_KEY) === "1";
     if (partId && parts.some((part) => part.id === partId)) {
-      selectPart(partId, script ?? undefined);
+      selectPart(partId, script ?? undefined, panel);
+    } else {
+      runState.panelOpen = false;
     }
   } catch {
     // Ignore storage errors on first load.
   }
 }
 
-export function closePanel() {
-  runState.panelOpen = false;
-}
-
-export function openRun(id: string) {
+export function openRun(id: string, openPanel = true) {
   const run = runState.runs.find((item) => item.id === id);
   runState.selectedId = id;
-  runState.panelOpen = true;
   if (run) {
     runState.selectedPartId = run.partId;
     runState.selectedScript = run.script;
   }
+  if (openPanel) runState.panelOpen = true;
+  persistSelection();
 }
 
 export function isPending(partId: string, script: string): boolean {
@@ -112,28 +137,41 @@ async function withPending(partId: string, script: string, work: () => Promise<v
   }
 }
 
-export async function toggleScript(partId: string, script: string) {
+function remember(partId: string, script: string, groups: RepoGroup[]) {
+  const partName =
+    groups.flatMap((group) => group.parts).find((part) => part.id === partId)?.name ?? partId;
+  rememberRecent({
+    partId,
+    partName,
+    groupName: groupNameFor(partId, groups),
+    script,
+  });
+}
+
+export async function toggleScript(partId: string, script: string, groups: RepoGroup[] = []) {
   const existing = runningFor(partId, script);
   await withPending(partId, script, async () => {
     if (existing) {
       const run = await stopRun(existing.id);
       upsertRun(run);
-      selectPart(partId, script);
+      selectPart(partId, script, runState.panelOpen);
     } else {
       const run = await startRun(partId, script);
       upsertRun(run);
-      selectPart(partId, script);
+      remember(partId, script, groups);
+      selectPart(partId, script, true);
       openRun(run.id);
     }
   });
 }
 
-export async function startScript(partId: string, script: string) {
+export async function startScript(partId: string, script: string, groups: RepoGroup[] = []) {
   if (runningFor(partId, script) || isPending(partId, script)) return;
   await withPending(partId, script, async () => {
     const run = await startRun(partId, script);
     upsertRun(run);
-    selectPart(partId, script);
+    remember(partId, script, groups);
+    selectPart(partId, script, true);
     openRun(run.id);
   });
 }
@@ -144,11 +182,11 @@ export async function stopScript(partId: string, script: string) {
   await withPending(partId, script, async () => {
     const run = await stopRun(existing.id);
     upsertRun(run);
-    selectPart(partId, script);
+    selectPart(partId, script, runState.panelOpen);
   });
 }
 
-export async function restartScript(partId: string, script: string) {
+export async function restartScript(partId: string, script: string, groups: RepoGroup[] = []) {
   await withPending(partId, script, async () => {
     const existing = runningFor(partId, script);
     if (existing) {
@@ -157,7 +195,8 @@ export async function restartScript(partId: string, script: string) {
     }
     const run = await startRun(partId, script);
     upsertRun(run);
-    selectPart(partId, script);
+    remember(partId, script, groups);
+    selectPart(partId, script, runState.panelOpen || true);
     openRun(run.id);
   });
 }
@@ -173,5 +212,19 @@ export async function stopSelected() {
     upsertRun(run);
   } catch (err: unknown) {
     runState.error = err instanceof Error ? err.message : "Could not stop the process.";
+  }
+}
+
+export async function stopAll() {
+  if (runState.stoppingAll) return;
+  runState.stoppingAll = true;
+  runState.error = null;
+  try {
+    const { runs } = await stopAllRuns();
+    runState.runs = runs;
+  } catch (err: unknown) {
+    runState.error = err instanceof Error ? err.message : "Could not stop running apps.";
+  } finally {
+    runState.stoppingAll = false;
   }
 }

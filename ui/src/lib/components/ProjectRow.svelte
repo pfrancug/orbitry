@@ -22,7 +22,7 @@
   );
   const failed = $derived(
     group.parts.some((part) =>
-      runState.runs.some((run) => run.status === "failed" && run.partId === part.id && !run.endedAt),
+      runState.runs.some((run) => run.status === "failed" && run.partId === part.id),
     ),
   );
   const needsInstall = $derived(

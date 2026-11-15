@@ -13,6 +13,17 @@ export function timeAgo(unix: number | null): string {
   return new Date(unix * 1000).toLocaleDateString();
 }
 
+export function formatUptime(startedAt: number | null | undefined, now = Date.now()): string {
+  if (!startedAt) return "—";
+  const seconds = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${rest}s`;
+  return `${rest}s`;
+}
+
 export function shortPath(path: string): string {
   const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
   if (parts.length <= 3) return path;
@@ -42,6 +53,18 @@ export function formatPorts(ports: PortInfo[] | undefined): string {
   return unique.map((port) => `:${port}`).join("  ");
 }
 
+export function preferredPort(ports: PortInfo[] | undefined): number | null {
+  if (!ports?.length) return null;
+  const rank = (source: PortInfo["source"]) =>
+    source === "process" ? 5 : source === "log" ? 4 : source === "flag" ? 3 : source === "env" ? 2 : source === "config" ? 1 : 0;
+  const sorted = [...ports].sort((a, b) => rank(b.source) - rank(a.source) || a.port - b.port);
+  return sorted[0]?.port ?? null;
+}
+
+export function portUrl(port: number): string {
+  return `http://127.0.0.1:${port}`;
+}
+
 export function portsFor(part: ProjectPart, runs: Run[]): PortInfo[] {
   const live = runs.find((run) => run.status === "running" && run.partId === part.id);
   if (live?.ports?.length) return live.ports;
@@ -55,6 +78,19 @@ export function healthLabel(health: HealthInfo | undefined): string {
   if (health.status === "ok") return "healthy";
   if (health.status === "fail") return "down";
   return "no port";
+}
+
+export function groupNameFor(partId: string, groups: RepoGroup[]): string {
+  const group = groups.find((item) => item.parts.some((part) => part.id === partId));
+  return group?.name ?? "";
+}
+
+export function findPart(partId: string, groups: RepoGroup[]): ProjectPart | undefined {
+  for (const group of groups) {
+    const part = group.parts.find((item) => item.id === partId);
+    if (part) return part;
+  }
+  return undefined;
 }
 
 export function groupSearchText(group: RepoGroup): string {

@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { dash } from "$lib/dashboard.svelte";
   import { formatPorts, isJsLike, partTitle, portsFor, roleLabel } from "$lib/format";
-  import { isPending, runningFor, runState, selectPart, toggleScript } from "$lib/runs.svelte";
+  import { isPending, runningFor, runState, togglePart, toggleScript } from "$lib/runs.svelte";
   import type { ProjectPart } from "$lib/types";
 
   let { part }: { part: ProjectPart } = $props();
 
-  const selected = $derived(runState.selectedPartId === part.id);
+  const selected = $derived(runState.selectedPartId === part.id && runState.panelOpen);
   const live = $derived(runningFor(part.id));
   const ports = $derived(formatPorts(portsFor(part, runState.runs)));
   const failed = $derived(
@@ -17,7 +18,7 @@
   <button
     class="app-main"
     type="button"
-    onclick={() => selectPart(part.id, live?.script ?? part.scripts[0]?.name)}
+    onclick={() => togglePart(part.id, live?.script ?? part.scripts[0]?.name)}
   >
     <span class="badge role role-{part.role}">{roleLabel(part.role)}</span>
     <div class="app-id">
@@ -49,8 +50,7 @@
           disabled={pending}
           onclick={(event) => {
             event.stopPropagation();
-            selectPart(part.id, script.name);
-            toggleScript(part.id, script.name);
+            toggleScript(part.id, script.name, dash.groups);
           }}
         >
           {#if run}

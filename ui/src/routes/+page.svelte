@@ -178,7 +178,7 @@
   {#if loading}
     <div class="grid">
       {#each Array(6) as _, index (index)}
-        <div class="card skeleton"></div>
+        <div class="stack skeleton"></div>
       {/each}
     </div>
   {:else if visible.length === 0}

@@ -97,7 +97,7 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 ### 10. Dashboard UI polish
 
 - [x] First visible slice: custom dark, iOS-like cards (not a generic component kit), search, root picker, settings sheet
-- [x] Group workspace packages and FE/BE parts under their repository, with single-package repos still as one card
+- [x] Group workspace packages and FE/BE parts under their repository; every repo, including single-package ones, uses the same stack layout
 - [ ] Clear per-app cards: version, git, build, running state, ports, FE/BE split
 - [ ] Calm, precise, instrument-panel feel
 - [x] The Rust server serves the built UI

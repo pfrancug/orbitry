@@ -172,9 +172,9 @@ button { cursor: pointer; }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: 1fr;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .card, .stack {
@@ -202,10 +202,14 @@ button { cursor: pointer; }
 }
 
 .skeleton {
-  min-height: 210px;
+  min-height: 148px;
   background: linear-gradient(90deg, rgba(255,255,255,0.03), rgba(255,255,255,0.08), rgba(255,255,255,0.03));
   background-size: 200% 100%;
   animation: shimmer 1.2s ease infinite;
+}
+
+.stack.skeleton {
+  border-radius: 26px;
 }
 
 .card-head, .part-head, .stack-head {
@@ -302,10 +306,10 @@ button { cursor: pointer; }
 .empty strong { font-family: var(--display); font-size: 22px; }
 .empty p { color: var(--muted); }
 
-.stack.multi {
-  grid-column: 1 / -1;
+.stack {
   border-radius: 26px;
   padding: 6px;
+  width: 100%;
 }
 
 .stack-head {

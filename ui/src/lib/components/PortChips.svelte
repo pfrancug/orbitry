@@ -2,7 +2,7 @@
   import type { HealthInfo, PortInfo } from "$lib/types";
   import { portUrl } from "$lib/format";
 
-  let { ports, health = null }: { ports: PortInfo[]; health?: HealthInfo | null } = $props();
+  let { ports = [], health = null }: { ports?: PortInfo[] | null; health?: HealthInfo | null } = $props();
 
   function statusOf(port: number): string {
     const item = health?.ports?.find((entry) => entry.port === port);
@@ -10,11 +10,11 @@
   }
 </script>
 
-{#if ports.length === 0}
+{#if !ports?.length}
   <span class="muted">—</span>
 {:else}
   <div class="port-chips">
-    {#each ports as item (item.port)}
+    {#each ports ?? [] as item (item.port)}
       {@const status = statusOf(item.port)}
       <a
         class="port-chip health-{status}"

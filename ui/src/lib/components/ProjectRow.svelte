@@ -17,19 +17,19 @@
 
   const running = $derived(
     runState.runs.filter(
-      (run) => run.status === "running" && group.parts.some((part) => part.id === run.partId),
+      (run) => run.status === "running" && (group.parts ?? []).some((part) => part.id === run.partId),
     ),
   );
   const failed = $derived(
-    group.parts.some((part) =>
+    (group.parts ?? []).some((part) =>
       runState.runs.some((run) => run.status === "failed" && run.partId === part.id),
     ),
   );
   const needsInstall = $derived(
-    group.parts.some((item) => isJsLike(item.kind) && !item.nodeModules),
+    (group.parts ?? []).some((item) => isJsLike(item.kind) && !item.nodeModules),
   );
   const versions = $derived(
-    [...new Set(group.parts.map((part) => part.version).filter((value): value is string => Boolean(value)))],
+    [...new Set((group.parts ?? []).map((part) => part.version).filter((value): value is string => Boolean(value)))],
   );
 </script>
 
@@ -60,7 +60,7 @@
       {#if versions[0]}
         <span class="badge quiet">v{versions[0]}</span>
       {/if}
-      <span class="count">{group.parts.length === 1 ? "1 app" : `${group.parts.length} apps`}</span>
+      <span class="count">{(group.parts ?? []).length === 1 ? "1 app" : `${(group.parts ?? []).length} apps`}</span>
       {#if needsInstall && !open}
         <span class="warn-inline">deps</span>
       {/if}
@@ -69,7 +69,7 @@
 
   {#if open}
     <div class="app-list" transition:slide={{ duration: 160 }}>
-      {#each group.parts as part (part.id)}
+      {#each (group.parts ?? []) as part (part.id)}
         <AppRow {part} />
       {/each}
     </div>

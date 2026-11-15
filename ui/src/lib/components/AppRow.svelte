@@ -3,6 +3,7 @@
   import { displayPorts, isJsLike, partTitle, roleLabel } from "$lib/format";
   import { isPending, runningFor, runState, togglePart, toggleScript } from "$lib/runs.svelte";
   import type { ProjectPart } from "$lib/types";
+  import PortChips from "./PortChips.svelte";
 
   let { part }: { part: ProjectPart } = $props();
 
@@ -18,7 +19,7 @@
   <button
     class="app-main"
     type="button"
-    onclick={() => togglePart(part.id, live?.script ?? part.scripts[0]?.name)}
+    onclick={() => togglePart(part.id, live?.script ?? (part.scripts ?? [])[0]?.name)}
   >
     <span class="badge role role-{part.role}">{roleLabel(part.role)}</span>
     <div class="app-id">
@@ -36,10 +37,10 @@
   </button>
 
   <div class="app-actions">
-    {#if part.scripts.length === 0}
+    {#if !(part.scripts ?? []).length}
       <span class="muted">no scripts</span>
     {:else}
-      {#each part.scripts as script (script.kind + script.name)}
+      {#each part.scripts ?? [] as script (script.kind + script.name)}
         {@const run = runningFor(part.id, script.name)}
         {@const pending = isPending(part.id, script.name)}
         <button

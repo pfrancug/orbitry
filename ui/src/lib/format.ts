@@ -110,13 +110,13 @@ export function healthLabel(health: HealthInfo | undefined): string {
 }
 
 export function groupNameFor(partId: string, groups: RepoGroup[]): string {
-  const group = groups.find((item) => item.parts.some((part) => part.id === partId));
+  const group = groups.find((item) => (item.parts ?? []).some((part) => part.id === partId));
   return group?.name ?? "";
 }
 
 export function findPart(partId: string, groups: RepoGroup[]): ProjectPart | undefined {
   for (const group of groups) {
-    const part = group.parts.find((item) => item.id === partId);
+    const part = (group.parts ?? []).find((item) => item.id === partId);
     if (part) return part;
   }
   return undefined;
@@ -130,14 +130,14 @@ export function groupSearchText(group: RepoGroup): string {
     group.framework ?? "",
     group.kind,
     group.git?.branch ?? "",
-    ...group.parts.flatMap((part) => [
+    ...(group.parts ?? []).flatMap((part) => [
       part.name,
       part.path,
       part.relativePath,
       part.framework ?? "",
       part.role,
-      ...part.scripts.map((script) => script.name),
-      ...part.ports.map((item) => String(item.port)),
+      ...(part.scripts ?? []).map((script) => script.name),
+      ...(part.ports ?? []).map((item) => String(item.port)),
     ]),
   ]
     .join(" ")

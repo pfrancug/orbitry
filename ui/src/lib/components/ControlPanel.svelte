@@ -29,10 +29,10 @@
 
   const scriptName = $derived.by(() => {
     if (!part) return null;
-    if (runState.selectedScript && part.scripts.some((item) => item.name === runState.selectedScript)) {
+    if (runState.selectedScript && (part.scripts ?? []).some((item) => item.name === runState.selectedScript)) {
       return runState.selectedScript;
     }
-    return runningFor(part.id)?.script ?? part.scripts[0]?.name ?? null;
+    return runningFor(part.id)?.script ?? (part.scripts ?? [])[0]?.name ?? null;
   });
 
   const current = $derived.by(() => {
@@ -91,13 +91,13 @@
           {part.git.branch}
         </span>
       {/if}
-      <span class="build" class:ok={part.build.built}>
-        {part.build.built ? `Built ${timeAgo(part.build.lastBuiltAt)}` : "Not built"}
+      <span class="build" class:ok={part.build?.built}>
+        {part.build?.built ? `Built ${timeAgo(part.build.lastBuiltAt)}` : "Not built"}
       </span>
     </div>
 
     <div class="panel-controls">
-      {#if part.scripts.length === 0}
+      {#if !(part.scripts ?? []).length}
         <p class="hint">No dev or preview scripts on this app.</p>
       {:else}
         <label class="script-picker">
@@ -109,7 +109,7 @@
               if (value) selectPart(part.id, value, true);
             }}
           >
-            {#each part.scripts as script (script.kind + script.name)}
+            {#each part.scripts ?? [] as script (script.kind + script.name)}
               <option value={script.name}>{script.name} · {script.scope}</option>
             {/each}
           </select>

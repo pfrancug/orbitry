@@ -20,14 +20,14 @@
           .includes(needle);
         if (groupHit || groupSearchText(group).includes(needle)) {
           if (groupHit) return group;
-          const parts = group.parts.filter((part) =>
+          const parts = (group.parts ?? []).filter((part) =>
             [
               part.name,
               part.path,
               part.relativePath,
               part.framework ?? "",
               part.role,
-              ...part.scripts.map((script) => script.name),
+              ...(part.scripts ?? []).map((script) => script.name),
             ]
               .join(" ")
               .toLowerCase()
@@ -56,7 +56,7 @@
         Scanning...
       {:else}
         {visible.length}{visible.length === dash.groups.length ? "" : ` of ${dash.groups.length}`} projects
-        · {dash.groups.reduce((sum, group) => sum + group.parts.length, 0)} apps
+        · {dash.groups.reduce((sum, group) => sum + (group.parts ?? []).length, 0)} apps
         {#if running > 0}· {running} running{/if}
       {/if}
     </p>

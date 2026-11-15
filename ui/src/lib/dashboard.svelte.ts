@@ -13,15 +13,15 @@ export const dash = $state({
   refreshing: false,
 });
 
-export const allParts = () => dash.groups.flatMap((group) => group.parts);
+export const allParts = () => dash.groups.flatMap((group) => group.parts ?? []);
 
-export const partCount = () => dash.groups.reduce((sum, group) => sum + group.parts.length, 0);
+export const partCount = () => dash.groups.reduce((sum, group) => sum + (group.parts ?? []).length, 0);
 
 export async function loadDashboard() {
   const [nextConfig, nextProjects] = await Promise.all([fetchConfig(), fetchProjects()]);
   dash.config = nextConfig;
   dash.groups = nextProjects.groups;
-  restoreSelection(nextProjects.groups.flatMap((group) => group.parts));
+  restoreSelection(nextProjects.groups.flatMap((group) => group.parts ?? []));
 }
 
 export async function refreshAll() {

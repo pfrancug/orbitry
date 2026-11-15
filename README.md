@@ -45,7 +45,7 @@ Local-first. Yours. A command center that stays on your machine and stays out of
 
 Orbitry should feel like a modern instrument panel, not a settings page. Calm, precise, a little bit magical. The kind of tool you open once and leave open — because it makes a busy desk feel like a single, quiet hangar.
 
-Later, it lives in your menu bar, always a glance away.
+It lives in your tray, always a glance away.
 
 ## Status
 

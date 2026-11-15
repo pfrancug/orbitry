@@ -15,8 +15,24 @@ path = "src/main.rs"
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4", features = ["derive"] }
+mime_guess = "2"
 orbitry-core = { path = "../core" }
+rust-embed = "8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+single-instance = "0.3"
+tao = "0.34"
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.6", features = ["fs"] }
+tray-icon = "0.21"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Console",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+winres = "0.1"

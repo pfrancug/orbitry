@@ -59,6 +59,11 @@ pub fn config_path() -> PathBuf {
     dir.join("config.json")
 }
 
+/// Runtime file used to tell a second Orbitry instance which port is live.
+pub fn instance_path() -> PathBuf {
+    config_path().with_file_name("instance.json")
+}
+
 pub fn load_config(path: &Path) -> Result<Config, String> {
     if !path.exists() {
         return Ok(Config::default());

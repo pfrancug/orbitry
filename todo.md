@@ -105,11 +105,13 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 
 ### 11. Packaging
 
-- [ ] Ship Orbitry as a Rust binary (not a Node app)
+- [x] Ship Orbitry as a standalone Windows exe with the UI embedded, a tray icon, and no console window
+- [x] Left click and "Otwórz" open the dashboard in the browser; "Wyjdź" stops all child processes and exits
+- [x] Single instance: a second launch opens the browser and exits
 - [ ] Optional later: a thin npm wrapper only if `npx` convenience is worth it
-- [ ] `package.json` remains only for the UI and the optional config-bridge plugin
+- [x] `package.json` remains only for the UI and the optional config-bridge plugin
 
-### 12. Later: Tauri tray app
+### 12. Later: Tauri (optional)
 
-- [ ] Menu-bar / tray companion with a Rust backend
+- [ ] Only if we need an embedded webview; the tray companion is already native Rust
 - [ ] Reuse `orbitry-core`; the Svelte UI stays

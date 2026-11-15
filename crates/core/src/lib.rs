@@ -11,8 +11,8 @@ mod scripts;
 
 pub use artifacts::BuildInfo;
 pub use config::{
-    canonical, config_path, default_kind_patterns, display_path, load_config, save_config, Config,
-    ScriptKind, ScriptPattern, ScriptScope,
+    canonical, config_path, default_kind_patterns, display_path, instance_path, load_config,
+    save_config, Config, ScriptKind, ScriptPattern, ScriptScope,
 };
 pub use git::{find_git_root, GitInfo};
 pub use group::{group_projects, PartRole, ProjectPart, RepoGroup};

@@ -1,0 +1,16 @@
+[package]
+name = "orbitry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "A local command center for every app in orbit."
+publish = false
+
+[[bin]]
+name = "orbitry"
+path = "src/main.rs"
+
+[dependencies]
+orbitry-core = { path = "../core" }

@@ -1,0 +1,1 @@
+//! Orbitry core — scanner, process manager, port detection, and project metadata.

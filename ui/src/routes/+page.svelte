@@ -2,12 +2,12 @@
   import { goto } from "$app/navigation";
   import { dash } from "$lib/dashboard.svelte";
   import {
+    displayRunPorts,
     findPart,
     formatUptime,
     groupNameFor,
     healthLabel,
     partTitle,
-    preferredPort,
     portUrl,
   } from "$lib/format";
   import { favoriteKey, loadFavorites, loadRecent, toggleFavorite, type RecentScript } from "$lib/recent";
@@ -23,6 +23,7 @@
   } from "$lib/runs.svelte";
   import type { Run } from "$lib/types";
   import Icon from "$lib/components/Icon.svelte";
+  import PortChips from "$lib/components/PortChips.svelte";
 
   let now = $state(Date.now());
   let confirmStop = $state(false);
@@ -41,7 +42,7 @@
 
   const running = $derived(runState.runs.filter((run) => run.status === "running"));
   const portsInUse = $derived(
-    new Set(running.flatMap((run) => (preferredPort(run.ports) != null ? [preferredPort(run.ports)!] : []))).size,
+    new Set(running.flatMap((run) => displayRunPorts(run).map((item) => item.port))).size,
   );
   const healthy = $derived(running.filter((run) => run.health?.status === "ok").length);
   const unhealthy = $derived(
@@ -197,7 +198,8 @@
         </thead>
         <tbody>
           {#each running as run (run.id)}
-            {@const port = preferredPort(run.ports)}
+            {@const ports = displayRunPorts(run)}
+            {@const port = ports[0]?.port}
             {@const pending = isPending(run.partId, run.script)}
             <tr class:selected={runState.selectedId === run.id && runState.panelOpen}>
               <td class="muted">{groupNameFor(run.partId, dash.groups) || "—"}</td>
@@ -214,11 +216,7 @@
                 </span>
               </td>
               <td>
-                {#if port}
-                  <a class="port-link" href={portUrl(port)} target="_blank" rel="noopener noreferrer">:{port}</a>
-                {:else}
-                  <span class="muted">—</span>
-                {/if}
+                <PortChips {ports} health={run.health} />
               </td>
               <td class="tabular">{formatUptime(run.startedAt, now)}</td>
               <td class="tabular muted">{run.pid ?? "—"}</td>

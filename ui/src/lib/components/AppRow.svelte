@@ -1,6 +1,6 @@
 <script lang="ts">
   import { dash } from "$lib/dashboard.svelte";
-  import { formatPorts, isJsLike, partTitle, portsFor, roleLabel } from "$lib/format";
+  import { displayPorts, isJsLike, partTitle, roleLabel } from "$lib/format";
   import { isPending, runningFor, runState, togglePart, toggleScript } from "$lib/runs.svelte";
   import type { ProjectPart } from "$lib/types";
 
@@ -8,7 +8,7 @@
 
   const selected = $derived(runState.selectedPartId === part.id && runState.panelOpen);
   const live = $derived(runningFor(part.id));
-  const ports = $derived(formatPorts(portsFor(part, runState.runs)));
+  const ports = $derived(displayPorts(part, runState.runs));
   const failed = $derived(
     !live && runState.runs.some((run) => run.partId === part.id && run.status === "failed"),
   );
@@ -30,7 +30,9 @@
         {/if}
       </div>
     </div>
-    <span class="port-cell" title={ports || "No port detected"}>{ports || "—"}</span>
+    <span class="port-cell">
+      <PortChips ports={ports} health={live?.health ?? null} />
+    </span>
   </button>
 
   <div class="app-actions">

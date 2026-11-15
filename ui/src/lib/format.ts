@@ -73,6 +73,35 @@ export function portsFor(part: ProjectPart, runs: Run[]): PortInfo[] {
   return part.ports ?? [];
 }
 
+
+export function displayPorts(part: ProjectPart | null | undefined, runs: Run[], runningOnly = false): PortInfo[] {
+  const live = part ? runs.find((run) => run.status === "running" && run.partId === part.id) : undefined;
+  const latest = part ? runs.find((run) => run.partId === part.id && run.ports?.length) : undefined;
+  const source = live?.ports?.length ? live.ports : latest?.ports?.length ? latest.ports : (part?.ports ?? []);
+  const observed = source.filter((item) => item.source === "process" || item.source === "log");
+  if (live && observed.length) return dedupePorts(observed);
+  if (runningOnly && live) return dedupePorts(source);
+  return dedupePorts(source);
+}
+
+export function displayRunPorts(run: Run | null | undefined): PortInfo[] {
+  if (!run?.ports?.length) return [];
+  const observed = run.ports.filter((item) => item.source === "process" || item.source === "log");
+  if (run.status === "running" && observed.length) return dedupePorts(observed);
+  return dedupePorts(run.ports);
+}
+
+function dedupePorts(ports: PortInfo[]): PortInfo[] {
+  const seen = new Set<number>();
+  const out: PortInfo[] = [];
+  for (const item of ports) {
+    if (seen.has(item.port)) continue;
+    seen.add(item.port);
+    out.push(item);
+  }
+  return out;
+}
+
 export function healthLabel(health: HealthInfo | undefined): string {
   if (!health || health.status === "unknown") return "idle";
   if (health.status === "ok") return "healthy";

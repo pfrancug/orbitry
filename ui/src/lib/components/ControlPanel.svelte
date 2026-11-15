@@ -1,12 +1,9 @@
 <script lang="ts">
   import { dash } from "$lib/dashboard.svelte";
   import {
-    formatPorts,
+    displayPorts,
     healthLabel,
     partTitle,
-    portsFor,
-    preferredPort,
-    portUrl,
     roleLabel,
     shortPath,
     timeAgo,
@@ -25,6 +22,7 @@
   } from "$lib/runs.svelte";
   import type { ProjectPart } from "$lib/types";
   import Icon from "./Icon.svelte";
+  import PortChips from "./PortChips.svelte";
   import LogViewer from "./LogViewer.svelte";
 
   let { part }: { part: ProjectPart | null } = $props();
@@ -49,9 +47,8 @@
 
   const live = $derived(part && scriptName ? runningFor(part.id, scriptName) : undefined);
   const pending = $derived(part && scriptName ? isPending(part.id, scriptName) : false);
-  const ports = $derived(part ? portsFor(part, runState.runs) : []);
+  const ports = $derived(part ? displayPorts(part, runState.runs) : []);
   const health = $derived(live?.health ?? current?.health);
-  const port = $derived(preferredPort(current?.ports ?? ports));
 
   function statusLabel(run: typeof current): string {
     if (!run) return "idle";
@@ -145,18 +142,14 @@
               <Icon name="play" size={12} /> Start
             </button>
           {/if}
-          {#if port}
-            <a class="btn" href={portUrl(port)} target="_blank" rel="noopener noreferrer">
-              <Icon name="external" size={14} /> :{port}
-            </a>
-          {/if}
+
         </div>
       {/if}
     </div>
 
     <div class="panel-status">
       <span class="log-status status-{current?.status ?? 'idle'}">{statusLabel(current)}</span>
-      <span class="port-cell">{formatPorts(ports) || "no port yet"}</span>
+      <PortChips {ports} health={health ?? null} />
       <span class="health health-{health?.status ?? 'unknown'}" title={health?.url ?? ""}>
         {healthLabel(health)}
       </span>

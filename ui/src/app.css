@@ -889,3 +889,37 @@ button.chip.pending { opacity: 0.7; }
   .root-form { grid-template-columns: 1fr; }
   .row-actions { flex-wrap: wrap; }
 }
+
+.port-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.port-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+  padding: 2px 8px 2px 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.port-chip em {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.port-chip:hover { border-color: var(--accent); color: var(--accent); }
+.port-chip.health-ok { border-color: rgba(52, 211, 153, 0.35); }
+.port-chip.health-fail { border-color: rgba(251, 113, 133, 0.4); }
+.port-cell .port-chips { justify-content: flex-start; }
+

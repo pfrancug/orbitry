@@ -1,4 +1,4 @@
-import type { HealthInfo, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run } from "./types";
+import type { AppWarning, HealthInfo, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run } from "./types";
 
 export function timeAgo(unix: number | null): string {
   if (!unix) return "recently";
@@ -61,8 +61,16 @@ export function preferredPort(ports: PortInfo[] | undefined): number | null {
   return sorted[0]?.port ?? null;
 }
 
-export function portUrl(port: number): string {
-  return `http://127.0.0.1:${port}`;
+export function portUrl(port: number, url?: string | null): string {
+  return url || `http://localhost:${port}`;
+}
+
+export function isLivePort(port: PortInfo): boolean {
+  return port.source === "process";
+}
+
+export function isExpectedSource(source: PortInfo["source"] | undefined): boolean {
+  return source === "default" || source === "config" || source === "env" || source === "flag";
 }
 
 export function portsFor(part: ProjectPart, runs: Run[]): PortInfo[] {
@@ -76,19 +84,57 @@ export function portsFor(part: ProjectPart, runs: Run[]): PortInfo[] {
 
 export function displayPorts(part: ProjectPart | null | undefined, runs: Run[], runningOnly = false): PortInfo[] {
   const live = part ? runs.find((run) => run.status === "running" && run.partId === part.id) : undefined;
-  const latest = part ? runs.find((run) => run.partId === part.id && run.ports?.length) : undefined;
-  const source = live?.ports?.length ? live.ports : latest?.ports?.length ? latest.ports : (part?.ports ?? []);
-  const observed = source.filter((item) => item.source === "process" || item.source === "log");
-  if (live && observed.length) return dedupePorts(observed);
-  if (runningOnly && live) return dedupePorts(source);
-  return dedupePorts(source);
+  if (live) {
+    const process = (live.ports ?? []).filter((item) => item.source === "process");
+    return dedupePorts(process);
+  }
+  if (runningOnly) return [];
+  return dedupePorts(part?.ports ?? []);
 }
 
 export function displayRunPorts(run: Run | null | undefined): PortInfo[] {
   if (!run?.ports?.length) return [];
-  const observed = run.ports.filter((item) => item.source === "process" || item.source === "log");
-  if (run.status === "running" && observed.length) return dedupePorts(observed);
-  return dedupePorts(run.ports);
+  return dedupePorts((run.ports ?? []).filter((item) => item.source === "process"));
+}
+
+export function dedupeWarnings(warnings: AppWarning[]): AppWarning[] {
+  const seen = new Set<string>();
+  const out: AppWarning[] = [];
+  for (const warning of warnings) {
+    const key = [warning.code, warning.port ?? "", warning.partId ?? "", warning.runId ?? "", warning.message].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(warning);
+  }
+  return out;
+}
+
+export function warningsForPart(partId: string, runs: Run[], global: AppWarning[] = []): AppWarning[] {
+  const fromRuns = runs.flatMap((run) => (run.partId === partId ? (run.warnings ?? []) : []));
+  const fromGlobal = global.filter((warning) => warning.partId === partId);
+  return dedupeWarnings([...fromRuns, ...fromGlobal]);
+}
+
+export function warningsForRun(run: Run | null | undefined, global: AppWarning[] = []): AppWarning[] {
+  if (!run) return [];
+  const fromRun = run.warnings ?? [];
+  const fromGlobal = global.filter(
+    (warning) => warning.runId === run.id || (!warning.runId && warning.partId === run.partId),
+  );
+  return dedupeWarnings([...fromRun, ...fromGlobal]);
+}
+
+export function issueWarnings(warnings: AppWarning[]): AppWarning[] {
+  return warnings.filter((warning) => warning.severity === "error" || warning.severity === "warning");
+}
+
+export function warningCountLabel(warnings: AppWarning[]): string | null {
+  const issues = issueWarnings(warnings);
+  const infos = warnings.filter((warning) => warning.severity === "info");
+  const parts: string[] = [];
+  if (issues.length) parts.push(String(issues.length));
+  else if (infos.length) parts.push(String(infos.length));
+  return parts[0] ?? null;
 }
 
 function dedupePorts(ports: PortInfo[]): PortInfo[] {

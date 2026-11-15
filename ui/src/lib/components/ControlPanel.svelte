@@ -2,12 +2,14 @@
   import { dash } from "$lib/dashboard.svelte";
   import {
     displayPorts,
+    formatUptime,
     healthLabel,
     partTitle,
     roleLabel,
     shortPath,
     timeAgo,
-    formatUptime,
+    warningsForPart,
+    warningsForRun,
   } from "$lib/format";
   import {
     closePanel,
@@ -24,6 +26,7 @@
   import Icon from "./Icon.svelte";
   import PortChips from "./PortChips.svelte";
   import LogViewer from "./LogViewer.svelte";
+  import WarningList from "./WarningList.svelte";
 
   let { part }: { part: ProjectPart | null } = $props();
 
@@ -49,6 +52,14 @@
   const pending = $derived(part && scriptName ? isPending(part.id, scriptName) : false);
   const ports = $derived(part ? displayPorts(part, runState.runs) : []);
   const health = $derived(live?.health ?? current?.health);
+  const expected = $derived(!live);
+  const warnings = $derived(
+    part
+      ? (live || current
+          ? warningsForRun(live ?? current, [...(runState.warnings ?? []), ...(dash.warnings ?? [])])
+          : warningsForPart(part.id, runState.runs, [...(runState.warnings ?? []), ...(dash.warnings ?? [])]))
+      : [],
+  );
 
   function statusLabel(run: typeof current): string {
     if (!run) return "idle";
@@ -149,7 +160,7 @@
 
     <div class="panel-status">
       <span class="log-status status-{current?.status ?? 'idle'}">{statusLabel(current)}</span>
-      <PortChips {ports} health={health ?? null} />
+      <PortChips {ports} health={health ?? null} {expected} />
       <span class="health health-{health?.status ?? 'unknown'}" title={health?.url ?? ""}>
         {healthLabel(health)}
       </span>
@@ -160,6 +171,13 @@
         <span class="muted">{formatUptime(current.startedAt)}</span>
       {/if}
     </div>
+
+    {#if warnings.length}
+      <section class="panel-warnings">
+        <h3>Warnings</h3>
+        <WarningList {warnings} />
+      </section>
+    {/if}
 
     <LogViewer runId={current?.id ?? null} />
   {/if}

@@ -1,32 +1,55 @@
 <script lang="ts">
   import type { HealthInfo, PortInfo } from "$lib/types";
-  import { portUrl } from "$lib/format";
+  import { isExpectedSource, portUrl } from "$lib/format";
 
-  let { ports = [], health = null }: { ports?: PortInfo[] | null; health?: HealthInfo | null } = $props();
+  let {
+    ports = [],
+    health = null,
+    expected = false,
+  }: { ports?: PortInfo[] | null; health?: HealthInfo | null; expected?: boolean } = $props();
 
-  function statusOf(port: number): string {
-    const item = health?.ports?.find((entry) => entry.port === port);
-    return item?.status ?? health?.status ?? "unknown";
+  function statusOf(item: PortInfo): string {
+    if (expected || isExpectedSource(item.source)) return "expected";
+    const entry = health?.ports?.find((value) => value.port === item.port);
+    return entry?.status ?? (health && item.source === "process" ? health.status : "unknown");
+  }
+
+  function hrefOf(item: PortInfo): string {
+    return item.url || portUrl(item.port);
+  }
+
+  function titleOf(item: PortInfo, status: string): string {
+    const label = item.name ? `${item.name} :${item.port}` : `:${item.port}`;
+    const binds = item.binds?.length ? ` · ${item.binds.join(", ")}` : "";
+    if (status === "expected") return `${label} (expected)${binds}`;
+    return `${label}${binds}`;
   }
 </script>
 
 {#if !ports?.length}
-  <span class="muted">—</span>
+  <span class="muted">-</span>
 {:else}
   <div class="port-chips">
     {#each ports ?? [] as item (item.port)}
-      {@const status = statusOf(item.port)}
-      <a
-        class="port-chip health-{status}"
-        href={portUrl(item.port)}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={item.name ? `${item.name} :${item.port}` : `:${item.port}`}
-      >
-        <span class="status-dot" class:on={status === "ok"} class:fail={status === "fail"}></span>
-        {#if item.name}<em>{item.name}</em>{/if}
-        :{item.port}
-      </a>
+      {@const status = statusOf(item)}
+      {#if status === "expected"}
+        <span class="port-chip expected" title={titleOf(item, status)}>
+          {#if item.name}<em>{item.name}</em>{/if}
+          :{item.port}
+        </span>
+      {:else}
+        <a
+          class="port-chip health-{status}"
+          href={hrefOf(item)}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={titleOf(item, status)}
+        >
+          <span class="status-dot" class:on={status === "ok"} class:fail={status === "fail"}></span>
+          {#if item.name}<em>{item.name}</em>{/if}
+          :{item.port}
+        </a>
+      {/if}
     {/each}
   </div>
 {/if}

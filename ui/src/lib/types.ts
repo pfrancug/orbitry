@@ -24,10 +24,28 @@ export type BuildInfo = {
   lastBuiltAt: number | null;
 };
 
+export type WarningSeverity = "info" | "warning" | "error";
+
+export type AppWarning = {
+  code: string;
+  severity: WarningSeverity;
+  message: string;
+  hint?: string | null;
+  port?: number | null;
+  runId?: string | null;
+  partId?: string | null;
+  partName?: string | null;
+  project?: string | null;
+};
+
 export type PortInfo = {
   port: number;
   source: PortSource;
   name?: string | null;
+  binds?: string[];
+  pid?: number | null;
+  process?: string | null;
+  url?: string | null;
 };
 
 export type PortHealth = {
@@ -104,7 +122,9 @@ export type Run = {
   startedAt: number;
   endedAt: number | null;
   ports: PortInfo[];
+  expectedPorts?: PortInfo[];
   health: HealthInfo;
+  warnings?: AppWarning[];
 };
 
 export type LogLine = {

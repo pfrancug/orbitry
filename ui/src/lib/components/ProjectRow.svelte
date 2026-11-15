@@ -1,9 +1,11 @@
 <script lang="ts">
   import { slide } from "svelte/transition";
-  import { isJsLike, shortPath } from "$lib/format";
+  import { isJsLike, shortPath, warningsForPart } from "$lib/format";
+  import { dash } from "$lib/dashboard.svelte";
   import { runState } from "$lib/runs.svelte";
   import type { RepoGroup as RepoGroupType } from "$lib/types";
   import AppRow from "./AppRow.svelte";
+  import WarningBadge from "./WarningBadge.svelte";
 
   let {
     group,
@@ -31,6 +33,11 @@
   const versions = $derived(
     [...new Set((group.parts ?? []).map((part) => part.version).filter((value): value is string => Boolean(value)))],
   );
+  const warnings = $derived(
+    (group.parts ?? []).flatMap((part) =>
+      warningsForPart(part.id, runState.runs, [...(runState.warnings ?? []), ...(dash.warnings ?? [])]),
+    ),
+  );
 </script>
 
 <section class="project" class:open class:live={running.length > 0}>
@@ -45,6 +52,7 @@
         {:else if failed}
           <span class="dot fail" title="A process failed"></span>
         {/if}
+        <WarningBadge {warnings} />
       </div>
       <p class="path" title={group.path}>{shortPath(group.path)}</p>
     </div>

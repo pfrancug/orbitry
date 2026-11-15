@@ -1,4 +1,4 @@
-import type { AppConfig, RepoGroup, Run, ScriptPattern } from "./types";
+import type { AppConfig, AppWarning, RepoGroup, Run, ScriptPattern } from "./types";
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -16,7 +16,7 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function fetchProjects(): Promise<{ groups: RepoGroup[] }> {
+export function fetchProjects(): Promise<{ groups: RepoGroup[]; warnings?: AppWarning[] }> {
   return request("/api/projects");
 }
 
@@ -34,7 +34,7 @@ export function saveConfig(config: {
   });
 }
 
-export function fetchRuns(): Promise<{ runs: Run[] }> {
+export function fetchRuns(): Promise<{ runs: Run[]; warnings?: AppWarning[] }> {
   return request("/api/runs");
 }
 
@@ -52,7 +52,7 @@ export function stopRun(runId: string): Promise<Run> {
   });
 }
 
-export function stopAllRuns(): Promise<{ runs: Run[] }> {
+export function stopAllRuns(): Promise<{ runs: Run[]; warnings?: AppWarning[] }> {
   return request("/api/stop-all", { method: "POST" });
 }
 

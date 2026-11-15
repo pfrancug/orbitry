@@ -1,9 +1,10 @@
 import { fetchConfig, fetchProjects, saveConfig } from "./api";
 import { refreshRuns, restoreSelection, runState } from "./runs.svelte";
-import type { AppConfig, RepoGroup, ScriptPattern } from "./types";
+import type { AppConfig, AppWarning, RepoGroup, ScriptPattern } from "./types";
 
 export const dash = $state({
   groups: [] as RepoGroup[],
+  warnings: [] as AppWarning[],
   config: null as AppConfig | null,
   query: "",
   rootDraft: "",
@@ -21,6 +22,7 @@ export async function loadDashboard() {
   const [nextConfig, nextProjects] = await Promise.all([fetchConfig(), fetchProjects()]);
   dash.config = nextConfig;
   dash.groups = nextProjects.groups;
+  dash.warnings = nextProjects.warnings ?? [];
   restoreSelection(nextProjects.groups.flatMap((group) => group.parts ?? []));
 }
 
@@ -42,8 +44,9 @@ export async function persist(next: { roots: string[]; scriptPatterns: ScriptPat
   dash.error = null;
   try {
     dash.config = await saveConfig(next);
-    const { groups } = await fetchProjects();
+    const { groups, warnings } = await fetchProjects();
     dash.groups = groups;
+    dash.warnings = warnings ?? [];
   } catch (err: unknown) {
     dash.error = err instanceof Error ? err.message : "Could not save settings.";
   } finally {

@@ -7,8 +7,10 @@
     formatUptime,
     groupNameFor,
     healthLabel,
+    issueWarnings,
     partTitle,
     portUrl,
+    warningsForRun,
   } from "$lib/format";
   import { favoriteKey, loadFavorites, loadRecent, toggleFavorite, type RecentScript } from "$lib/recent";
   import {
@@ -24,6 +26,7 @@
   import type { Run } from "$lib/types";
   import Icon from "$lib/components/Icon.svelte";
   import PortChips from "$lib/components/PortChips.svelte";
+  import WarningBadge from "$lib/components/WarningBadge.svelte";
 
   let now = $state(Date.now());
   let confirmStop = $state(false);
@@ -45,9 +48,12 @@
     new Set(running.flatMap((run) => displayRunPorts(run).map((item) => item.port))).size,
   );
   const healthy = $derived(running.filter((run) => run.health?.status === "ok").length);
+  const allWarnings = $derived([...(runState.warnings ?? []), ...(dash.warnings ?? [])]);
+  const issues = $derived(issueWarnings(allWarnings));
   const unhealthy = $derived(
-    running.filter((run) => run.health?.status === "fail").length +
-      runState.runs.filter((run) => run.status === "failed").length,
+    runState.runs.filter((run) => run.status === "failed").length +
+      running.filter((run) => run.health?.status === "fail" && !warningsForRun(run, allWarnings).some((item) => item.code === "health_fail")).length +
+      issues.length,
   );
   const recentDone = $derived(
     runState.runs
@@ -146,7 +152,7 @@
   <div class="kpi" class:alert={unhealthy > 0}>
     <span class="kpi-label"><Icon name="alert" size={14} /> Issues</span>
     <b>{unhealthy}</b>
-    <em>down or failed</em>
+    <em>failures and warnings</em>
   </div>
 </div>
 
@@ -199,13 +205,15 @@
         <tbody>
           {#each running as run (run.id)}
             {@const ports = displayRunPorts(run)}
-            {@const port = ports[0]?.port}
+            {@const port = ports[0]}
             {@const pending = isPending(run.partId, run.script)}
+            {@const warnings = warningsForRun(run, allWarnings)}
             <tr class:selected={runState.selectedId === run.id && runState.panelOpen}>
               <td class="muted">{groupNameFor(run.partId, dash.groups) || "—"}</td>
               <td>
                 <button class="linkish" type="button" onclick={() => inspect(run)}>
                   {partLabel(run)}
+                  <WarningBadge {warnings} />
                 </button>
               </td>
               <td><span class="badge quiet">{run.script}</span></td>
@@ -222,7 +230,7 @@
               <td class="tabular muted">{run.pid ?? "—"}</td>
               <td class="row-actions">
                 {#if port}
-                  <a class="icon-btn ghost" href={portUrl(port)} target="_blank" rel="noopener noreferrer" title="Open in browser">
+                  <a class="icon-btn ghost" href={portUrl(port.port, port.url)} target="_blank" rel="noopener noreferrer" title="Open in browser">
                     <Icon name="external" />
                   </a>
                 {/if}

@@ -1,9 +1,10 @@
 <script lang="ts">
   import { dash } from "$lib/dashboard.svelte";
-  import { displayPorts, isJsLike, partTitle, roleLabel } from "$lib/format";
+  import { displayPorts, isJsLike, partTitle, roleLabel, warningsForPart } from "$lib/format";
   import { isPending, runningFor, runState, togglePart, toggleScript } from "$lib/runs.svelte";
   import type { ProjectPart } from "$lib/types";
   import PortChips from "./PortChips.svelte";
+  import WarningBadge from "./WarningBadge.svelte";
 
   let { part }: { part: ProjectPart } = $props();
 
@@ -13,6 +14,8 @@
   const failed = $derived(
     !live && runState.runs.some((run) => run.partId === part.id && run.status === "failed"),
   );
+  const warnings = $derived(warningsForPart(part.id, runState.runs, [...(runState.warnings ?? []), ...(dash.warnings ?? [])]));
+  const expected = $derived(!live);
 </script>
 
 <div class="app-row" class:selected class:live={Boolean(live)}>
@@ -29,10 +32,11 @@
         {#if part.framework}
           <span class="muted framework-tag">{part.framework}</span>
         {/if}
+        <WarningBadge {warnings} />
       </div>
     </div>
     <span class="port-cell">
-      <PortChips ports={ports} health={live?.health ?? null} />
+      <PortChips ports={ports} health={live?.health ?? null} {expected} />
     </span>
   </button>
 

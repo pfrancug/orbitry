@@ -1,7 +1,7 @@
 import { fetchRuns, startRun, stopAllRuns, stopRun } from "./api";
 import { groupNameFor } from "./format";
 import { rememberRecent } from "./recent";
-import type { ProjectPart, RepoGroup, Run } from "./types";
+import type { AppWarning, ProjectPart, RepoGroup, Run } from "./types";
 
 const SELECTED_PART_KEY = "orbitry.selectedPart";
 const SELECTED_SCRIPT_KEY = "orbitry.selectedScript";
@@ -9,6 +9,7 @@ const PANEL_KEY = "orbitry.panelOpen";
 
 export const runState = $state({
   runs: [] as Run[],
+  warnings: [] as AppWarning[],
   selectedId: null as string | null,
   selectedPartId: null as string | null,
   selectedScript: null as string | null,
@@ -39,8 +40,9 @@ export function upsertRun(run: Run) {
 }
 
 export async function refreshRuns() {
-  const { runs } = await fetchRuns();
+  const { runs, warnings } = await fetchRuns();
   runState.runs = runs;
+  runState.warnings = warnings ?? [];
 }
 
 export function runningFor(partId: string, script?: string | null): Run | undefined {
@@ -220,8 +222,9 @@ export async function stopAll() {
   runState.stoppingAll = true;
   runState.error = null;
   try {
-    const { runs } = await stopAllRuns();
+    const { runs, warnings } = await stopAllRuns();
     runState.runs = runs;
+    runState.warnings = warnings ?? [];
   } catch (err: unknown) {
     runState.error = err instanceof Error ? err.message : "Could not stop running apps.";
   } finally {

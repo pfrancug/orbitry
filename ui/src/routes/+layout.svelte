@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { afterNavigate } from "$app/navigation";
   import "../app.css";
+  import AlertStrip from "$lib/components/AlertStrip.svelte";
   import ControlPanel from "$lib/components/ControlPanel.svelte";
   import Icon from "$lib/components/Icon.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
@@ -113,6 +114,8 @@
     {#if bannerMessage()}
       <div class="banner">{bannerMessage()}</div>
     {/if}
+
+    <AlertStrip />
 
     <div class="workspace">
       <main class="list-pane">

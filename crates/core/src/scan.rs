@@ -109,7 +109,11 @@ pub fn scan(config: &Config) -> Vec<Project> {
             }
         }
     }
-    projects.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
+    projects.sort_by(|a, b| {
+        a.name
+            .to_ascii_lowercase()
+            .cmp(&b.name.to_ascii_lowercase())
+    });
     projects
 }
 
@@ -189,11 +193,8 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
             {
                 dep_names.extend(source.keys().cloned());
             }
-            let script_pairs: Vec<(String, String)> = pkg
-                .scripts
-                .unwrap_or_default()
-                .into_iter()
-                .collect();
+            let script_pairs: Vec<(String, String)> =
+                pkg.scripts.unwrap_or_default().into_iter().collect();
             scripts = detect_scripts(&script_pairs, &config.script_patterns, dir, &dep_names);
             framework = guess_js_framework(&dep_names);
         }
@@ -218,11 +219,7 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
             framework = Some("python".to_string());
         } else if has_go {
             if let Some(module) = read_go_module(dir) {
-                name = module
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or(&module)
-                    .to_string();
+                name = module.rsplit('/').next().unwrap_or(&module).to_string();
             }
             framework = Some("go".to_string());
         } else if has_docker {

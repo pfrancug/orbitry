@@ -69,9 +69,11 @@ pub fn group_projects(projects: Vec<Project>, roots: &[String]) -> Vec<RepoGroup
     groups.sort_by(|a, b| {
         let a_dirty = a.git.as_ref().is_some_and(|git| git.dirty);
         let b_dirty = b.git.as_ref().is_some_and(|git| git.dirty);
-        b_dirty
-            .cmp(&a_dirty)
-            .then_with(|| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()))
+        b_dirty.cmp(&a_dirty).then_with(|| {
+            a.name
+                .to_ascii_lowercase()
+                .cmp(&b.name.to_ascii_lowercase())
+        })
     });
     groups
 }
@@ -120,7 +122,9 @@ fn build_group(id: String, members: Vec<Project>) -> RepoGroup {
         .unwrap_or("project")
         .to_string();
 
-    let root = members.iter().find(|project| paths_equal(&project.path, &path));
+    let root = members
+        .iter()
+        .find(|project| paths_equal(&project.path, &path));
     let name = root
         .map(|project| project.name.clone())
         .filter(|name| !name.is_empty())
@@ -174,9 +178,11 @@ fn build_group(id: String, members: Vec<Project>) -> RepoGroup {
         .collect();
 
     parts.sort_by(|a, b| {
-        role_rank(a.role)
-            .cmp(&role_rank(b.role))
-            .then_with(|| a.relative_path.to_ascii_lowercase().cmp(&b.relative_path.to_ascii_lowercase()))
+        role_rank(a.role).cmp(&role_rank(b.role)).then_with(|| {
+            a.relative_path
+                .to_ascii_lowercase()
+                .cmp(&b.relative_path.to_ascii_lowercase())
+        })
     });
 
     RepoGroup {
@@ -216,8 +222,14 @@ fn part_role(project: &Project, group_path: &str, relative_path: &str) -> PartRo
         return PartRole::Be;
     }
 
-    let fe = project.scripts.iter().any(|script| matches!(script.scope, crate::ScriptScope::Fe));
-    let be = project.scripts.iter().any(|script| matches!(script.scope, crate::ScriptScope::Be));
+    let fe = project
+        .scripts
+        .iter()
+        .any(|script| matches!(script.scope, crate::ScriptScope::Fe));
+    let be = project
+        .scripts
+        .iter()
+        .any(|script| matches!(script.scope, crate::ScriptScope::Be));
     match (fe, be) {
         (true, false) => PartRole::Fe,
         (false, true) => PartRole::Be,
@@ -234,10 +246,21 @@ fn part_role(project: &Project, group_path: &str, relative_path: &str) -> PartRo
 
 fn is_lib_hint(folder: &str, name: &str, rel: &str) -> bool {
     const LIBS: &[&str] = &[
-        "shared", "core", "lib", "libs", "common", "types", "utils", "ml", "packages/core",
-        "packages/shared", "packages/types", "packages/lib",
+        "shared",
+        "core",
+        "lib",
+        "libs",
+        "common",
+        "types",
+        "utils",
+        "ml",
+        "packages/core",
+        "packages/shared",
+        "packages/types",
+        "packages/lib",
     ];
-    LIBS.iter().any(|hint| folder == *hint || name.ends_with(&format!("/{hint}")) || rel == *hint)
+    LIBS.iter()
+        .any(|hint| folder == *hint || name.ends_with(&format!("/{hint}")) || rel == *hint)
         || name.contains("/shared")
         || name.contains("/core")
         || name.ends_with("-shared")
@@ -246,10 +269,24 @@ fn is_lib_hint(folder: &str, name: &str, rel: &str) -> bool {
 
 fn is_fe_hint(folder: &str, name: &str, rel: &str) -> bool {
     const FES: &[&str] = &[
-        "web", "ui", "frontend", "client", "site", "extension", "desktop", "demo", "react-demo",
-        "apps/web", "apps/frontend", "apps/ui", "apps/extension", "apps/demo", "apps/react-demo",
+        "web",
+        "ui",
+        "frontend",
+        "client",
+        "site",
+        "extension",
+        "desktop",
+        "demo",
+        "react-demo",
+        "apps/web",
+        "apps/frontend",
+        "apps/ui",
+        "apps/extension",
+        "apps/demo",
+        "apps/react-demo",
     ];
-    FES.iter().any(|hint| folder == *hint || rel == *hint || rel.ends_with(&format!("/{hint}")))
+    FES.iter()
+        .any(|hint| folder == *hint || rel == *hint || rel.ends_with(&format!("/{hint}")))
         || name.contains("frontend")
         || name.contains("/web")
         || name.contains("/ui")
@@ -259,9 +296,17 @@ fn is_fe_hint(folder: &str, name: &str, rel: &str) -> bool {
 
 fn is_be_hint(folder: &str, name: &str, rel: &str) -> bool {
     const BES: &[&str] = &[
-        "server", "api", "backend", "svc", "service", "apps/api", "apps/server", "apps/backend",
+        "server",
+        "api",
+        "backend",
+        "svc",
+        "service",
+        "apps/api",
+        "apps/server",
+        "apps/backend",
     ];
-    BES.iter().any(|hint| folder == *hint || rel == *hint || rel.ends_with(&format!("/{hint}")))
+    BES.iter()
+        .any(|hint| folder == *hint || rel == *hint || rel.ends_with(&format!("/{hint}")))
         || name.contains("backend")
         || name.contains("/server")
         || name.contains("/api")

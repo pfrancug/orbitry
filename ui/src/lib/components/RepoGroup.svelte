@@ -1,6 +1,7 @@
 <script lang="ts">
   import { slide } from "svelte/transition";
   import { isJsLike, partTitle, shortPath } from "$lib/format";
+  import { runState } from "$lib/runs.svelte";
   import type { RepoGroup as RepoGroupType } from "$lib/types";
   import GitBuild from "./GitBuild.svelte";
   import ScriptChips from "./ScriptChips.svelte";
@@ -12,6 +13,11 @@
     group.parts.some((item) => isJsLike(item.kind) && !item.nodeModules),
   );
   const partLabel = $derived(group.parts.length === 1 ? "1 part" : `${group.parts.length} parts`);
+  const groupLive = $derived(
+    group.parts.some((part) =>
+      runState.runs.some((run) => run.status === "running" && run.partId === part.id),
+    ),
+  );
 
   function toggle() {
     open = !open;
@@ -23,7 +29,10 @@
     <div class="stack-title">
       <span class="chevron" class:open aria-hidden="true"></span>
       <div>
-        <h2 title={group.name}>{group.name}</h2>
+        <div class="title-row">
+          <h2 title={group.name}>{group.name}</h2>
+          {#if groupLive}<span class="pulse" title="Running" aria-label="Running"></span>{/if}
+        </div>
         <p class="path" title={group.path}>
           {shortPath(group.path)}
           <span class="count">· {partLabel}</span>
@@ -48,6 +57,9 @@
               <div class="part-name">
                 <span class="badge role role-{item.role}">{item.role}</span>
                 <h3 title={item.name}>{partTitle(item)}</h3>
+                {#if runState.runs.some((run) => run.status === "running" && run.partId === item.id)}
+                  <span class="pulse" title="Running" aria-label="Running"></span>
+                {/if}
               </div>
               <p class="path" title={item.path}>{item.name}</p>
             </div>
@@ -60,7 +72,7 @@
               {/if}
             </div>
           </div>
-          <ScriptChips scripts={item.scripts} />
+          <ScriptChips partId={item.id} scripts={item.scripts} />
           <div class="part-foot">
             <span class="build" class:ok={item.build.built}>
               {item.build.built ? "Built" : "Not built"}

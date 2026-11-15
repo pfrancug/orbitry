@@ -3,7 +3,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{pattern_matches, ScriptKind, ScriptPattern, ScriptScope, default_kind_patterns};
+use crate::config::{
+    default_kind_patterns, pattern_matches, ScriptKind, ScriptPattern, ScriptScope,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DetectedScript {
@@ -49,8 +51,27 @@ const BE_DEPS: &[&str] = &[
 const FE_NAME_HINTS: &[&str] = &["web", "ui", "frontend", "client", "site", "app-web"];
 const BE_NAME_HINTS: &[&str] = &["api", "server", "backend", "svc", "service", "worker"];
 const SHARED_NAME_HINTS: &[&str] = &["all", "full", "stack", "monorepo"];
-const FE_FOLDERS: &[&str] = &["web", "frontend", "ui", "client", "site", "app", "apps/web", "apps/frontend", "apps/ui"];
-const BE_FOLDERS: &[&str] = &["server", "api", "backend", "svc", "service", "apps/api", "apps/server", "apps/backend"];
+const FE_FOLDERS: &[&str] = &[
+    "web",
+    "frontend",
+    "ui",
+    "client",
+    "site",
+    "app",
+    "apps/web",
+    "apps/frontend",
+    "apps/ui",
+];
+const BE_FOLDERS: &[&str] = &[
+    "server",
+    "api",
+    "backend",
+    "svc",
+    "service",
+    "apps/api",
+    "apps/server",
+    "apps/backend",
+];
 
 pub fn detect_scripts(
     scripts: &[(String, String)],
@@ -61,8 +82,8 @@ pub fn detect_scripts(
     let mut detected = Vec::new();
     for (name, command) in scripts {
         if let Some((kind, custom_scope)) = match_script(name, custom) {
-            let scope = custom_scope
-                .unwrap_or_else(|| classify_scope(name, package_dir, dep_names));
+            let scope =
+                custom_scope.unwrap_or_else(|| classify_scope(name, package_dir, dep_names));
             detected.push(DetectedScript {
                 name: name.clone(),
                 command: command.clone(),
@@ -88,7 +109,11 @@ fn match_script(name: &str, custom: &[ScriptPattern]) -> Option<(ScriptKind, Opt
     None
 }
 
-pub fn classify_scope(script_name: &str, package_dir: &Path, dep_names: &BTreeSet<String>) -> ScriptScope {
+pub fn classify_scope(
+    script_name: &str,
+    package_dir: &Path,
+    dep_names: &BTreeSet<String>,
+) -> ScriptScope {
     let lower = script_name.to_ascii_lowercase();
     let token_source = lower.replace(':', " ").replace(['_', '-', '/'], " ");
     let tokens: Vec<&str> = token_source.split_whitespace().collect();

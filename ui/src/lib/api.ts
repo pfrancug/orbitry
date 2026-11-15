@@ -1,4 +1,4 @@
-import type { AppConfig, RepoGroup, ScriptPattern } from "./types";
+import type { AppConfig, RepoGroup, Run, ScriptPattern } from "./types";
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -33,3 +33,27 @@ export function saveConfig(config: {
     body: JSON.stringify(config),
   });
 }
+
+export function fetchRuns(): Promise<{ runs: Run[] }> {
+  return request("/api/runs");
+}
+
+export function startRun(partId: string, script: string): Promise<Run> {
+  return request("/api/run", {
+    method: "POST",
+    body: JSON.stringify({ partId, script }),
+  });
+}
+
+export function stopRun(runId: string): Promise<Run> {
+  return request("/api/stop", {
+    method: "POST",
+    body: JSON.stringify({ runId }),
+  });
+}
+
+export function logsSocket(runId: string): WebSocket {
+  const protocol = location.protocol === "https:" ? "wss" : "ws";
+  return new WebSocket(`${protocol}://${location.host}/api/runs/${runId}/logs`);
+}
+

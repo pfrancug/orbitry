@@ -1,9 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { fetchConfig, fetchProjects, saveConfig } from "$lib/api";
+  import LogDrawer from "$lib/components/LogDrawer.svelte";
   import RepoGroup from "$lib/components/RepoGroup.svelte";
   import SettingsPanel from "$lib/components/SettingsPanel.svelte";
   import { groupSearchText } from "$lib/format";
+  import { openRun, refreshRuns, runState } from "$lib/runs.svelte";
   import type { AppConfig, RepoGroup as RepoGroupType, ScriptPattern } from "$lib/types";
 
   let groups = $state<RepoGroupType[]>([]);
@@ -48,13 +50,24 @@
   }
 
   onMount(() => {
+    const wanted = new URLSearchParams(location.search).get("run");
     refresh()
+      .then(() => refreshRuns())
+      .then(() => {
+        if (wanted) openRun(wanted);
+      })
       .catch((err: unknown) => {
         error = err instanceof Error ? err.message : "Could not reach Orbitry.";
       })
       .finally(() => {
         loading = false;
       });
+    const timer = setInterval(() => {
+      refreshRuns().catch(() => {
+        // Keep the last known process list if a poll fails.
+      });
+    }, 2000);
+    return () => clearInterval(timer);
   });
 
   async function persist(next: { roots: string[]; scriptPatterns: ScriptPattern[] }) {
@@ -115,7 +128,7 @@
   }
 </script>
 
-<div class="shell">
+<div class="shell" class:has-drawer={runState.drawerOpen}>
   <div class="glow glow-a"></div>
   <div class="glow glow-b"></div>
 
@@ -160,8 +173,8 @@
     </div>
   </section>
 
-  {#if error}
-    <div class="banner">{error}</div>
+  {#if error || runState.error}
+    <div class="banner">{error || runState.error}</div>
   {/if}
 
   <div class="meta">
@@ -170,7 +183,7 @@
         Scanning...
       {:else}
         {visible.length}{visible.length === groups.length ? "" : ` of ${groups.length}`} in orbit
-        · {partCount} parts
+        · {partCount} parts{runState.runs.some((run) => run.status === "running") ? ` · ${runState.runs.filter((run) => run.status === "running").length} running` : ""}
       {/if}
     </p>
   </div>
@@ -197,6 +210,19 @@
       {/each}
     </div>
   {/if}
+
+  {#if runState.runs.some((run) => run.status === "running") && !runState.drawerOpen}
+    <button class="log-fab" type="button" onclick={() => {
+      const current = runState.runs.find((run) => run.status === "running");
+      if (current) openRun(current.id);
+      else runState.drawerOpen = true;
+    }}>
+      <span class="pulse" aria-hidden="true"></span>
+      Logs
+    </button>
+  {/if}
+
+  <LogDrawer />
 
   {#if settingsOpen && config}
     <SettingsPanel

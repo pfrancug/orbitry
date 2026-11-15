@@ -13,7 +13,7 @@ name = "orbitry"
 path = "src/main.rs"
 
 [dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 clap = { version = "4", features = ["derive"] }
 orbitry-core = { path = "../core" }
 serde = { version = "1", features = ["derive"] }

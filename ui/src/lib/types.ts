@@ -63,3 +63,29 @@ export type AppConfig = {
   scriptPatterns: ScriptPattern[];
   defaultPatterns: { kind: ScriptKind; pattern: string }[];
 };
+
+export type RunStatus = "running" | "exited" | "failed";
+export type LogStream = "stdout" | "stderr" | "system";
+
+export type Run = {
+  id: string;
+  partId: string;
+  partName: string;
+  partPath: string;
+  script: string;
+  command: string;
+  cwd: string;
+  pid: number | null;
+  status: RunStatus;
+  exitCode: number | null;
+  startedAt: number;
+  endedAt: number | null;
+};
+
+export type LogLine = {
+  seq: number;
+  stream: LogStream;
+  text: string;
+  ts: number;
+};
+

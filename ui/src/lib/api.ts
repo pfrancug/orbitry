@@ -1,4 +1,4 @@
-import type { AppConfig, Project, ScriptPattern } from "./types";
+import type { AppConfig, RepoGroup, ScriptPattern } from "./types";
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -16,7 +16,7 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function fetchProjects(): Promise<{ projects: Project[] }> {
+export function fetchProjects(): Promise<{ groups: RepoGroup[] }> {
   return request("/api/projects");
 }
 

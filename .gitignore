@@ -28,3 +28,6 @@ ehthumbs.db
 .vscode/
 *.swp
 *.swo
+
+# SvelteKit
+.svelte-kit/

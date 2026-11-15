@@ -1,6 +1,7 @@
 export type ScriptKind = "dev" | "preview";
 export type ScriptScope = "fe" | "be" | "shared";
 export type ProjectKind = "javascript" | "rust" | "python" | "go" | "docker" | "mixed";
+export type PartRole = "root" | "fe" | "be" | "shared" | "lib";
 
 export type DetectedScript = {
   name: string;
@@ -21,7 +22,7 @@ export type BuildInfo = {
   lastBuiltAt: number | null;
 };
 
-export type Project = {
+export type ProjectPart = {
   id: string;
   path: string;
   name: string;
@@ -33,6 +34,22 @@ export type Project = {
   build: BuildInfo;
   nodeModules: boolean;
   parent: string | null;
+  role: PartRole;
+  relativePath: string;
+};
+
+export type RepoGroup = {
+  id: string;
+  path: string;
+  name: string;
+  folder: string;
+  version: string | null;
+  kind: ProjectKind;
+  framework: string | null;
+  git: GitInfo | null;
+  build: BuildInfo;
+  nodeModules: boolean;
+  parts: ProjectPart[];
 };
 
 export type ScriptPattern = {

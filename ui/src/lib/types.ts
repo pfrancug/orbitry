@@ -27,12 +27,21 @@ export type BuildInfo = {
 export type PortInfo = {
   port: number;
   source: PortSource;
+  name?: string | null;
+};
+
+export type PortHealth = {
+  port: number;
+  status: HealthStatus;
+  url: string | null;
+  name?: string | null;
 };
 
 export type HealthInfo = {
   status: HealthStatus;
   url: string | null;
   checkedAt: number | null;
+  ports?: PortHealth[];
 };
 
 export type ProjectPart = {

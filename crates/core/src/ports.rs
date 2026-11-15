@@ -12,6 +12,7 @@ use std::process::{Command, Stdio};
 
 use serde::{Deserialize, Serialize};
 
+use crate::ports_resolve::resolve_script_targets;
 use crate::scripts::DetectedScript;
 use crate::util::hide_console;
 
@@ -44,12 +45,18 @@ impl PortSource {
 pub struct PortInfo {
     pub port: u16,
     pub source: PortSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 impl PortInfo {
     pub fn new(port: u16, source: PortSource) -> Option<Self> {
+        Self::named(port, source, None)
+    }
+
+    pub fn named(port: u16, source: PortSource, name: Option<String>) -> Option<Self> {
         if is_plausible_port(port) {
-            Some(Self { port, source })
+            Some(Self { port, source, name })
         } else {
             None
         }
@@ -62,6 +69,11 @@ pub fn merge_ports(ports: &mut Vec<PortInfo>, incoming: impl IntoIterator<Item =
         if let Some(existing) = ports.iter_mut().find(|item| item.port == port.port) {
             if port.source.rank() > existing.source.rank() {
                 existing.source = port.source;
+            }
+            if existing.name.is_none() {
+                existing.name = port.name;
+            } else if port.name.is_some() && port.source.rank() >= existing.source.rank() {
+                existing.name = port.name;
             }
         } else {
             ports.push(port);
@@ -88,27 +100,70 @@ pub fn detect_static_ports(
         }
     }
 
+    let filters: Vec<Option<String>> = if let Some(name) = script_filter {
+        vec![Some(name.to_string())]
+    } else if !scripts.is_empty() {
+        scripts.iter().map(|script| Some(script.name.clone())).collect()
+    } else {
+        vec![None]
+    };
+
     let mut ports = Vec::new();
-    collect_env_ports(dir, &mut ports);
-    collect_config_ports(dir, &mut ports);
-    collect_flag_ports(dir, scripts, script_filter, &mut ports);
+    for filter in filters {
+        let targets = resolve_script_targets(dir, filter.as_deref());
+        for target in targets {
+            let mut found = Vec::new();
+            let script_name = target.script.as_deref().or(filter.as_deref());
+            collect_local_ports(&target.dir, script_name, &mut found);
+            if found.is_empty() {
+                if script_starts_server(&target.dir, script_name) {
+                    let inferred = infer_framework(&target.dir);
+                    if let Some(port) = inferred.as_deref().and_then(default_port_for) {
+                        merge_ports(&mut found, PortInfo::named(port, PortSource::Default, target.name.clone()));
+                    }
+                }
+            } else if let Some(name) = &target.name {
+                for item in &mut found {
+                    if item.name.is_none() {
+                        item.name = Some(name.clone());
+                    }
+                }
+            }
+            merge_ports(&mut ports, found);
+        }
+    }
 
     if ports.is_empty() {
-        let inferred = framework
-            .map(str::to_string)
-            .or_else(|| infer_framework(dir));
-        if let Some(port) = inferred.as_deref().and_then(default_port_for) {
-            merge_ports(&mut ports, PortInfo::new(port, PortSource::Default));
+        let allow_default = match script_filter {
+            Some(name) => script_starts_server(dir, Some(name)),
+            None => scripts.is_empty()
+                || scripts.iter().any(|script| script_starts_server(dir, Some(&script.name))),
+        };
+        if allow_default {
+            let inferred = framework
+                .map(str::to_string)
+                .or_else(|| infer_framework(dir));
+            if let Some(port) = inferred.as_deref().and_then(default_port_for) {
+                merge_ports(&mut ports, PortInfo::new(port, PortSource::Default));
+            }
         }
     }
 
     ports
 }
 
+fn collect_local_ports(dir: &Path, script_filter: Option<&str>, ports: &mut Vec<PortInfo>) {
+    collect_env_ports(dir, ports);
+    collect_config_ports(dir, ports, script_filter);
+    collect_flag_ports(dir, &[], script_filter, ports);
+    collect_source_ports(dir, ports);
+}
+
 pub fn ports_from_log(line: &str) -> Vec<PortInfo> {
+    let name = concurrent_prefix(line);
     let mut found = Vec::new();
     for port in ports_from_host_urls(line) {
-        merge_ports(&mut found, PortInfo::new(port, PortSource::Log));
+        merge_ports(&mut found, PortInfo::named(port, PortSource::Log, name.clone()));
     }
     if found.is_empty() {
         let lower = line.to_ascii_lowercase();
@@ -119,12 +174,50 @@ pub fn ports_from_log(line: &str) -> Vec<PortInfo> {
             || lower.contains("--port")
         {
             for port in extract_ports(&lower, false) {
-                merge_ports(&mut found, PortInfo::new(port, PortSource::Log));
+                merge_ports(&mut found, PortInfo::named(port, PortSource::Log, name.clone()));
             }
         }
     }
     found
 }
+
+fn concurrent_prefix(line: &str) -> Option<String> {
+    let stripped: String = strip_ansi(line);
+    let trimmed = stripped.trim_start();
+    if !trimmed.starts_with('[') {
+        return None;
+    }
+    let end = trimmed.find(']')?;
+    let name = trimmed[1..end].trim();
+    if name.is_empty() || name.len() > 40 {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+fn strip_ansi(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == 0x1b && i + 1 < bytes.len() && bytes[i + 1] == b'[' {
+            i += 2;
+            while i < bytes.len() {
+                let ch = bytes[i];
+                i += 1;
+                if ch.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+            continue;
+        }
+        let ch = text[i..].chars().next().unwrap();
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
+}
+
 
 /// Listening TCP ports keyed by PID, then filtered to a process tree.
 pub fn listening_ports_for(root_pid: u32) -> Vec<PortInfo> {
@@ -167,7 +260,7 @@ fn collect_env_ports(dir: &Path, ports: &mut Vec<PortInfo>) {
     }
 }
 
-fn collect_config_ports(dir: &Path, ports: &mut Vec<PortInfo>) {
+fn collect_config_ports(dir: &Path, ports: &mut Vec<PortInfo>, script_filter: Option<&str>) {
     const NAMES: &[&str] = &[
         "vite.config.ts",
         "vite.config.js",
@@ -190,7 +283,12 @@ fn collect_config_ports(dir: &Path, ports: &mut Vec<PortInfo>) {
     ];
     for name in NAMES {
         let path = dir.join(name);
-        if let Ok(text) = fs::read_to_string(&path) {
+        if let Ok(raw) = fs::read_to_string(&path) {
+            let text = if is_dev_script(script_filter) {
+                strip_preview_block(&raw)
+            } else {
+                raw
+            };
             for port in extract_ports(&text, true) {
                 merge_ports(ports, PortInfo::new(port, PortSource::Config));
             }
@@ -221,6 +319,48 @@ fn collect_flag_ports(
             merge_ports(ports, PortInfo::new(port, PortSource::Flag));
         }
     }
+}
+
+
+fn script_starts_server(dir: &Path, script: Option<&str>) -> bool {
+    let Some(commands) = package_script_commands(dir, script) else {
+        return true;
+    };
+    commands.iter().any(|command| command_starts_server(command))
+}
+
+fn command_starts_server(command: &str) -> bool {
+    let lower = command.to_ascii_lowercase();
+    let has_vite_build = lower.contains("vite build");
+    let has_dev_vite = lower.contains("vite") && !has_vite_build;
+    let has_server = has_dev_vite
+        || lower.contains("vite dev")
+        || lower.contains("vite preview")
+        || lower.contains("vite serve")
+        || lower.contains("next dev")
+        || lower.contains("nuxt dev")
+        || lower.contains("nuxt start")
+        || lower.contains("astro dev")
+        || lower.contains("remix dev")
+        || lower.contains("webpack serve")
+        || lower.contains("webpack-dev-server")
+        || lower.contains("tsx ")
+        || lower.contains("ts-node")
+        || lower.contains("nodemon")
+        || lower.contains("cargo run")
+        || lower.contains("cargo watch")
+        || lower.contains("uvicorn")
+        || lower.contains("dotnet run")
+        || lower.contains("go run")
+        || (lower.contains("preview") && !has_vite_build)
+        || (lower.contains(" serve") && !has_vite_build);
+    if has_server {
+        return true;
+    }
+    if has_vite_build || lower.contains("tsc") || lower.contains("rimraf") {
+        return false;
+    }
+    true
 }
 
 fn package_script_commands(dir: &Path, script_filter: Option<&str>) -> Option<Vec<String>> {
@@ -460,6 +600,138 @@ fn is_plausible_port(port: u16) -> bool {
 fn is_app_port(port: u16) -> bool {
     matches!(port, 80 | 443) || (1024..=65535).contains(&port)
 }
+
+fn is_dev_script(script: Option<&str>) -> bool {
+    script.is_some_and(|name| {
+        let lower = name.to_ascii_lowercase();
+        lower == "dev" || lower.starts_with("dev:") || lower.starts_with("dev-")
+    })
+}
+
+fn strip_preview_block(text: &str) -> String {
+    let Some(start) = find_ident(text, "preview") else {
+        return text.to_string();
+    };
+    let rest = &text[start + 7..];
+    let Some(brace_rel) = rest.find('{') else {
+        return text.to_string();
+    };
+    if !rest[..brace_rel].chars().all(|c| c.is_whitespace() || c == ':') {
+        return text.to_string();
+    }
+    let abs = start + 7 + brace_rel;
+    let Some(end) = matching_brace(text, abs) else {
+        return text.to_string();
+    };
+    let mut out = String::with_capacity(text.len());
+    out.push_str(&text[..start]);
+    out.push_str(&text[end + 1..]);
+    out
+}
+
+fn find_ident(text: &str, ident: &str) -> Option<usize> {
+    let mut search = 0;
+    while let Some(at) = text[search..].find(ident) {
+        let abs = search + at;
+        let before = if abs == 0 { ' ' } else { text.as_bytes()[abs - 1] as char };
+        let after = text.as_bytes().get(abs + ident.len()).copied().unwrap_or(b' ') as char;
+        if !before.is_ascii_alphanumeric() && before != '_' && !after.is_ascii_alphanumeric() && after != '_' {
+            return Some(abs);
+        }
+        search = abs + ident.len();
+    }
+    None
+}
+
+fn matching_brace(text: &str, open: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    if bytes.get(open) != Some(&b'{') {
+        return None;
+    }
+    let mut depth = 0;
+    for (i, ch) in bytes.iter().enumerate().skip(open) {
+        match ch {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn collect_source_ports(dir: &Path, ports: &mut Vec<PortInfo>) {
+    const FILES: &[&str] = &[
+        "src/index.ts",
+        "src/index.js",
+        "src/server.ts",
+        "src/server.js",
+        "src/main.ts",
+        "src/main.js",
+        "src/app.ts",
+        "src/constants.ts",
+        "index.ts",
+        "server.ts",
+    ];
+    let mut sources = Vec::new();
+    for name in FILES {
+        if let Ok(text) = fs::read_to_string(dir.join(name)) {
+            sources.push(text);
+        }
+    }
+    let combined = sources.join("
+");
+    for port in ports_from_port_assignments(&combined) {
+        merge_ports(ports, PortInfo::new(port, PortSource::Config));
+    }
+
+    // Resolve imported PORT constants from a workspace "shared" package.
+    if combined.contains("PORT") {
+        for ancestor in dir.ancestors().take(4) {
+            for child in ["apps/shared", "packages/shared", "shared"] {
+                let shared = ancestor.join(child);
+                if !shared.join("package.json").exists() {
+                    continue;
+                }
+                for name in FILES {
+                    if let Ok(text) = fs::read_to_string(shared.join(name)) {
+                        for port in ports_from_port_assignments(&text) {
+                            merge_ports(ports, PortInfo::new(port, PortSource::Config));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn ports_from_port_assignments(text: &str) -> Vec<u16> {
+    let mut ports = Vec::new();
+    let lower = text.to_ascii_lowercase();
+    let mut search = 0;
+    while let Some(at) = lower[search..].find("port") {
+        let abs = search + at;
+        let start = text[..abs]
+            .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        let ident = &lower[start..abs + 4];
+        let after = lower[abs + 4..].trim_start_matches(|c: char| c.is_ascii_alphanumeric() || c == '_');
+        let after = after.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ':' | '='));
+        if ident == "port" || ident.ends_with("_port") {
+            if let Some(port) = parse_port_token(after.split(|c: char| !c.is_ascii_digit()).next().unwrap_or("")) {
+                ports.push(port);
+            }
+        }
+        search = abs + 4;
+    }
+    ports
+}
+
 
 fn process_tree(root: u32) -> Vec<u32> {
     #[cfg(windows)]

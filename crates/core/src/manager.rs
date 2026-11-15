@@ -282,6 +282,7 @@ impl ProcessManager {
             status: HealthStatus::Unknown,
             url: rec.info.health.url.clone(),
             checked_at: rec.info.health.checked_at,
+            ports: rec.info.health.ports.clone(),
         };
         let code_label = exit_code
             .map(|code| code.to_string())

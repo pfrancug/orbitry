@@ -7,6 +7,7 @@ mod group;
 mod health;
 mod manager;
 mod ports;
+mod ports_resolve;
 mod process;
 mod scan;
 mod scripts;

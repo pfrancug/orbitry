@@ -23,10 +23,21 @@ pub enum HealthStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PortHealth {
+    pub port: u16,
+    pub status: HealthStatus,
+    pub url: Option<String>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HealthInfo {
     pub status: HealthStatus,
     pub url: Option<String>,
     pub checked_at: Option<i64>,
+    #[serde(default)]
+    pub ports: Vec<PortHealth>,
 }
 
 impl HealthInfo {
@@ -35,6 +46,7 @@ impl HealthInfo {
             status: HealthStatus::Unknown,
             url: None,
             checked_at: None,
+            ports: Vec::new(),
         }
     }
 
@@ -43,6 +55,7 @@ impl HealthInfo {
             status: HealthStatus::Skipped,
             url: None,
             checked_at: Some(now),
+            ports: Vec::new(),
         }
     }
 
@@ -60,72 +73,87 @@ pub async fn check_health(ports: &[PortInfo]) -> HealthInfo {
         return HealthInfo::skipped(now);
     }
 
-    let mut last_fail: Option<HealthInfo> = None;
+    let mut handles = Vec::new();
     for item in ports {
-        let result = probe_port(item.port).await;
-        if result.status == HealthStatus::Ok {
-            return HealthInfo {
-                checked_at: Some(now),
-                ..result
-            };
-        }
-        last_fail = Some(HealthInfo {
-            checked_at: Some(now),
-            ..result
-        });
+        let port = item.port;
+        let name = item.name.clone();
+        handles.push(tokio::spawn(async move {
+            let probed = probe_port(port).await;
+            PortHealth {
+                port,
+                status: probed.0,
+                url: probed.1,
+                name,
+            }
+        }));
     }
-    last_fail.unwrap_or_else(|| HealthInfo::skipped(now))
+
+    let mut per_port = Vec::new();
+    for handle in handles {
+        if let Ok(item) = handle.await {
+            per_port.push(item);
+        }
+    }
+    per_port.sort_by_key(|item| item.port);
+
+    let any_ok = per_port.iter().any(|item| item.status == HealthStatus::Ok);
+    let any_fail = per_port.iter().any(|item| item.status == HealthStatus::Fail);
+    let status = if any_ok {
+        HealthStatus::Ok
+    } else if any_fail {
+        HealthStatus::Fail
+    } else {
+        HealthStatus::Skipped
+    };
+    let url = per_port
+        .iter()
+        .find(|item| item.status == HealthStatus::Ok)
+        .or_else(|| per_port.first())
+        .and_then(|item| item.url.clone());
+
+    HealthInfo {
+        status,
+        url,
+        checked_at: Some(now),
+        ports: per_port,
+    }
 }
 
-async fn probe_port(port: u16) -> HealthInfo {
+async fn probe_port(port: u16) -> (HealthStatus, Option<String>) {
     let addr = ("127.0.0.1", port);
     match timeout(PROBE_TIMEOUT, TcpStream::connect(addr)).await {
         Ok(Ok(_)) => {}
         _ => {
-            return HealthInfo {
-                status: HealthStatus::Fail,
-                url: Some(format!("http://127.0.0.1:{port}")),
-                checked_at: None,
-            };
+            return (
+                HealthStatus::Fail,
+                Some(format!("http://127.0.0.1:{port}")),
+            );
         }
     }
 
     for path in HEALTH_PATHS {
         match http_get(port, path).await {
             Some(status) if (200..400).contains(&status) => {
-                return HealthInfo {
-                    status: HealthStatus::Ok,
-                    url: Some(format!("http://127.0.0.1:{port}{path}")),
-                    checked_at: None,
-                };
+                return (
+                    HealthStatus::Ok,
+                    Some(format!("http://127.0.0.1:{port}{path}")),
+                );
             }
             Some(_) if *path == "/" => {
-                // The server answered something that is not a dedicated health
-                // route. Treat it as up: the port is serving HTTP.
-                return HealthInfo {
-                    status: HealthStatus::Ok,
-                    url: Some(format!("http://127.0.0.1:{port}/")),
-                    checked_at: None,
-                };
+                return (HealthStatus::Ok, Some(format!("http://127.0.0.1:{port}/")));
             }
             Some(_) => {}
             None if *path == "/" => {
-                // TCP is open but the peer is not speaking HTTP (or was slow).
-                return HealthInfo {
-                    status: HealthStatus::Ok,
-                    url: Some(format!("http://127.0.0.1:{port}")),
-                    checked_at: None,
-                };
+                return (HealthStatus::Ok, Some(format!("http://127.0.0.1:{port}")));
             }
             None => {}
         }
     }
 
-    HealthInfo {
-        status: HealthStatus::Ok,
-        url: Some(format!("http://127.0.0.1:{port}")),
-        checked_at: None,
-    }
+    (
+        HealthStatus::Ok,
+        Some(format!("http://127.0.0.1:{port}")),
+    )
 }
 
 async fn http_get(port: u16, path: &str) -> Option<u16> {

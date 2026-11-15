@@ -7,7 +7,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
-use crate::ports::PortInfo;
+use crate::ports::{localhost_url, probe_hosts, PortInfo, PortSource};
 
 const PROBE_TIMEOUT: Duration = Duration::from_millis(400);
 const HEALTH_PATHS: &[&str] = &["/api/health", "/health", "/healthz", "/"];
@@ -69,23 +69,18 @@ impl HealthInfo {
 
 pub async fn check_health(ports: &[PortInfo]) -> HealthInfo {
     let now = now_ms();
-    if ports.is_empty() {
+    let live: Vec<PortInfo> = ports
+        .iter()
+        .filter(|item| item.source == PortSource::Process)
+        .cloned()
+        .collect();
+    if live.is_empty() {
         return HealthInfo::skipped(now);
     }
 
     let mut handles = Vec::new();
-    for item in ports {
-        let port = item.port;
-        let name = item.name.clone();
-        handles.push(tokio::spawn(async move {
-            let probed = probe_port(port).await;
-            PortHealth {
-                port,
-                status: probed.0,
-                url: probed.1,
-                name,
-            }
-        }));
+    for item in live {
+        handles.push(tokio::spawn(async move { probe_item(item).await }));
     }
 
     let mut per_port = Vec::new();
@@ -119,50 +114,64 @@ pub async fn check_health(ports: &[PortInfo]) -> HealthInfo {
     }
 }
 
-async fn probe_port(port: u16) -> (HealthStatus, Option<String>) {
-    let addr = ("127.0.0.1", port);
-    match timeout(PROBE_TIMEOUT, TcpStream::connect(addr)).await {
-        Ok(Ok(_)) => {}
-        _ => {
-            return (
-                HealthStatus::Fail,
-                Some(format!("http://127.0.0.1:{port}")),
-            );
+async fn probe_item(item: PortInfo) -> PortHealth {
+    let hosts = probe_hosts(&item.binds);
+    let display = localhost_url(item.port, None);
+
+    for host in &hosts {
+        for path in HEALTH_PATHS {
+            if let Some(status) = http_get(host, item.port, path).await {
+                if (200..400).contains(&status) || *path == "/" {
+                    let url = if (200..400).contains(&status) {
+                        localhost_url(item.port, Some(path))
+                    } else {
+                        display.clone()
+                    };
+                    return PortHealth {
+                        port: item.port,
+                        status: HealthStatus::Ok,
+                        url: Some(url),
+                        name: item.name,
+                    };
+                }
+            }
         }
     }
 
-    for path in HEALTH_PATHS {
-        match http_get(port, path).await {
-            Some(status) if (200..400).contains(&status) => {
-                return (
-                    HealthStatus::Ok,
-                    Some(format!("http://127.0.0.1:{port}{path}")),
-                );
-            }
-            Some(_) if *path == "/" => {
-                return (HealthStatus::Ok, Some(format!("http://127.0.0.1:{port}/")));
-            }
-            Some(_) => {}
-            None if *path == "/" => {
-                return (HealthStatus::Ok, Some(format!("http://127.0.0.1:{port}")));
-            }
-            None => {}
+    for host in &hosts {
+        if tcp_ok(host, item.port).await {
+            return PortHealth {
+                port: item.port,
+                status: HealthStatus::Ok,
+                url: Some(display),
+                name: item.name,
+            };
         }
     }
 
-    (
-        HealthStatus::Ok,
-        Some(format!("http://127.0.0.1:{port}")),
-    )
+    PortHealth {
+        port: item.port,
+        status: HealthStatus::Fail,
+        url: Some(display),
+        name: item.name,
+    }
 }
 
-async fn http_get(port: u16, path: &str) -> Option<u16> {
-    let mut stream = timeout(PROBE_TIMEOUT, TcpStream::connect(("127.0.0.1", port)))
+async fn tcp_ok(host: &str, port: u16) -> bool {
+    timeout(PROBE_TIMEOUT, TcpStream::connect((host, port)))
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .is_some()
+}
+
+async fn http_get(host: &str, port: u16, path: &str) -> Option<u16> {
+    let mut stream = timeout(PROBE_TIMEOUT, TcpStream::connect((host, port)))
         .await
         .ok()?
         .ok()?;
     let request = format!(
-        "GET {path} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+        "GET {path} HTTP/1.0\r\nHost: localhost:{port}\r\nConnection: close\r\n\r\n"
     );
     timeout(PROBE_TIMEOUT, stream.write_all(request.as_bytes()))
         .await

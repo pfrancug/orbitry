@@ -5,7 +5,7 @@
 //! back to environment files, CLI flags, regex on config sources, framework
 //! defaults, log lines, and the live PID tree.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -47,6 +47,14 @@ pub struct PortInfo {
     pub source: PortSource,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub binds: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 impl PortInfo {
@@ -56,12 +64,203 @@ impl PortInfo {
 
     pub fn named(port: u16, source: PortSource, name: Option<String>) -> Option<Self> {
         if is_plausible_port(port) {
-            Some(Self { port, source, name })
+            Some(Self {
+                port,
+                source,
+                name,
+                binds: Vec::new(),
+                pid: None,
+                process: None,
+                url: Some(localhost_url(port, None)),
+            })
         } else {
             None
         }
     }
+
+    pub fn is_explicit(&self) -> bool {
+        matches!(
+            self.source,
+            PortSource::Config | PortSource::Env | PortSource::Flag
+        )
+    }
+
+    pub fn is_live(&self) -> bool {
+        self.source == PortSource::Process
+    }
 }
+
+/// A TCP listener observed on the machine, including bind address and owner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listener {
+    pub port: u16,
+    pub address: String,
+    pub pid: u32,
+    pub process: Option<String>,
+}
+
+/// Snapshot of every listening TCP port on this machine.
+#[derive(Debug, Clone, Default)]
+pub struct ListeningSnapshot {
+    pub listeners: Vec<Listener>,
+}
+
+impl ListeningSnapshot {
+    pub fn collect() -> Self {
+        Self {
+            listeners: collect_listeners(),
+        }
+    }
+
+    pub fn ports_for(&self, root_pid: u32) -> Vec<PortInfo> {
+        let tree: BTreeSet<u32> = process_tree(root_pid).into_iter().collect();
+        if tree.is_empty() {
+            return Vec::new();
+        }
+        let mut by_port: BTreeMap<u16, PortInfo> = BTreeMap::new();
+        for listener in &self.listeners {
+            if !tree.contains(&listener.pid) || !is_plausible_port(listener.port) {
+                continue;
+            }
+            let entry = by_port.entry(listener.port).or_insert_with(|| PortInfo {
+                port: listener.port,
+                source: PortSource::Process,
+                name: None,
+                binds: Vec::new(),
+                pid: Some(listener.pid),
+                process: listener.process.clone(),
+                url: Some(localhost_url(listener.port, None)),
+            });
+            if !entry.binds.iter().any(|bind| bind == &listener.address) {
+                entry.binds.push(listener.address.clone());
+            }
+            if entry.pid.is_none() {
+                entry.pid = Some(listener.pid);
+                entry.process = listener.process.clone();
+            }
+        }
+        by_port.into_values().collect()
+    }
+}
+
+pub fn localhost_url(port: u16, path: Option<&str>) -> String {
+    match path {
+        Some(value) if !value.is_empty() && value != "/" => {
+            format!("http://localhost:{port}{value}")
+        }
+        _ => format!("http://localhost:{port}"),
+    }
+}
+
+pub fn normalize_bind(address: &str) -> String {
+    let trimmed = address.trim().trim_matches(|c| c == '[' || c == ']');
+    if trimmed.is_empty() || trimmed == "*" || trimmed == "0.0.0.0" {
+        return "0.0.0.0".into();
+    }
+    if trimmed == "::" || trimmed == "::0" || trimmed == "::ffff:0.0.0.0" {
+        return "::".into();
+    }
+    trimmed.to_string()
+}
+
+pub fn is_wildcard_bind(address: &str) -> bool {
+    matches!(normalize_bind(address).as_str(), "0.0.0.0" | "::")
+}
+
+pub fn is_loopback_bind(address: &str) -> bool {
+    matches!(normalize_bind(address).as_str(), "127.0.0.1" | "::1")
+}
+
+pub fn is_ipv6_only(binds: &[String]) -> bool {
+    !binds.is_empty() && binds.iter().all(|bind| normalize_bind(bind) == "::1")
+}
+
+pub fn is_all_interfaces(binds: &[String]) -> bool {
+    binds.iter().any(|bind| is_wildcard_bind(bind))
+}
+
+pub fn is_lan_only(binds: &[String]) -> bool {
+    !binds.is_empty()
+        && !binds
+            .iter()
+            .any(|bind| is_wildcard_bind(bind) || is_loopback_bind(bind))
+}
+
+/// Hosts to probe for a live port, in preference order.
+pub fn probe_hosts(binds: &[String]) -> Vec<String> {
+    let mut hosts = Vec::new();
+    let mut push = |host: &str| {
+        if !hosts.iter().any(|existing| existing == host) {
+            hosts.push(host.to_string());
+        }
+    };
+    if binds.is_empty() {
+        push("127.0.0.1");
+        push("::1");
+        return hosts;
+    }
+    let has_v4 = binds.iter().any(|bind| {
+        let normalized = normalize_bind(bind);
+        normalized == "127.0.0.1" || normalized == "0.0.0.0"
+    });
+    let has_v6 = binds.iter().any(|bind| {
+        let normalized = normalize_bind(bind);
+        normalized == "::1" || normalized == "::"
+    });
+    if has_v4 {
+        push("127.0.0.1");
+    }
+    if has_v6 {
+        push("::1");
+    }
+    for bind in binds {
+        let normalized = normalize_bind(bind);
+        if !matches!(normalized.as_str(), "0.0.0.0" | "::" | "127.0.0.1" | "::1") {
+            push(&normalized);
+        }
+    }
+    drop(push);
+    if hosts.is_empty() {
+        hosts.push("127.0.0.1".into());
+        hosts.push("::1".into());
+    }
+    hosts
+}
+
+pub fn framework_label(framework: &str) -> String {
+    match framework.to_ascii_lowercase().as_str() {
+        "vite" | "vitest" => "Vite".into(),
+        "svelte" => "Svelte".into(),
+        "sveltekit" => "SvelteKit".into(),
+        "next" | "next.js" => "Next.js".into(),
+        "nuxt" => "Nuxt".into(),
+        "remix" => "Remix".into(),
+        "express" => "Express".into(),
+        "hono" => "Hono".into(),
+        "fastify" => "Fastify".into(),
+        "nest" | "nestjs" => "Nest".into(),
+        "koa" => "Koa".into(),
+        "react" | "cra" => "React".into(),
+        "webpack" => "webpack".into(),
+        "angular" => "Angular".into(),
+        "astro" => "Astro".into(),
+        "django" => "Django".into(),
+        "flask" => "Flask".into(),
+        "fastapi" => "FastAPI".into(),
+        "uvicorn" => "Uvicorn".into(),
+        "python" => "Python".into(),
+        "go" | "gin" => "Go".into(),
+        "axum" | "actix" | "rocket" | "warp" | "rust" => "Rust".into(),
+        other => {
+            let mut label = other.to_string();
+            if let Some(first) = label.get_mut(0..1) {
+                first.make_ascii_uppercase();
+            }
+            label
+        }
+    }
+}
+
 
 /// Merge `incoming` into `ports`, keeping the more specific source for a port.
 pub fn merge_ports(ports: &mut Vec<PortInfo>, incoming: impl IntoIterator<Item = PortInfo>) {
@@ -75,12 +274,29 @@ pub fn merge_ports(ports: &mut Vec<PortInfo>, incoming: impl IntoIterator<Item =
             } else if port.name.is_some() && port.source.rank() >= existing.source.rank() {
                 existing.name = port.name;
             }
+            for bind in port.binds {
+                if !existing.binds.iter().any(|item| item == &bind) {
+                    existing.binds.push(bind);
+                }
+            }
+            if port.pid.is_some()
+                && (existing.pid.is_none() || port.source.rank() >= existing.source.rank())
+            {
+                existing.pid = port.pid;
+                existing.process = port.process;
+            }
+            if existing.url.is_none() {
+                existing.url = port.url;
+            } else if port.url.is_some() && port.source.rank() >= existing.source.rank() {
+                existing.url = port.url;
+            }
         } else {
             ports.push(port);
         }
     }
     ports.sort_by_key(|item| item.port);
 }
+
 
 /// Hook for the optional Node config-bridge plugin. Returns `None` when the
 /// plugin is not installed, which is the usual case today.
@@ -221,20 +437,7 @@ fn strip_ansi(text: &str) -> String {
 
 /// Listening TCP ports keyed by PID, then filtered to a process tree.
 pub fn listening_ports_for(root_pid: u32) -> Vec<PortInfo> {
-    let tree: BTreeSet<u32> = process_tree(root_pid).into_iter().collect();
-    if tree.is_empty() {
-        return Vec::new();
-    }
-    let table = listening_table();
-    let mut ports = Vec::new();
-    for pid in tree {
-        if let Some(bound) = table.get(&pid) {
-            for port in bound {
-                merge_ports(&mut ports, PortInfo::new(*port, PortSource::Process));
-            }
-        }
-    }
-    ports
+    ListeningSnapshot::collect().ports_for(root_pid)
 }
 
 fn collect_env_ports(dir: &Path, ports: &mut Vec<PortInfo>) {
@@ -429,7 +632,7 @@ fn infer_framework(dir: &Path) -> Option<String> {
     None
 }
 
-fn default_port_for(framework: &str) -> Option<u16> {
+pub fn default_port_for(framework: &str) -> Option<u16> {
     let name = framework.to_ascii_lowercase();
     let port = match name.as_str() {
         "vite" | "svelte" | "sveltekit" | "vitest" => 5173,
@@ -822,33 +1025,92 @@ fn expand_tree(root: u32, pairs: &[(u32, u32)]) -> Vec<u32> {
     pids
 }
 
-fn listening_table() -> HashMap<u32, BTreeSet<u16>> {
+fn collect_listeners() -> Vec<Listener> {
+    let names = process_names();
+    let mut listeners = raw_listeners();
+    for listener in &mut listeners {
+        if listener.process.is_none() {
+            listener.process = names.get(&listener.pid).cloned();
+        }
+        listener.address = normalize_bind(&listener.address);
+    }
+    listeners
+}
+
+fn raw_listeners() -> Vec<Listener> {
     #[cfg(windows)]
     {
-        return windows_listening_table();
+        return windows_listeners();
     }
     #[cfg(not(windows))]
     {
-        unix_listening_table()
+        unix_listeners()
+    }
+}
+
+fn process_names() -> HashMap<u32, String> {
+    #[cfg(windows)]
+    {
+        return windows_process_names();
+    }
+    #[cfg(not(windows))]
+    {
+        unix_process_names()
     }
 }
 
 #[cfg(windows)]
-fn windows_listening_table() -> HashMap<u32, BTreeSet<u16>> {
+fn windows_process_names() -> HashMap<u32, String> {
+    use std::mem::{size_of, zeroed};
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+
+    let mut names = HashMap::new();
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap.is_null() || snap == INVALID_HANDLE_VALUE {
+            return names;
+        }
+        let mut entry: PROCESSENTRY32W = zeroed();
+        entry.dwSize = size_of::<PROCESSENTRY32W>() as u32;
+        if Process32FirstW(snap, &mut entry) != 0 {
+            loop {
+                names.insert(entry.th32ProcessID, wide_to_string(&entry.szExeFile));
+                if Process32NextW(snap, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snap);
+    }
+    names
+}
+
+#[cfg(windows)]
+fn wide_to_string(buf: &[u16]) -> String {
+    let len = buf.iter().position(|unit| *unit == 0).unwrap_or(buf.len());
+    String::from_utf16_lossy(&buf[..len])
+}
+
+#[cfg(windows)]
+fn windows_listeners() -> Vec<Listener> {
     let mut cmd = Command::new("netstat");
     cmd.args(["-ano"]);
     hide_console(&mut cmd);
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::null());
     let Ok(output) = cmd.output() else {
-        return HashMap::new();
+        return Vec::new();
     };
     parse_netstat(&String::from_utf8_lossy(&output.stdout))
 }
 
 #[cfg(windows)]
-fn parse_netstat(text: &str) -> HashMap<u32, BTreeSet<u16>> {
-    let mut table: HashMap<u32, BTreeSet<u16>> = HashMap::new();
+fn parse_netstat(text: &str) -> Vec<Listener> {
+    let mut listeners = Vec::new();
     for line in text.lines() {
         let trimmed = line.trim();
         if !trimmed.to_ascii_uppercase().starts_with("TCP") {
@@ -858,7 +1120,6 @@ fn parse_netstat(text: &str) -> HashMap<u32, BTreeSet<u16>> {
             continue;
         }
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        // TCP local foreign [state] pid  -- or with LISTENING before pid
         if parts.len() < 4 {
             continue;
         }
@@ -870,41 +1131,76 @@ fn parse_netstat(text: &str) -> HashMap<u32, BTreeSet<u16>> {
         if pid == 0 {
             continue;
         }
-        if let Some(port) = port_from_local_addr(local) {
-            table.entry(pid).or_default().insert(port);
+        if let Some((address, port)) = split_local_addr(local) {
+            listeners.push(Listener {
+                port,
+                address,
+                pid,
+                process: None,
+            });
         }
     }
-    table
+    listeners
 }
 
-fn port_from_local_addr(local: &str) -> Option<u16> {
+fn split_local_addr(local: &str) -> Option<(String, u16)> {
+    let local = local.trim();
     if let Some(rest) = local.strip_prefix('[') {
         let end = rest.find("]:")?;
-        return parse_port_token(&rest[end + 2..]);
+        let host = rest[..end].to_string();
+        let port = parse_port_token(&rest[end + 2..])?;
+        return Some((host, port));
     }
-    local.rsplit_once(':').and_then(|(_, port)| parse_port_token(port))
+    let (host, port) = local.rsplit_once(':')?;
+    Some((host.to_string(), parse_port_token(port)?))
+}
+
+#[allow(dead_code)]
+fn port_from_local_addr(local: &str) -> Option<u16> {
+    split_local_addr(local).map(|(_, port)| port)
 }
 
 #[cfg(not(windows))]
-fn unix_listening_table() -> HashMap<u32, BTreeSet<u16>> {
-    if let Some(table) = run_hidden_table(
-        "lsof",
-        &["-nP", "-iTCP", "-sTCP:LISTEN"],
-        parse_lsof,
-    ) {
-        if !table.is_empty() {
-            return table;
+fn unix_process_names() -> HashMap<u32, String> {
+    let mut cmd = Command::new("ps");
+    cmd.args(["-axo", "pid=,comm="]);
+    hide_console(&mut cmd);
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::null());
+    let Ok(output) = cmd.output() else {
+        return HashMap::new();
+    };
+    let mut names = HashMap::new();
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let trimmed = line.trim();
+        let Some((pid, name)) = trimmed.split_once(char::is_whitespace) else {
+            continue;
+        };
+        if let Ok(pid) = pid.parse::<u32>() {
+            names.insert(pid, name.trim().to_string());
         }
     }
-    run_hidden_table("ss", &["-lptn"], parse_ss).unwrap_or_default()
+    names
 }
 
 #[cfg(not(windows))]
-fn run_hidden_table(
+fn unix_listeners() -> Vec<Listener> {
+    if let Some(listeners) =
+        run_hidden_listeners("lsof", &["-nP", "-iTCP", "-sTCP:LISTEN"], parse_lsof)
+    {
+        if !listeners.is_empty() {
+            return listeners;
+        }
+    }
+    run_hidden_listeners("ss", &["-lptn"], parse_ss).unwrap_or_default()
+}
+
+#[cfg(not(windows))]
+fn run_hidden_listeners(
     bin: &str,
     args: &[&str],
-    parse: fn(&str) -> HashMap<u32, BTreeSet<u16>>,
-) -> Option<HashMap<u32, BTreeSet<u16>>> {
+    parse: fn(&str) -> Vec<Listener>,
+) -> Option<Vec<Listener>> {
     let mut cmd = Command::new(bin);
     cmd.args(args);
     hide_console(&mut cmd);
@@ -918,8 +1214,8 @@ fn run_hidden_table(
 }
 
 #[cfg(not(windows))]
-fn parse_lsof(text: &str) -> HashMap<u32, BTreeSet<u16>> {
-    let mut table: HashMap<u32, BTreeSet<u16>> = HashMap::new();
+fn parse_lsof(text: &str) -> Vec<Listener> {
+    let mut listeners = Vec::new();
     for line in text.lines().skip(1) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 9 {
@@ -928,41 +1224,75 @@ fn parse_lsof(text: &str) -> HashMap<u32, BTreeSet<u16>> {
         let Ok(pid) = parts[1].parse::<u32>() else {
             continue;
         };
-        if let Some(port) = port_from_local_addr(parts[8])
-            .or_else(|| parts[8].rsplit(':').next().and_then(parse_port_token))
-        {
-            table.entry(pid).or_default().insert(port);
-        }
+        let name = parts[8];
+        let parsed = split_local_addr(name).or_else(|| {
+            name.rsplit(':')
+                .next()
+                .and_then(parse_port_token)
+                .map(|port| (guess_lsof_host(name), port))
+        });
+        let Some((address, port)) = parsed else {
+            continue;
+        };
+        listeners.push(Listener {
+            port,
+            address,
+            pid,
+            process: Some(parts[0].to_string()),
+        });
     }
-    table
+    listeners
 }
 
 #[cfg(not(windows))]
-fn parse_ss(text: &str) -> HashMap<u32, BTreeSet<u16>> {
-    let mut table: HashMap<u32, BTreeSet<u16>> = HashMap::new();
+fn guess_lsof_host(name: &str) -> String {
+    if name.starts_with('*') {
+        return "0.0.0.0".into();
+    }
+    name.rsplit_once(':')
+        .map(|(host, _)| {
+            host.trim_start_matches('[')
+                .trim_end_matches(']')
+                .to_string()
+        })
+        .unwrap_or_else(|| "0.0.0.0".into())
+}
+
+#[cfg(not(windows))]
+fn parse_ss(text: &str) -> Vec<Listener> {
+    let mut listeners = Vec::new();
     for line in text.lines() {
         if !line.to_ascii_uppercase().contains("LISTEN") {
             continue;
         }
-        let pid = line
-            .split("pid=")
-            .nth(1)
-            .and_then(|rest| {
-                rest.chars()
-                    .take_while(|c| c.is_ascii_digit())
-                    .collect::<String>()
-                    .parse()
-                    .ok()
-            });
+        let pid = line.split("pid=").nth(1).and_then(|rest| {
+            rest.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .ok()
+        });
         let Some(pid) = pid else {
             continue;
         };
+        let process = line.split("users:((").nth(1).and_then(|rest| {
+            rest.trim_start_matches(|c| c == '"' || c == '\'')
+                .split(|c| c == '"' || c == '\'' || c == ',')
+                .next()
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        });
         for token in line.split_whitespace() {
-            if let Some(port) = port_from_local_addr(token) {
-                table.entry(pid).or_default().insert(port);
+            if let Some((address, port)) = split_local_addr(token) {
+                listeners.push(Listener {
+                    port,
+                    address,
+                    pid,
+                    process: process.clone(),
+                });
                 break;
             }
         }
     }
-    table
+    listeners
 }

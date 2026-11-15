@@ -10,7 +10,7 @@ use tokio::sync::{broadcast, Mutex};
 
 use crate::display_path;
 use crate::health::{check_health, HealthInfo, HealthStatus};
-use crate::ports::{detect_static_ports, listening_ports_for, ports_from_log};
+use crate::ports::{detect_static_ports, ports_from_log, ListeningSnapshot};
 use crate::process::{
     detect_package_manager, kill_process_tree, kill_process_tree_force, now_ms, run_command_label,
     script_command, LogLine, LogStream, Run, RunEvent, RunStatus,
@@ -118,8 +118,11 @@ impl ProcessManager {
             exit_code: None,
             started_at: now_ms(),
             ended_at: None,
-            ports: detect_static_ports(&cwd, &[], Some(&script), None),
+            ports: Vec::new(),
+            expected_ports: detect_static_ports(&cwd, &[], Some(&script), None),
             health: HealthInfo::unknown(),
+            warnings: Vec::new(),
+            log_ports: Vec::new(),
         };
 
         let (tx, _) = broadcast::channel(BROADCAST_CAP);
@@ -248,6 +251,19 @@ impl ProcessManager {
         runs
     }
 
+    pub async fn list_cached(&self) -> Vec<Run> {
+        let inner = self.inner.lock().await;
+        let mut runs: Vec<Run> = inner.runs.values().map(|rec| rec.info.clone()).collect();
+        runs.sort_by(|a, b| {
+            let a_running = a.status == RunStatus::Running;
+            let b_running = b.status == RunStatus::Running;
+            b_running
+                .cmp(&a_running)
+                .then(b.started_at.cmp(&a.started_at))
+        });
+        runs
+    }
+
     pub async fn get(&self, id: &str) -> Option<Run> {
         let inner = self.inner.lock().await;
         inner.runs.get(id).map(|rec| rec.info.clone())
@@ -284,6 +300,7 @@ impl ProcessManager {
             checked_at: rec.info.health.checked_at,
             ports: rec.info.health.ports.clone(),
         };
+        rec.info.warnings.clear();
         let code_label = exit_code
             .map(|code| code.to_string())
             .unwrap_or_else(|| "unknown".into());
@@ -299,7 +316,7 @@ impl ProcessManager {
             let found = ports_from_log(&text);
             rec.push(stream, text);
             if !found.is_empty() {
-                rec.info.merge_ports(found);
+                rec.info.merge_log_ports(found);
             }
         }
     }
@@ -324,29 +341,24 @@ impl ProcessManager {
             return;
         }
 
-        let mut updates = Vec::new();
-        for (id, pid, stale) in snapshots {
-            let live = if let Some(value) = pid {
-                tokio::task::spawn_blocking(move || listening_ports_for(value))
-                    .await
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            };
-            updates.push((id, live, stale));
-        }
+        let snapshot = tokio::task::spawn_blocking(ListeningSnapshot::collect)
+            .await
+            .unwrap_or_default();
 
         let probes: Vec<(String, Vec<crate::ports::PortInfo>)> = {
             let mut inner = self.inner.lock().await;
             let mut ready = Vec::new();
-            for (id, live, stale) in updates {
+            for (id, pid, stale) in snapshots {
                 let Some(rec) = inner.runs.get_mut(&id) else {
                     continue;
                 };
                 if rec.info.status != RunStatus::Running {
                     continue;
                 }
-                rec.info.merge_ports(live);
+                let live = pid
+                    .map(|value| snapshot.ports_for(value))
+                    .unwrap_or_default();
+                rec.info.apply_live_ports(live);
                 if stale {
                     ready.push((id, rec.info.ports.clone()));
                 }

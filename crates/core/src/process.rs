@@ -10,7 +10,8 @@ use std::process::Stdio;
 use serde::{Deserialize, Serialize};
 
 use crate::health::HealthInfo;
-use crate::ports::{merge_ports, PortInfo};
+use crate::ports::{localhost_url, merge_ports, PortInfo, PortSource};
+use crate::warnings::Warning;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -36,12 +37,54 @@ pub struct Run {
     pub started_at: i64,
     pub ended_at: Option<i64>,
     pub ports: Vec<PortInfo>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expected_ports: Vec<PortInfo>,
     pub health: HealthInfo,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<Warning>,
+    #[serde(default, skip_serializing)]
+    pub log_ports: Vec<PortInfo>,
 }
 
 impl Run {
     pub fn merge_ports(&mut self, incoming: impl IntoIterator<Item = PortInfo>) {
         merge_ports(&mut self.ports, incoming);
+        self.retain_display_ports();
+    }
+
+    pub fn merge_log_ports(&mut self, incoming: impl IntoIterator<Item = PortInfo>) {
+        merge_ports(&mut self.log_ports, incoming);
+    }
+
+    pub fn apply_live_ports(&mut self, live: Vec<PortInfo>) {
+        let mut live = live;
+        for item in &mut live {
+            if item.name.is_none() {
+                item.name = self
+                    .log_ports
+                    .iter()
+                    .chain(self.expected_ports.iter())
+                    .find(|port| port.port == item.port)
+                    .and_then(|port| port.name.clone());
+            }
+            if item.url.is_none() {
+                item.url = Some(localhost_url(item.port, None));
+            }
+        }
+        self.ports.retain(|port| port.source != PortSource::Process);
+        merge_ports(&mut self.ports, live);
+        self.retain_display_ports();
+    }
+
+    fn retain_display_ports(&mut self) {
+        if self.status != RunStatus::Running {
+            return;
+        }
+        if self.ports.iter().any(|port| port.source == PortSource::Process) {
+            self.ports.retain(|port| port.source == PortSource::Process);
+        } else {
+            self.ports.clear();
+        }
     }
 }
 

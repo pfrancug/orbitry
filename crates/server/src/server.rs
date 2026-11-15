@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, State};
@@ -9,8 +9,8 @@ use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use axum::Router;
 use orbitry_core::{
-    group_projects, load_config, save_config, scan, Config, ProcessManager, RepoGroup, Run,
-    StartError, Subscription,
+    attach_run_warnings, evaluate_warnings, group_projects, load_config, save_config, scan,
+    Config, ListeningSnapshot, ProcessManager, RepoGroup, Run, StartError, Subscription, Warning,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -21,15 +21,21 @@ use crate::shutdown::Shutdown;
 use crate::ui;
 
 #[derive(Clone)]
+struct Inventory {
+    groups: Vec<RepoGroup>,
+}
+
 struct AppState {
     config_path: PathBuf,
     manager: Arc<ProcessManager>,
+    inventory: StdMutex<Inventory>,
 }
 
 #[derive(Serialize)]
 struct ProjectsResponse {
     groups: Vec<RepoGroup>,
     projects: Vec<orbitry_core::Project>,
+    warnings: Vec<Warning>,
 }
 
 #[derive(Serialize)]
@@ -49,6 +55,7 @@ struct DefaultPattern {
 #[derive(Serialize)]
 struct RunsResponse {
     runs: Vec<Run>,
+    warnings: Vec<Warning>,
 }
 
 #[derive(Deserialize)]
@@ -97,6 +104,7 @@ async fn serve(
     let state = Arc::new(AppState {
         config_path,
         manager: Arc::clone(&manager),
+        inventory: StdMutex::new(Inventory { groups: Vec::new() }),
     });
 
     let router = Router::new()
@@ -193,7 +201,16 @@ async fn get_projects(
     let config = load_config(&state.config_path).map_err(internal)?;
     let projects = scan(&config);
     let groups = group_projects(projects.clone(), &config.roots);
-    Ok(Json(ProjectsResponse { groups, projects }))
+    if let Ok(mut inventory) = state.inventory.lock() {
+        inventory.groups = groups.clone();
+    }
+    let runs = state.manager.list_cached().await;
+    let warnings = collect_warnings(&groups, &runs).await;
+    Ok(Json(ProjectsResponse {
+        groups,
+        projects,
+        warnings,
+    }))
 }
 
 async fn get_config(
@@ -285,15 +302,15 @@ async fn post_stop(
 
 async fn post_stop_all(State(state): State<Arc<AppState>>) -> Json<RunsResponse> {
     state.manager.stop_all().await;
-    Json(RunsResponse {
-        runs: state.manager.list().await,
-    })
+    let runs = state.manager.list().await;
+    let (runs, warnings) = annotate_runs(&state, runs).await;
+    Json(RunsResponse { runs, warnings })
 }
 
 async fn get_runs(State(state): State<Arc<AppState>>) -> Json<RunsResponse> {
-    Json(RunsResponse {
-        runs: state.manager.list().await,
-    })
+    let runs = state.manager.list().await;
+    let (runs, warnings) = annotate_runs(&state, runs).await;
+    Json(RunsResponse { runs, warnings })
 }
 
 async fn logs_ws(
@@ -350,6 +367,24 @@ async fn handle_logs(mut socket: WebSocket, sub: Subscription) {
             }
         }
     }
+}
+
+async fn annotate_runs(state: &AppState, mut runs: Vec<Run>) -> (Vec<Run>, Vec<Warning>) {
+    let groups = state
+        .inventory
+        .lock()
+        .map(|inventory| inventory.groups.clone())
+        .unwrap_or_default();
+    let warnings = collect_warnings(&groups, &runs).await;
+    attach_run_warnings(&mut runs, &warnings);
+    (runs, warnings)
+}
+
+async fn collect_warnings(groups: &[RepoGroup], runs: &[Run]) -> Vec<Warning> {
+    let snapshot = tokio::task::spawn_blocking(ListeningSnapshot::collect)
+        .await
+        .unwrap_or_default();
+    evaluate_warnings(groups, runs, &snapshot.listeners)
 }
 
 fn internal(err: String) -> (StatusCode, String) {

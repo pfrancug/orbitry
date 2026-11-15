@@ -10,7 +10,8 @@ use axum::routing::{get, post};
 use axum::Router;
 use orbitry_core::{
     attach_run_warnings, evaluate_warnings, group_projects, load_config, save_config, scan,
-    Config, ListeningSnapshot, ProcessManager, RepoGroup, Run, StartError, Subscription, Warning,
+    Config, ListeningSnapshot, PortOverride, ProcessManager, RepoGroup, Run, StartError,
+    Subscription, Warning,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -101,6 +102,9 @@ async fn serve(
     ready: UnboundedSender<Result<u16, String>>,
 ) -> Result<(), String> {
     let manager = ProcessManager::new();
+    if let Ok(config) = load_config(&config_path) {
+        manager.set_port_overrides(config.port_overrides).await;
+    }
     let state = Arc::new(AppState {
         config_path,
         manager: Arc::clone(&manager),
@@ -115,6 +119,8 @@ async fn serve(
         .route("/api/stop-all", post(post_stop_all))
         .route("/api/runs", get(get_runs))
         .route("/api/runs/{id}/logs", get(logs_ws))
+        .route("/api/pick-folder", post(post_pick_folder))
+        .route("/api/open", post(post_open))
         .fallback(ui::serve_ui)
         .with_state(state);
 
@@ -199,6 +205,10 @@ async fn get_projects(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ProjectsResponse>, (StatusCode, String)> {
     let config = load_config(&state.config_path).map_err(internal)?;
+    state
+        .manager
+        .set_port_overrides(config.port_overrides.clone())
+        .await;
     let projects = scan(&config);
     let groups = group_projects(projects.clone(), &config.roots);
     if let Ok(mut inventory) = state.inventory.lock() {
@@ -226,11 +236,27 @@ async fn get_config(
     }))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConfigBody {
+    #[serde(default)]
+    roots: Vec<String>,
+    #[serde(default)]
+    script_patterns: Vec<orbitry_core::ScriptPattern>,
+    #[serde(default)]
+    port_overrides: Option<Vec<PortOverride>>,
+}
+
 async fn put_config(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<Config>,
+    Json(body): Json<ConfigBody>,
 ) -> Result<Json<ConfigResponse>, (StatusCode, String)> {
-    let mut config = body;
+    let existing = load_config(&state.config_path).map_err(internal)?;
+    let mut config = Config {
+        roots: body.roots,
+        script_patterns: body.script_patterns,
+        port_overrides: body.port_overrides.unwrap_or(existing.port_overrides),
+    };
     config.roots = config
         .roots
         .into_iter()
@@ -241,6 +267,10 @@ async fn put_config(
         .script_patterns
         .retain(|pattern| !pattern.pattern.trim().is_empty());
     save_config(&state.config_path, &config).map_err(internal)?;
+    state
+        .manager
+        .set_port_overrides(config.port_overrides.clone())
+        .await;
     Ok(Json(ConfigResponse {
         config,
         default_patterns: orbitry_core::default_kind_patterns()
@@ -255,6 +285,10 @@ async fn post_run(
     Json(body): Json<RunRequest>,
 ) -> Result<Json<Run>, (StatusCode, String)> {
     let config = load_config(&state.config_path).map_err(internal)?;
+    state
+        .manager
+        .set_port_overrides(config.port_overrides.clone())
+        .await;
     let projects = scan(&config);
     let project = projects
         .iter()
@@ -385,6 +419,50 @@ async fn collect_warnings(groups: &[RepoGroup], runs: &[Run]) -> Vec<Warning> {
         .await
         .unwrap_or_default();
     evaluate_warnings(groups, runs, &snapshot.listeners)
+}
+
+#[derive(Serialize)]
+struct PickFolderResponse {
+    path: String,
+}
+
+#[derive(Deserialize)]
+struct OpenRequest {
+    kind: String,
+    path: String,
+}
+
+async fn post_pick_folder() -> Result<impl IntoResponse, (StatusCode, String)> {
+    let picked = tokio::task::spawn_blocking(crate::open::pick_folder)
+        .await
+        .map_err(|err| internal(format!("folder dialog: {err}")))?
+        .map_err(internal)?;
+    match picked {
+        Some(path) => Ok(Json(PickFolderResponse {
+            path: path.to_string_lossy().to_string(),
+        })
+        .into_response()),
+        None => Ok(StatusCode::NO_CONTENT.into_response()),
+    }
+}
+
+async fn post_open(
+    Json(body): Json<OpenRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let path = PathBuf::from(body.path.trim());
+    let result = tokio::task::spawn_blocking(move || match body.kind.as_str() {
+        "terminal" => crate::open::open_in_terminal(&path),
+        "vscode" => crate::open::open_in_vscode(&path),
+        other => Err(format!("unknown open kind: {other}")),
+    })
+    .await
+    .map_err(|err| internal(format!("open: {err}")))?;
+    match result {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(err) if err.starts_with("folder not found") => Err((StatusCode::NOT_FOUND, err)),
+        Err(err) if err.starts_with("unknown open kind") => Err((StatusCode::BAD_REQUEST, err)),
+        Err(err) => Err((StatusCode::BAD_REQUEST, err)),
+    }
 }
 
 fn internal(err: String) -> (StatusCode, String) {

@@ -12,6 +12,7 @@ use std::process::{Command, Stdio};
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::PortOverride;
 use crate::ports_resolve::resolve_script_targets;
 use crate::scripts::DetectedScript;
 use crate::util::hide_console;
@@ -55,6 +56,10 @@ pub struct PortInfo {
     pub process: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health_url: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ignored: bool,
 }
 
 impl PortInfo {
@@ -72,6 +77,8 @@ impl PortInfo {
                 pid: None,
                 process: None,
                 url: Some(localhost_url(port, None)),
+                health_url: None,
+                ignored: false,
             })
         } else {
             None
@@ -130,6 +137,8 @@ impl ListeningSnapshot {
                 pid: Some(listener.pid),
                 process: listener.process.clone(),
                 url: Some(localhost_url(listener.port, None)),
+                health_url: None,
+                ignored: false,
             });
             if !entry.binds.iter().any(|bind| bind == &listener.address) {
                 entry.binds.push(listener.address.clone());
@@ -290,6 +299,10 @@ pub fn merge_ports(ports: &mut Vec<PortInfo>, incoming: impl IntoIterator<Item =
             } else if port.url.is_some() && port.source.rank() >= existing.source.rank() {
                 existing.url = port.url;
             }
+            if port.health_url.is_some() {
+                existing.health_url = port.health_url;
+            }
+            existing.ignored = existing.ignored || port.ignored;
         } else {
             ports.push(port);
         }
@@ -297,6 +310,36 @@ pub fn merge_ports(ports: &mut Vec<PortInfo>, incoming: impl IntoIterator<Item =
     ports.sort_by_key(|item| item.port);
 }
 
+
+
+/// Apply user port overrides from Orbitry config: custom names, health URLs, or ignore.
+pub fn apply_port_overrides(ports: &mut Vec<PortInfo>, part_id: &str, overrides: &[PortOverride]) {
+    let relevant: Vec<&PortOverride> = overrides
+        .iter()
+        .filter(|item| item.matches_part(part_id))
+        .collect();
+    if relevant.is_empty() {
+        return;
+    }
+    for port in ports.iter_mut() {
+        let Some(item) = relevant.iter().find(|item| item.port == port.port) else {
+            continue;
+        };
+        if let Some(name) = item.name.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+            port.name = Some(name.to_string());
+        }
+        if let Some(url) = item
+            .health_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            port.health_url = Some(url.to_string());
+        }
+        port.ignored = item.ignore;
+    }
+    ports.retain(|port| !port.ignored);
+}
 
 /// Hook for the optional Node config-bridge plugin. Returns `None` when the
 /// plugin is not installed, which is the usual case today.

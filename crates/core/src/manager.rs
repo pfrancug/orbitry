@@ -10,7 +10,8 @@ use tokio::sync::{broadcast, Mutex};
 
 use crate::display_path;
 use crate::health::{check_health, HealthInfo, HealthStatus};
-use crate::ports::{detect_static_ports, ports_from_log, ListeningSnapshot};
+use crate::config::PortOverride;
+use crate::ports::{apply_port_overrides, detect_static_ports, ports_from_log, ListeningSnapshot};
 use crate::process::{
     detect_package_manager, kill_process_tree, kill_process_tree_force, now_ms, run_command_label,
     script_command, LogLine, LogStream, Run, RunEvent, RunStatus,
@@ -31,6 +32,7 @@ pub struct ProcessManager {
 
 struct Inner {
     runs: HashMap<String, RunRecord>,
+    overrides: Vec<PortOverride>,
 }
 
 struct RunRecord {
@@ -58,6 +60,7 @@ impl ProcessManager {
         Arc::new(Self {
             inner: Mutex::new(Inner {
                 runs: HashMap::new(),
+                overrides: Vec::new(),
             }),
             #[cfg(windows)]
             job: WinJob::new(),
@@ -89,6 +92,10 @@ impl ProcessManager {
             }
         }
 
+        let overrides = {
+            let inner = self.inner.lock().await;
+            inner.overrides.clone()
+        };
         let pm = detect_package_manager(&cwd);
         let command = run_command_label(pm, &script);
         let id = uuid::Uuid::new_v4().to_string();
@@ -105,6 +112,9 @@ impl ProcessManager {
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
 
+        let mut expected_ports = detect_static_ports(&cwd, &[], Some(&script), None);
+        apply_port_overrides(&mut expected_ports, &part_id, &overrides);
+
         let info = Run {
             id: id.clone(),
             part_id,
@@ -119,7 +129,7 @@ impl ProcessManager {
             started_at: now_ms(),
             ended_at: None,
             ports: Vec::new(),
-            expected_ports: detect_static_ports(&cwd, &[], Some(&script), None),
+            expected_ports,
             health: HealthInfo::unknown(),
             warnings: Vec::new(),
             log_ports: Vec::new(),
@@ -251,6 +261,11 @@ impl ProcessManager {
         runs
     }
 
+    pub async fn set_port_overrides(&self, overrides: Vec<PortOverride>) {
+        let mut inner = self.inner.lock().await;
+        inner.overrides = overrides;
+    }
+
     pub async fn list_cached(&self) -> Vec<Run> {
         let inner = self.inner.lock().await;
         let mut runs: Vec<Run> = inner.runs.values().map(|rec| rec.info.clone()).collect();
@@ -347,6 +362,7 @@ impl ProcessManager {
 
         let probes: Vec<(String, Vec<crate::ports::PortInfo>)> = {
             let mut inner = self.inner.lock().await;
+            let overrides = inner.overrides.clone();
             let mut ready = Vec::new();
             for (id, pid, stale) in snapshots {
                 let Some(rec) = inner.runs.get_mut(&id) else {
@@ -359,6 +375,11 @@ impl ProcessManager {
                     .map(|value| snapshot.ports_for(value))
                     .unwrap_or_default();
                 rec.info.apply_live_ports(live);
+                apply_port_overrides(
+                    &mut rec.info.ports,
+                    &rec.info.part_id,
+                    &overrides,
+                );
                 if stale {
                     ready.push((id, rec.info.ports.clone()));
                 }

@@ -115,6 +115,24 @@ pub async fn check_health(ports: &[PortInfo]) -> HealthInfo {
 }
 
 async fn probe_item(item: PortInfo) -> PortHealth {
+    if let Some(custom) = item.health_url.clone() {
+        if let Some(status) = http_get_url(&custom).await {
+            let ok = (200..400).contains(&status);
+            return PortHealth {
+                port: item.port,
+                status: if ok { HealthStatus::Ok } else { HealthStatus::Fail },
+                url: Some(custom),
+                name: item.name,
+            };
+        }
+        return PortHealth {
+            port: item.port,
+            status: HealthStatus::Fail,
+            url: Some(custom),
+            name: item.name,
+        };
+    }
+
     let hosts = probe_hosts(&item.binds);
     let display = localhost_url(item.port, None);
 
@@ -163,6 +181,34 @@ async fn tcp_ok(host: &str, port: u16) -> bool {
         .ok()
         .and_then(Result::ok)
         .is_some()
+}
+
+async fn http_get_url(url: &str) -> Option<u16> {
+    let (host, port, path) = parse_http_url(url)?;
+    http_get(&host, port, &path).await
+}
+
+fn parse_http_url(url: &str) -> Option<(String, u16, String)> {
+    let rest = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))?;
+    let (hostport, path) = match rest.split_once('/') {
+        Some((host, rest)) => (host, format!("/{rest}")),
+        None => (rest, "/".to_string()),
+    };
+    if hostport.is_empty() {
+        return None;
+    }
+    let (host, port) = if let Some(rest) = hostport.strip_prefix('[') {
+        let end = rest.find("]:")?;
+        let port = rest[end + 2..].parse().ok()?;
+        (rest[..end].to_string(), port)
+    } else if let Some((host, port)) = hostport.rsplit_once(':') {
+        (host.to_string(), port.parse().ok()?)
+    } else {
+        (hostport.to_string(), 80)
+    };
+    Some((host, port, path))
 }
 
 async fn http_get(host: &str, port: u16, path: &str) -> Option<u16> {

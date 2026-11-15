@@ -25,6 +25,25 @@ pub struct ScriptPattern {
     pub pattern: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PortOverride {
+    pub part_id: String,
+    pub port: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health_url: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ignore: bool,
+}
+
+impl PortOverride {
+    pub fn matches_part(&self, part_id: &str) -> bool {
+        paths_equal(&self.part_id, part_id)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
@@ -32,6 +51,8 @@ pub struct Config {
     pub roots: Vec<String>,
     #[serde(default)]
     pub script_patterns: Vec<ScriptPattern>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub port_overrides: Vec<PortOverride>,
 }
 
 impl Config {

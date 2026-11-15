@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::artifacts::{detect_build, has_node_modules, BuildInfo};
 use crate::config::{canonical, display_path, Config};
 use crate::git::{detect_git, GitInfo};
-use crate::ports::{detect_static_ports, PortInfo};
+use crate::ports::{apply_port_overrides, detect_static_ports, PortInfo};
 use crate::scripts::{detect_scripts, guess_js_framework, DetectedScript};
 
 const SKIP_DIRS: &[&str] = &[
@@ -116,6 +116,9 @@ pub fn scan(config: &Config) -> Vec<Project> {
             .to_ascii_lowercase()
             .cmp(&b.name.to_ascii_lowercase())
     });
+    for project in &mut projects {
+        apply_port_overrides(&mut project.ports, &project.id, &config.port_overrides);
+    }
     projects
 }
 

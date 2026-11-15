@@ -3,6 +3,7 @@
 mod browser;
 mod console_win;
 mod instance;
+mod open;
 mod server;
 mod shutdown;
 mod tray;

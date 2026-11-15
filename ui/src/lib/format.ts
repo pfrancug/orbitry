@@ -1,4 +1,4 @@
-import type { ProjectKind, ProjectPart, RepoGroup } from "./types";
+import type { HealthInfo, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run } from "./types";
 
 export function timeAgo(unix: number | null): string {
   if (!unix) return "recently";
@@ -28,6 +28,35 @@ export function partTitle(part: ProjectPart): string {
   return part.name;
 }
 
+export function roleLabel(role: PartRole): string {
+  if (role === "fe") return "FE";
+  if (role === "be") return "BE";
+  if (role === "shared") return "shared";
+  if (role === "lib") return "lib";
+  return "app";
+}
+
+export function formatPorts(ports: PortInfo[] | undefined): string {
+  if (!ports?.length) return "";
+  const unique = [...new Set(ports.map((item) => item.port))];
+  return unique.map((port) => `:${port}`).join("  ");
+}
+
+export function portsFor(part: ProjectPart, runs: Run[]): PortInfo[] {
+  const live = runs.find((run) => run.status === "running" && run.partId === part.id);
+  if (live?.ports?.length) return live.ports;
+  const latest = runs.find((run) => run.partId === part.id && run.ports?.length);
+  if (latest) return latest.ports;
+  return part.ports ?? [];
+}
+
+export function healthLabel(health: HealthInfo | undefined): string {
+  if (!health || health.status === "unknown") return "idle";
+  if (health.status === "ok") return "healthy";
+  if (health.status === "fail") return "down";
+  return "no port";
+}
+
 export function groupSearchText(group: RepoGroup): string {
   return [
     group.name,
@@ -43,6 +72,7 @@ export function groupSearchText(group: RepoGroup): string {
       part.framework ?? "",
       part.role,
       ...part.scripts.map((script) => script.name),
+      ...part.ports.map((item) => String(item.port)),
     ]),
   ]
     .join(" ")

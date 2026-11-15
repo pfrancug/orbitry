@@ -2,6 +2,8 @@ export type ScriptKind = "dev" | "preview";
 export type ScriptScope = "fe" | "be" | "shared";
 export type ProjectKind = "javascript" | "rust" | "python" | "go" | "docker" | "mixed";
 export type PartRole = "root" | "fe" | "be" | "shared" | "lib";
+export type PortSource = "default" | "config" | "env" | "flag" | "log" | "process";
+export type HealthStatus = "unknown" | "ok" | "fail" | "skipped";
 
 export type DetectedScript = {
   name: string;
@@ -22,6 +24,17 @@ export type BuildInfo = {
   lastBuiltAt: number | null;
 };
 
+export type PortInfo = {
+  port: number;
+  source: PortSource;
+};
+
+export type HealthInfo = {
+  status: HealthStatus;
+  url: string | null;
+  checkedAt: number | null;
+};
+
 export type ProjectPart = {
   id: string;
   path: string;
@@ -36,6 +49,7 @@ export type ProjectPart = {
   parent: string | null;
   role: PartRole;
   relativePath: string;
+  ports: PortInfo[];
 };
 
 export type RepoGroup = {
@@ -80,6 +94,8 @@ export type Run = {
   exitCode: number | null;
   startedAt: number;
   endedAt: number | null;
+  ports: PortInfo[];
+  health: HealthInfo;
 };
 
 export type LogLine = {
@@ -88,4 +104,3 @@ export type LogLine = {
   text: string;
   ts: number;
 };
-

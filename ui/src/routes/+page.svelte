@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { fetchConfig, fetchProjects, saveConfig } from "$lib/api";
-  import LogDrawer from "$lib/components/LogDrawer.svelte";
-  import RepoGroup from "$lib/components/RepoGroup.svelte";
+  import ControlPanel from "$lib/components/ControlPanel.svelte";
+  import ProjectRow from "$lib/components/ProjectRow.svelte";
   import SettingsPanel from "$lib/components/SettingsPanel.svelte";
+  import { loadExpanded, toggleExpanded } from "$lib/expand";
   import { groupSearchText } from "$lib/format";
-  import { openRun, refreshRuns, runState } from "$lib/runs.svelte";
+  import { openRun, refreshRuns, restoreSelection, runState } from "$lib/runs.svelte";
   import type { AppConfig, RepoGroup as RepoGroupType, ScriptPattern } from "$lib/types";
 
   let groups = $state<RepoGroupType[]>([]);
@@ -16,6 +17,8 @@
   let error = $state<string | null>(null);
   let loading = $state(true);
   let saving = $state(false);
+  let refreshing = $state(false);
+  let expanded = $state<string[]>([]);
 
   const visible = $derived.by(() => {
     const needle = query.trim().toLowerCase();
@@ -29,7 +32,14 @@
         if (groupHit || groupSearchText(group).includes(needle)) {
           if (groupHit) return group;
           const parts = group.parts.filter((part) =>
-            [part.name, part.path, part.relativePath, part.framework ?? "", part.role, ...part.scripts.map((s) => s.name)]
+            [
+              part.name,
+              part.path,
+              part.relativePath,
+              part.framework ?? "",
+              part.role,
+              ...part.scripts.map((script) => script.name),
+            ]
               .join(" ")
               .toLowerCase()
               .includes(needle),
@@ -41,15 +51,43 @@
       .filter((group): group is RepoGroupType => group !== null);
   });
 
-  const partCount = $derived(visible.reduce((sum, group) => sum + group.parts.length, 0));
+  const allParts = $derived(groups.flatMap((group) => group.parts));
+  const partCount = $derived(groups.reduce((sum, group) => sum + group.parts.length, 0));
+  const runningCount = $derived(runState.runs.filter((run) => run.status === "running").length);
+  const errorCount = $derived(
+    runState.runs.filter((run) => run.status === "failed").length +
+      runState.runs.filter((run) => run.status === "running" && run.health?.status === "fail").length,
+  );
+  const selectedPart = $derived(
+    allParts.find((part) => part.id === runState.selectedPartId) ?? null,
+  );
+
+  function isOpen(group: RepoGroupType): boolean {
+    if (query.trim()) return true;
+    return expanded.includes(group.id);
+  }
 
   async function refresh() {
     const [nextConfig, nextProjects] = await Promise.all([fetchConfig(), fetchProjects()]);
     config = nextConfig;
     groups = nextProjects.groups;
+    restoreSelection(nextProjects.groups.flatMap((group) => group.parts));
+  }
+
+  async function refreshAll() {
+    refreshing = true;
+    error = null;
+    try {
+      await Promise.all([refresh(), refreshRuns()]);
+    } catch (err: unknown) {
+      error = err instanceof Error ? err.message : "Could not reach Orbitry.";
+    } finally {
+      refreshing = false;
+    }
   }
 
   onMount(() => {
+    expanded = loadExpanded();
     const wanted = new URLSearchParams(location.search).get("run");
     refresh()
       .then(() => refreshRuns())
@@ -128,109 +166,98 @@
   }
 </script>
 
-<div class="shell" class:has-drawer={runState.drawerOpen}>
+<div class="shell" class:panel-open={runState.panelOpen}>
   <div class="glow glow-a"></div>
   <div class="glow glow-b"></div>
 
   <header class="topbar">
     <div class="brand">
-      <span class="mark" aria-hidden="true">✦</span>
+      <span class="mark" aria-hidden="true"></span>
       <div>
         <p class="logo">Orbitry</p>
         <p class="tagline">All your apps. One orbit.</p>
       </div>
     </div>
 
+    <div class="stats" aria-label="Summary">
+      <div class="stat">
+        <b>{loading ? "—" : groups.length}</b>
+        <span>Projects</span>
+      </div>
+      <div class="stat">
+        <b>{loading ? "—" : partCount}</b>
+        <span>Apps</span>
+      </div>
+      <div class="stat" class:live={runningCount > 0}>
+        <b>{runningCount}</b>
+        <span>Running</span>
+      </div>
+      <div class="stat" class:alert={errorCount > 0}>
+        <b>{errorCount}</b>
+        <span>Errors</span>
+      </div>
+    </div>
+
     <label class="search">
       <span class="sr-only">Search projects</span>
-      <input bind:value={query} placeholder="Search projects, branches, scripts..." />
+      <input bind:value={query} placeholder="Search projects, apps, branches..." />
     </label>
 
-    <button class="icon-btn" type="button" onclick={() => (settingsOpen = true)}>Settings</button>
-  </header>
-
-  <section class="roots">
-    <form class="root-form" onsubmit={addRoot}>
-      <label class="sr-only" for="root-path">Project root folder</label>
-      <input
-        id="root-path"
-        bind:value={rootDraft}
-        placeholder="Add a project folder...  C:\Projects\private"
-        spellcheck="false"
-      />
-      <button type="submit" disabled={saving || !rootDraft.trim()}>Add folder</button>
-    </form>
-    <div class="root-list">
-      {#each config?.roots ?? [] as root (root)}
-        <button class="root-chip" type="button" onclick={() => removeRoot(root)} title="Remove folder">
-          <span>{root}</span>
-          <i aria-hidden="true">×</i>
-        </button>
-      {/each}
-      {#if config && config.roots.length === 0}
-        <p class="hint">Point Orbitry at a folder of projects to begin.</p>
-      {/if}
+    <div class="top-actions">
+      <button class="icon-btn" type="button" disabled={refreshing || loading} onclick={refreshAll}>
+        {refreshing ? "Refreshing..." : "Refresh"}
+      </button>
+      <button class="icon-btn" type="button" onclick={() => (settingsOpen = true)}>Settings</button>
     </div>
-  </section>
+  </header>
 
   {#if error || runState.error}
     <div class="banner">{error || runState.error}</div>
   {/if}
 
-  <div class="meta">
-    <p>
+  <div class="workspace">
+    <main class="list-pane">
       {#if loading}
-        Scanning...
+        <div class="project-list">
+          {#each Array(8) as _, index (index)}
+            <div class="project skeleton"></div>
+          {/each}
+        </div>
+      {:else if visible.length === 0}
+        <div class="empty">
+          <strong>{groups.length === 0 ? "Nothing in orbit yet." : "No matches."}</strong>
+          <p>
+            {groups.length === 0
+              ? "Open Settings and add a folder of projects."
+              : "Try a different name, branch, or script."}
+          </p>
+        </div>
       {:else}
-        {visible.length}{visible.length === groups.length ? "" : ` of ${groups.length}`} in orbit
-        · {partCount} parts{runState.runs.some((run) => run.status === "running") ? ` · ${runState.runs.filter((run) => run.status === "running").length} running` : ""}
+        <div class="project-list">
+          {#each visible as group (group.id)}
+            <ProjectRow
+              {group}
+              open={isOpen(group)}
+              ontoggle={() => (expanded = toggleExpanded(expanded, group.id))}
+            />
+          {/each}
+        </div>
       {/if}
-    </p>
+    </main>
+
+    <ControlPanel part={selectedPart} />
   </div>
-
-  {#if loading}
-    <div class="grid">
-      {#each Array(6) as _, index (index)}
-        <div class="stack skeleton"></div>
-      {/each}
-    </div>
-  {:else if visible.length === 0}
-    <div class="empty">
-      <strong>{groups.length === 0 ? "Nothing in orbit yet." : "No matches."}</strong>
-      <p>
-        {groups.length === 0
-          ? "Add a folder above and Orbitry will map every app it finds."
-          : "Try a different name, branch, or script."}
-      </p>
-    </div>
-  {:else}
-    <div class="grid">
-      {#each visible as group, index (group.id)}
-        <RepoGroup {group} {index} />
-      {/each}
-    </div>
-  {/if}
-
-  {#if runState.runs.some((run) => run.status === "running") && !runState.drawerOpen}
-    <button class="log-fab" type="button" onclick={() => {
-      const current = runState.runs.find((run) => run.status === "running");
-      if (current) openRun(current.id);
-      else runState.drawerOpen = true;
-    }}>
-      <span class="pulse" aria-hidden="true"></span>
-      Logs
-    </button>
-  {/if}
-
-  <LogDrawer />
 
   {#if settingsOpen && config}
     <SettingsPanel
       {config}
       {saving}
+      bind:rootDraft
       onclose={() => (settingsOpen = false)}
       onadd={addPattern}
       onremove={removePattern}
+      onaddroot={addRoot}
+      onremoveroot={removeRoot}
     />
   {/if}
 </div>

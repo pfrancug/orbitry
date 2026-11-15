@@ -1,4 +1,34 @@
-import type { AppWarning, HealthInfo, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run } from "./types";
+import type { AppWarning, HealthInfo, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run, ScanChange, ScanDiff } from "./types";
+
+export function formatAgeMs(ms: number | null | undefined): string {
+  if (!ms) return "just now";
+  const seconds = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 14) return `${days}d ago`;
+  return new Date(ms).toLocaleDateString();
+}
+
+export function changeLabel(item: ScanChange): string {
+  if (item.kind === "script") return `${item.part ?? item.project} · ${item.script}`;
+  if (item.kind === "part") return item.part ? `${item.project} / ${item.part}` : item.project;
+  return item.project;
+}
+
+export function changeSummary(diff: ScanDiff): string {
+  const parts: string[] = [];
+  if (diff.added.length) parts.push(`${diff.added.length} new`);
+  if (diff.changed.length) parts.push(`${diff.changed.length} changed`);
+  if (diff.removed.length) parts.push(`${diff.removed.length} removed`);
+  const names = [...diff.added, ...diff.changed, ...diff.removed].slice(0, 5).map(changeLabel);
+  const extra = diff.added.length + diff.changed.length + diff.removed.length - names.length;
+  const list = names.join(", ") + (extra > 0 ? ` +${extra}` : "");
+  return `${parts.join(", ")}${list ? ` — ${list}` : ""}`;
+}
 
 export function timeAgo(unix: number | null): string {
   if (!unix) return "recently";

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { dash } from "$lib/dashboard.svelte";
+  import { dash, startBlockReason } from "$lib/dashboard.svelte";
   import {
     displayRunPorts,
     findPart,
@@ -172,7 +172,8 @@
             <button
               class="quick-item"
               type="button"
-              disabled={isPending(item.partId, item.script)}
+              disabled={isPending(item.partId, item.script) || Boolean(startBlockReason(item.partId, item.script))}
+              title={startBlockReason(item.partId, item.script) ?? `Start ${item.script}`}
               onclick={() => startScript(item.partId, item.script, dash.groups)}
             >
               <Icon name="play" size={12} />
@@ -240,8 +241,8 @@
                 <button
                   class="icon-btn ghost"
                   type="button"
-                  title="Restart"
-                  disabled={pending}
+                  title={startBlockReason(run.partId, run.script) ?? "Restart"}
+                  disabled={pending || Boolean(startBlockReason(run.partId, run.script))}
                   onclick={() => restartScript(run.partId, run.script, dash.groups)}
                 >
                   <Icon name="restart" />
@@ -300,8 +301,8 @@
                 <button
                   class="icon-btn ghost"
                   type="button"
-                  title="Start again"
-                  disabled={isPending(run.partId, run.script)}
+                  title={startBlockReason(run.partId, run.script) ?? "Start again"}
+                  disabled={isPending(run.partId, run.script) || Boolean(startBlockReason(run.partId, run.script))}
                   onclick={() => startScript(run.partId, run.script, dash.groups)}
                 >
                   <Icon name="play" size={12} />

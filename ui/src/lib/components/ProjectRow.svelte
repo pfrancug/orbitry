@@ -1,7 +1,7 @@
 <script lang="ts">
   import { slide } from "svelte/transition";
   import { isJsLike, shortPath, warningsForPart } from "$lib/format";
-  import { dash } from "$lib/dashboard.svelte";
+  import { dash, groupMarker as markerForGroup, removedPartsFor } from "$lib/dashboard.svelte";
   import { runState } from "$lib/runs.svelte";
   import type { RepoGroup as RepoGroupType } from "$lib/types";
   import AppRow from "./AppRow.svelte";
@@ -33,6 +33,8 @@
   const versions = $derived(
     [...new Set((group.parts ?? []).map((part) => part.version).filter((value): value is string => Boolean(value)))],
   );
+  const groupMarker = $derived(markerForGroup(group.id));
+  const removedParts = $derived(removedPartsFor(group.id));
   const warnings = $derived(
     (group.parts ?? []).flatMap((part) =>
       warningsForPart(part.id, runState.runs, [...(runState.warnings ?? []), ...(dash.warnings ?? [])]),
@@ -40,7 +42,7 @@
   );
 </script>
 
-<section class="project" class:open class:live={running.length > 0}>
+<section class="project" class:open class:live={running.length > 0} class:removed={groupMarker === "removed"}>
   <button class="project-row" type="button" onclick={ontoggle} aria-expanded={open}>
     <span class="chevron" class:open aria-hidden="true"></span>
     <div class="project-id">
@@ -53,6 +55,9 @@
           <span class="dot fail" title="A process failed"></span>
         {/if}
         <WarningBadge {warnings} />
+        {#if groupMarker === "new"}<span class="marker new">New</span>{/if}
+        {#if groupMarker === "changed"}<span class="marker changed">Changed</span>{/if}
+        {#if groupMarker === "removed"}<span class="marker removed">Removed</span>{/if}
       </div>
       <p class="path" title={group.path}>{shortPath(group.path)}</p>
     </div>
@@ -79,6 +84,18 @@
     <div class="app-list" transition:slide={{ duration: 160 }}>
       {#each (group.parts ?? []) as part (part.id)}
         <AppRow {part} />
+      {/each}
+      {#each removedParts as item (item.partId)}
+        <div class="app-row removed">
+          <div class="app-main">
+            <div class="app-id">
+              <div class="app-name">
+                <strong>{item.part ?? item.partId}</strong>
+                <span class="marker removed">Removed</span>
+              </div>
+            </div>
+          </div>
+        </div>
       {/each}
     </div>
   {/if}

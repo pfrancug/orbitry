@@ -1,4 +1,4 @@
-import type { AppConfig, AppWarning, PortOverride, RepoGroup, Run, ScriptPattern } from "./types";
+import type { AppConfig, AppWarning, PortOverride, ProjectsResponse, Run, ScriptPattern } from "./types";
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -16,8 +16,12 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function fetchProjects(): Promise<{ groups: RepoGroup[]; warnings?: AppWarning[] }> {
+export function fetchProjects(): Promise<ProjectsResponse> {
   return request("/api/projects");
+}
+
+export function requestScan(): Promise<ProjectsResponse> {
+  return request("/api/scan", { method: "POST" });
 }
 
 export function fetchConfig(): Promise<AppConfig> {

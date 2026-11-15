@@ -1,10 +1,12 @@
-import { fetchConfig, fetchProjects, pickFolder, saveConfig } from "./api";
+import { fetchConfig, fetchProjects, pickFolder, requestScan, saveConfig } from "./api";
 import { refreshRuns, restoreSelection, runState } from "./runs.svelte";
-import type { AppConfig, AppWarning, PortOverride, RepoGroup, ScriptPattern } from "./types";
+import type { AppConfig, AppWarning, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanStatus, ScriptPattern } from "./types";
 
 export const dash = $state({
   groups: [] as RepoGroup[],
   warnings: [] as AppWarning[],
+  scan: null as ScanStatus | null,
+  dismissedScannedAt: null as number | null,
   config: null as AppConfig | null,
   query: "",
   rootDraft: "",
@@ -14,6 +16,120 @@ export const dash = $state({
   refreshing: false,
 });
 
+let scanPoll: ReturnType<typeof setInterval> | null = null;
+
+export function applyProjectSnapshot(payload: ProjectsResponse) {
+  dash.groups = payload.groups ?? [];
+  dash.warnings = payload.warnings ?? [];
+  dash.scan = payload.scan ?? null;
+  if (payload.scan?.error) {
+    dash.error = payload.scan.error;
+  }
+  restoreSelection(dash.groups.flatMap((group) => group.parts ?? []));
+  watchScan();
+}
+
+export function isDiffEmpty(diff: { added: ScanChange[]; removed: ScanChange[]; changed: ScanChange[] } | null | undefined): boolean {
+  if (!diff) return true;
+  return diff.added.length + diff.removed.length + diff.changed.length === 0;
+}
+
+export function changesVisible(): boolean {
+  const scan = dash.scan;
+  if (!scan || scan.state !== "fresh" || isDiffEmpty(scan.diff) || scan.scannedAt == null) return false;
+  return dash.dismissedScannedAt !== scan.scannedAt;
+}
+
+export function dismissChanges() {
+  dash.dismissedScannedAt = dash.scan?.scannedAt ?? null;
+}
+
+export function startsLocked(): boolean {
+  return dash.scan?.state !== "fresh";
+}
+
+export function isRemovedEntry(partId?: string, script?: string, projectId?: string): boolean {
+  if (!changesVisible()) return false;
+  return (dash.scan?.diff?.removed ?? []).some((item) => {
+    if (projectId && item.kind === "project" && item.projectId === projectId && !item.partId) return true;
+    if (partId && item.partId === partId && (!item.script || item.script === script || !script)) {
+      if (item.kind === "script" && script) return item.script === script;
+      if (item.kind !== "script") return true;
+    }
+    return false;
+  });
+}
+
+export function startBlockReason(partId?: string, script?: string): string | null {
+  if (startsLocked()) return "Verifying… waiting for rescan";
+  if (partId && isRemovedEntry(partId, script)) return "This app is no longer in the scan.";
+  return null;
+}
+
+export function groupMarker(projectId: string): "new" | "changed" | "removed" | null {
+  if (!changesVisible()) return null;
+  const diff = dash.scan?.diff;
+  if (!diff) return null;
+  if (diff.removed.some((item) => item.kind === "project" && item.projectId === projectId)) return "removed";
+  if (diff.added.some((item) => item.kind === "project" && item.projectId === projectId)) return "new";
+  if (
+    diff.added.some((item) => item.projectId === projectId) ||
+    diff.changed.some((item) => item.projectId === projectId) ||
+    diff.removed.some((item) => item.projectId === projectId)
+  ) {
+    return "changed";
+  }
+  return null;
+}
+
+export function partMarker(partId: string, projectId?: string): "new" | "changed" | "removed" | null {
+  if (!changesVisible()) return null;
+  const diff = dash.scan?.diff;
+  if (!diff) return null;
+  if (isRemovedEntry(partId, undefined, projectId)) return "removed";
+  if (diff.added.some((item) => item.partId === partId || (item.kind === "project" && item.projectId === projectId))) {
+    return "new";
+  }
+  if (diff.changed.some((item) => item.partId === partId || (item.kind === "project" && item.projectId === projectId))) {
+    return "changed";
+  }
+  return null;
+}
+
+export function removedPartsFor(projectId: string): ScanChange[] {
+  if (!changesVisible()) return [];
+  return (dash.scan?.diff?.removed ?? []).filter(
+    (item) => item.projectId === projectId && item.kind !== "project" && Boolean(item.partId),
+  );
+}
+
+export function removedProjects(): ScanChange[] {
+  if (!changesVisible()) return [];
+  return (dash.scan?.diff?.removed ?? []).filter((item) => item.kind === "project");
+}
+
+export function watchScan() {
+  if (dash.scan?.state === "scanning") {
+    if (!scanPoll) {
+      scanPoll = setInterval(() => {
+        void pollScan();
+      }, 700);
+    }
+  } else if (scanPoll) {
+    clearInterval(scanPoll);
+    scanPoll = null;
+    dash.refreshing = false;
+  }
+}
+
+async function pollScan() {
+  try {
+    applyProjectSnapshot(await fetchProjects());
+  } catch {
+    // Keep the last snapshot if a poll fails.
+  }
+}
+
 export const allParts = () => dash.groups.flatMap((group) => group.parts ?? []);
 
 export const partCount = () => dash.groups.reduce((sum, group) => sum + (group.parts ?? []).length, 0);
@@ -21,21 +137,27 @@ export const partCount = () => dash.groups.reduce((sum, group) => sum + (group.p
 export async function loadDashboard() {
   const [nextConfig, nextProjects] = await Promise.all([fetchConfig(), fetchProjects()]);
   dash.config = nextConfig;
-  dash.groups = nextProjects.groups;
-  dash.warnings = nextProjects.warnings ?? [];
-  restoreSelection(nextProjects.groups.flatMap((group) => group.parts ?? []));
+  applyProjectSnapshot(nextProjects);
 }
 
-export async function refreshAll() {
+export async function refreshAll(force = false) {
   dash.refreshing = true;
   dash.error = null;
   try {
-    await Promise.all([loadDashboard(), refreshRuns()]);
+    if (force) {
+      const [nextConfig, nextProjects] = await Promise.all([fetchConfig(), requestScan()]);
+      dash.config = nextConfig;
+      applyProjectSnapshot(nextProjects);
+      await refreshRuns();
+    } else {
+      await Promise.all([loadDashboard(), refreshRuns()]);
+    }
   } catch (err: unknown) {
     dash.error = err instanceof Error ? err.message : "Could not reach Orbitry.";
-  } finally {
     dash.refreshing = false;
+  } finally {
     dash.loading = false;
+    if (dash.scan?.state !== "scanning") dash.refreshing = false;
   }
 }
 
@@ -52,9 +174,7 @@ export async function persist(next: { roots: string[]; scriptPatterns: ScriptPat
   dash.error = null;
   try {
     dash.config = await saveConfig(withOverrides(next));
-    const { groups, warnings } = await fetchProjects();
-    dash.groups = groups;
-    dash.warnings = warnings ?? [];
+    applyProjectSnapshot(await fetchProjects());
   } catch (err: unknown) {
     dash.error = err instanceof Error ? err.message : "Could not save settings.";
   } finally {

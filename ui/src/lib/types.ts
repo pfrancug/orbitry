@@ -144,3 +144,37 @@ export type LogLine = {
   text: string;
   ts: number;
 };
+
+export type ScanState = "cached" | "scanning" | "fresh";
+export type ScanChangeKind = "project" | "part" | "script";
+
+export type ScanChange = {
+  kind: ScanChangeKind;
+  project: string;
+  projectId: string;
+  part?: string | null;
+  partId?: string | null;
+  script?: string | null;
+  detail?: string | null;
+};
+
+export type ScanDiff = {
+  added: ScanChange[];
+  removed: ScanChange[];
+  changed: ScanChange[];
+};
+
+export type ScanStatus = {
+  state: ScanState;
+  stale: boolean;
+  scannedAt?: number | null;
+  startedAt?: number | null;
+  diff?: ScanDiff | null;
+  error?: string | null;
+};
+
+export type ProjectsResponse = {
+  groups: RepoGroup[];
+  warnings?: AppWarning[];
+  scan?: ScanStatus;
+};

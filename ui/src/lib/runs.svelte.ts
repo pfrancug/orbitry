@@ -1,4 +1,5 @@
 import { fetchRuns, startRun, stopAllRuns, stopRun } from "./api";
+import { startBlockReason } from "./dashboard.svelte";
 import { groupNameFor } from "./format";
 import { rememberRecent } from "./recent";
 import type { AppWarning, ProjectPart, RepoGroup, Run } from "./types";
@@ -152,6 +153,13 @@ function remember(partId: string, script: string, groups: RepoGroup[]) {
 
 export async function toggleScript(partId: string, script: string, groups: RepoGroup[] = []) {
   const existing = runningFor(partId, script);
+  if (!existing) {
+    const blocked = startBlockReason(partId, script);
+    if (blocked) {
+      runState.error = blocked;
+      return;
+    }
+  }
   await withPending(partId, script, async () => {
     if (existing) {
       const run = await stopRun(existing.id);
@@ -169,6 +177,11 @@ export async function toggleScript(partId: string, script: string, groups: RepoG
 
 export async function startScript(partId: string, script: string, groups: RepoGroup[] = []) {
   if (runningFor(partId, script) || isPending(partId, script)) return;
+  const blocked = startBlockReason(partId, script);
+  if (blocked) {
+    runState.error = blocked;
+    return;
+  }
   await withPending(partId, script, async () => {
     const run = await startRun(partId, script);
     upsertRun(run);
@@ -189,6 +202,11 @@ export async function stopScript(partId: string, script: string) {
 }
 
 export async function restartScript(partId: string, script: string, groups: RepoGroup[] = []) {
+  const blocked = startBlockReason(partId, script);
+  if (blocked) {
+    runState.error = blocked;
+    return;
+  }
   await withPending(partId, script, async () => {
     const existing = runningFor(partId, script);
     if (existing) {

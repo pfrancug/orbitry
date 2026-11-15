@@ -56,6 +56,7 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 - [x] Read `package.json` with `serde_json`, including workspaces and `apps/*`
 - [x] Also discover `pyproject.toml`, `Cargo.toml`, `go.mod`, and `docker-compose`
 - [x] Return a structured inventory the UI can render
+- [x] Persist the last scan and show it instantly on launch; start stays disabled until a fresh rescan confirms what was added, changed, or removed
 
 ### 4. Script detection, classification, and custom patterns UI
 

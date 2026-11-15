@@ -5,8 +5,10 @@
   import AlertStrip from "$lib/components/AlertStrip.svelte";
   import ControlPanel from "$lib/components/ControlPanel.svelte";
   import Icon from "$lib/components/Icon.svelte";
+  import ScanBanner from "$lib/components/ScanBanner.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import { bannerMessage, dash, refreshAll } from "$lib/dashboard.svelte";
+  import { formatAgeMs } from "$lib/format";
   import { findPart } from "$lib/format";
   import { closePanel, refreshRuns, runState, setPanelOpen } from "$lib/runs.svelte";
 
@@ -89,15 +91,34 @@
         <Icon name="menu" />
       </button>
       <div class="chrome-spacer"></div>
+      {#if dash.scan}
+        <div
+          class="scan-pill"
+          class:scanning={dash.scan.state === "scanning"}
+          class:stale={dash.scan.stale}
+          title={dash.scan.error ?? ""}
+        >
+          <span class="scan-dot" aria-hidden="true"></span>
+          {#if dash.scan.state === "scanning" && dash.scan.stale && dash.scan.scannedAt}
+            Cached · scanned {formatAgeMs(dash.scan.scannedAt)} · verifying…
+          {:else if dash.scan.state === "scanning"}
+            Scanning…
+          {:else if dash.scan.state === "cached" && dash.scan.scannedAt}
+            Cached · scanned {formatAgeMs(dash.scan.scannedAt)}
+          {:else if dash.scan.error}
+            Scan failed
+          {/if}
+        </div>
+      {/if}
       <button
         class="icon-btn ghost"
         type="button"
         disabled={dash.refreshing || dash.loading}
-        onclick={() => refreshAll()}
+        onclick={() => refreshAll(true)}
         title="Refresh"
       >
         <Icon name="refresh" />
-        <span class="btn-label">{dash.refreshing ? "Refreshing..." : "Refresh"}</span>
+        <span class="btn-label">{dash.refreshing || dash.scan?.state === "scanning" ? "Verifying..." : "Refresh"}</span>
       </button>
       <button
         class="icon-btn ghost"
@@ -115,6 +136,7 @@
       <div class="banner">{bannerMessage()}</div>
     {/if}
 
+    <ScanBanner />
     <AlertStrip />
 
     <div class="workspace">

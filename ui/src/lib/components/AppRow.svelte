@@ -1,12 +1,14 @@
 <script lang="ts">
-  import { dash } from "$lib/dashboard.svelte";
+  import { dash, partMarker, startBlockReason } from "$lib/dashboard.svelte";
   import { displayPorts, isJsLike, partTitle, roleLabel, warningsForPart } from "$lib/format";
   import { isPending, runningFor, runState, togglePart, toggleScript } from "$lib/runs.svelte";
   import type { ProjectPart } from "$lib/types";
   import PortChips from "./PortChips.svelte";
   import WarningBadge from "./WarningBadge.svelte";
 
-  let { part }: { part: ProjectPart } = $props();
+  let { part, marker = null }: { part: ProjectPart; marker?: "new" | "changed" | "removed" | null } = $props();
+
+  const flag = $derived(marker ?? partMarker(part.id));
 
   const selected = $derived(runState.selectedPartId === part.id && runState.panelOpen);
   const live = $derived(runningFor(part.id));
@@ -18,7 +20,7 @@
   const expected = $derived(!live);
 </script>
 
-<div class="app-row" class:selected class:live={Boolean(live)}>
+<div class="app-row" class:selected class:live={Boolean(live)} class:removed={flag === "removed"}>
   <button
     class="app-main"
     type="button"
@@ -33,6 +35,9 @@
           <span class="muted framework-tag">{part.framework}</span>
         {/if}
         <WarningBadge {warnings} />
+        {#if flag === "new"}<span class="marker new">New</span>{/if}
+        {#if flag === "changed"}<span class="marker changed">Changed</span>{/if}
+        {#if flag === "removed"}<span class="marker removed">Removed</span>{/if}
       </div>
     </div>
     <span class="port-cell">
@@ -47,6 +52,7 @@
       {#each part.scripts ?? [] as script (script.kind + script.name)}
         {@const run = runningFor(part.id, script.name)}
         {@const pending = isPending(part.id, script.name)}
+        {@const blocked = !run ? startBlockReason(part.id, script.name) : null}
         <button
           class="chip mini scope-{script.scope}"
           class:running={Boolean(run)}
@@ -54,7 +60,8 @@
           type="button"
           aria-pressed={Boolean(run)}
           aria-label={run ? `Stop ${script.name}` : `Start ${script.name}`}
-          disabled={pending}
+          disabled={pending || Boolean(blocked)}
+          title={blocked ?? (run ? `Stop ${script.name}` : `Start ${script.name}`)}
           onclick={(event) => {
             event.stopPropagation();
             toggleScript(part.id, script.name, dash.groups);

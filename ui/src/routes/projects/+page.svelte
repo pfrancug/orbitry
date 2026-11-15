@@ -1,6 +1,6 @@
 <script lang="ts">
   import ProjectRow from "$lib/components/ProjectRow.svelte";
-  import { dash } from "$lib/dashboard.svelte";
+  import { dash, removedProjects, startsLocked } from "$lib/dashboard.svelte";
   import { loadExpanded, toggleExpanded } from "$lib/expand";
   import { groupSearchText } from "$lib/format";
   import { runState } from "$lib/runs.svelte";
@@ -52,8 +52,10 @@
   <div>
     <h1>Projects</h1>
     <p>
-      {#if dash.loading}
+      {#if dash.loading && dash.groups.length === 0}
         Scanning...
+      {:else if startsLocked() && dash.groups.length === 0}
+        Verifying projects…
       {:else}
         {visible.length}{visible.length === dash.groups.length ? "" : ` of ${dash.groups.length}`} projects
         · {dash.groups.reduce((sum, group) => sum + (group.parts ?? []).length, 0)} apps
@@ -68,13 +70,13 @@
   </label>
 </div>
 
-{#if dash.loading}
+{#if dash.loading && dash.groups.length === 0}
   <div class="project-list">
     {#each Array(8) as _, index (index)}
       <div class="project skeleton"></div>
     {/each}
   </div>
-{:else if visible.length === 0}
+{:else if visible.length === 0 && removedProjects().length === 0}
   <div class="empty-card">
     <strong>{dash.groups.length === 0 ? "Nothing in orbit yet." : "No matches."}</strong>
     <p>
@@ -96,4 +98,26 @@
       />
     {/each}
   </div>
+  {#if removedProjects().length}
+    <section class="section" style="margin-top: 18px;">
+      <header class="section-head">
+        <h2>Removed since last scan</h2>
+      </header>
+      <div class="project-list">
+        {#each removedProjects() as item (item.projectId)}
+          <section class="project removed">
+            <div class="project-row">
+              <div class="project-id">
+                <div class="title-row">
+                  <h2>{item.project}</h2>
+                  <span class="marker removed">Removed</span>
+                </div>
+                <p class="path">{item.projectId}</p>
+              </div>
+            </div>
+          </section>
+        {/each}
+      </div>
+    </section>
+  {/if}
 {/if}

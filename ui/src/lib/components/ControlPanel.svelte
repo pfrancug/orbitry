@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { dash } from "$lib/dashboard.svelte";
+  import { dash, startBlockReason } from "$lib/dashboard.svelte";
   import { openPath } from "$lib/api";
   import {
     displayPorts,
@@ -52,6 +52,7 @@
 
   const live = $derived(part && scriptName ? runningFor(part.id, scriptName) : undefined);
   const pending = $derived(part && scriptName ? isPending(part.id, scriptName) : false);
+  const startBlocked = $derived(part && scriptName && !live ? startBlockReason(part.id, scriptName) : null);
   const ports = $derived(part ? displayPorts(part, runState.runs) : []);
   const health = $derived(live?.health ?? current?.health);
   const expected = $derived(!live);
@@ -166,7 +167,8 @@
             <button
               class="btn"
               type="button"
-              disabled={pending}
+              disabled={pending || Boolean(startBlocked)}
+              title={startBlocked ?? "Restart"}
               onclick={() => scriptName && restartScript(part.id, scriptName, dash.groups)}
             >
               <Icon name="restart" size={14} /> Restart
@@ -175,7 +177,8 @@
             <button
               class="btn primary"
               type="button"
-              disabled={pending || !scriptName}
+              disabled={pending || !scriptName || Boolean(startBlocked)}
+              title={startBlocked ?? "Start"}
               onclick={() => scriptName && startScript(part.id, scriptName, dash.groups)}
             >
               <Icon name="play" size={12} /> Start

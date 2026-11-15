@@ -32,11 +32,17 @@ pub fn find_git_root(start: &Path) -> Option<PathBuf> {
 }
 
 fn git(dir: &Path, args: &[&str]) -> Option<String> {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .ok()?;
+    let mut command = Command::new("git");
+    command.args(args).current_dir(dir);
+    // A GUI-subsystem exe has no console, so every git call would otherwise
+    // pop up its own console window. Keep them hidden.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = command.output().ok()?;
     if !output.status.success() {
         return None;
     }

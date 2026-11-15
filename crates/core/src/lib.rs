@@ -10,6 +10,7 @@ mod ports;
 mod ports_resolve;
 mod process;
 mod scan;
+mod scan_cache;
 mod scripts;
 mod util;
 mod warnings;
@@ -29,6 +30,10 @@ pub use ports::{
 };
 pub use process::{detect_package_manager, LogLine, LogStream, Run, RunEvent, RunStatus};
 pub use scan::{scan, Project, ProjectKind};
+pub use scan_cache::{
+    config_fingerprint, diff_groups, load_scan_cache, now_ms, save_scan_cache, scan_cache_path,
+    ScanCache, ScanChange, ScanChangeKind, ScanDiff, ScanState, ScanStatus, SCANNER_VERSION,
+};
 pub use scripts::DetectedScript;
 pub use warnings::{
     attach_run_warnings, evaluate_warnings, Warning, WarningSeverity,

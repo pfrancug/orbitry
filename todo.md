@@ -9,38 +9,65 @@
 - **Patterns live in the dashboard.** Defaults ship with the scanner. Extra script patterns per category (shared / FE / BE, dev / preview) are added in the UI — no hand-written config required. The scanner uses defaults plus whatever the user added.
 - **Environment-independent.** The user picks one or more project root folders in the dashboard. That choice is stored in user config, never hardcoded to a machine.
 
+## How to run (first slice)
+
+Single command, after the UI has been built once (`npm run build` in `ui/`):
+
+```
+cargo run -p orbitry -- --root C:\Projects\private
+```
+
+Then open http://127.0.0.1:4280 (the process opens the browser unless you pass `--no-open`). `--root` can be repeated and is saved to user config (`%APPDATA%\orbitry\config.json` on Windows, `~/Library/Application Support/orbitry` or `~/.config/orbitry` elsewhere). `--port` defaults to `4280`.
+
+Hot-reload UI during development (API + Vite):
+
+```
+powershell -File scripts/dev.ps1 -Root C:\Projects\private
+```
+
+or, in two terminals:
+
+```
+cargo run -p orbitry -- --root C:\Projects\private --no-open
+cd ui
+npm run dev
+```
+
+The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust server.
+
 ## Phases
 
 ### 1. Scaffold the Rust workspace + UI
 
-- [ ] Grow the Cargo workspace: `orbitry-core` plus the `orbitry` server binary
-- [ ] Minimal Rust HTTP server that serves a React + Vite UI
-- [ ] Local-first: one binary should eventually open the dashboard in the browser
+- [x] Grow the Cargo workspace: `orbitry-core` plus the `orbitry` server binary
+- [x] Minimal Rust HTTP server that serves a React + Vite UI
+- [x] Local-first: one binary should eventually open the dashboard in the browser
 
 ### 2. Project root picker and config
 
-- [ ] First-run (and later) folder picker for one or more project roots
-- [ ] Persist roots and preferences in user config (e.g. `~/.orbitry/config.json`), not in the repo
-- [ ] Paths and process spawning work the same on Windows, macOS, and Linux
+- [x] First-run (and later) folder picker for one or more project roots
+- [x] Persist roots and preferences in user config (e.g. `~/.orbitry/config.json`), not in the repo
+- [x] Paths and process spawning work the same on Windows, macOS, and Linux
+- [ ] Native folder dialog (text input is enough for now)
 
 ### 3. Project scanner (Rust core)
 
-- [ ] Grow `crates/core` (`orbitry-core`) into the scanner
-- [ ] Read `package.json` with `serde_json`, including workspaces and `apps/*`
-- [ ] Also discover `pyproject.toml`, `Cargo.toml`, `go.mod`, and `docker-compose`
-- [ ] Return a structured inventory the UI can render
+- [x] Grow `crates/core` (`orbitry-core`) into the scanner
+- [x] Read `package.json` with `serde_json`, including workspaces and `apps/*`
+- [x] Also discover `pyproject.toml`, `Cargo.toml`, `go.mod`, and `docker-compose`
+- [x] Return a structured inventory the UI can render
 
 ### 4. Script detection, classification, and custom patterns UI
 
-- [ ] Auto-detect only **dev** and **preview/start** scripts (never tests)
-- [ ] Classify each as shared, FE, or BE — from dependencies (vite / next / react = FE; hono / express / fastapi = BE), script names (`dev:web`, `dev:api`, `dev:all`), and folders (`web`, `server`, `api`)
-- [ ] Dashboard UI to add extra script patterns per category; scanner uses defaults + those patterns
+- [x] Auto-detect only **dev** and **preview/start** scripts (never tests)
+- [x] Classify each as shared, FE, or BE — from dependencies (vite / next / react = FE; hono / express / fastapi = BE), script names (`dev:web`, `dev:api`, `dev:all`), and folders (`web`, `server`, `api`)
+- [x] Dashboard UI to add extra script patterns per category; scanner uses defaults + those patterns
 
 ### 5. Git, build, and version info (Rust core)
 
-- [ ] Per app: version, git branch / commit / dirty state
-- [ ] Built or not, plus last build time from `dist` / `build` / `.next` mtime
-- [ ] Whether `node_modules` is installed
+- [x] Per app: version, git branch / commit / dirty state
+- [x] Built or not, plus last build time from `dist` / `build` / `.next` mtime
+- [x] Whether `node_modules` is installed
 
 ### 6. Process manager and live logs (Rust server)
 
@@ -69,10 +96,11 @@
 
 ### 10. Dashboard UI polish
 
-- [ ] Custom, modern, iOS-like design — not a generic component kit
+- [x] First visible slice: custom dark, iOS-like cards (not a generic component kit), search, root picker, settings sheet
+- [ ] Further polish and denser / grouped layouts as the app grows
 - [ ] Clear per-app cards: version, git, build, running state, ports, FE/BE split
 - [ ] Calm, precise, instrument-panel feel
-- [ ] The Rust server serves the built UI
+- [x] The Rust server serves the built UI
 
 ### 11. Packaging
 

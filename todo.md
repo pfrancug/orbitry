@@ -71,9 +71,10 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 
 ### 6. Process manager and live logs (Rust server)
 
-- [ ] Start and stop scripts as child processes in the project's own cwd, via `portable-pty` — no new console windows
-- [ ] Kill the full process tree on stop (important on Windows)
-- [ ] Stream live logs per process to the UI over WebSocket from the Rust server
+- [x] Start and stop scripts as child processes in the project's own cwd, with piped stdout/stderr and no new console windows. `portable-pty` was skipped for now: ConPTY plus npm process trees and a reliable tree-kill is painful on Windows. Colors come from `FORCE_COLOR` and a small ANSI parser in the UI
+- [x] Kill the full process tree on stop (`taskkill /T /F` on Windows, process group on Unix)
+- [x] Stream live logs per process to the UI over WebSocket from the Rust server (ring buffer of the last 2000 lines, replayed on connect)
+- [x] Kill all children when Orbitry exits (Ctrl+C, plus a Windows Job Object with `KILL_ON_JOB_CLOSE`)
 - [ ] Optional actions: open in the system terminal, open in VS Code
 
 ### 7. Port detection (Rust core + optional plugin)

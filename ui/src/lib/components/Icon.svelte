@@ -78,5 +78,12 @@
   {:else if name === "search"}
     <circle cx="11" cy="11" r="6" />
     <path d="M20 20l-4-4" />
+  {:else if name === "folder"}
+    <path d="M3 7h6l2 2h10v10H3z" />
+  {:else if name === "terminal"}
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M7 10l3 2-3 2M13 14h4" />
+  {:else if name === "code"}
+    <path d="M8 8l-4 4 4 4M16 8l4 4-4 4" />
   {/if}
 </svg>

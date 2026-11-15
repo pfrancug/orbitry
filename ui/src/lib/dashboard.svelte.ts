@@ -1,6 +1,6 @@
-import { fetchConfig, fetchProjects, saveConfig } from "./api";
+import { fetchConfig, fetchProjects, pickFolder, saveConfig } from "./api";
 import { refreshRuns, restoreSelection, runState } from "./runs.svelte";
-import type { AppConfig, AppWarning, RepoGroup, ScriptPattern } from "./types";
+import type { AppConfig, AppWarning, PortOverride, RepoGroup, ScriptPattern } from "./types";
 
 export const dash = $state({
   groups: [] as RepoGroup[],
@@ -39,11 +39,19 @@ export async function refreshAll() {
   }
 }
 
-export async function persist(next: { roots: string[]; scriptPatterns: ScriptPattern[] }) {
+function withOverrides(next: { roots: string[]; scriptPatterns: ScriptPattern[]; portOverrides?: PortOverride[] }) {
+  return {
+    roots: next.roots,
+    scriptPatterns: next.scriptPatterns,
+    portOverrides: next.portOverrides ?? dash.config?.portOverrides ?? [],
+  };
+}
+
+export async function persist(next: { roots: string[]; scriptPatterns: ScriptPattern[]; portOverrides?: PortOverride[] }) {
   dash.saving = true;
   dash.error = null;
   try {
-    dash.config = await saveConfig(next);
+    dash.config = await saveConfig(withOverrides(next));
     const { groups, warnings } = await fetchProjects();
     dash.groups = groups;
     dash.warnings = warnings ?? [];
@@ -94,6 +102,26 @@ export async function removePattern(index: number) {
   await persist({
     roots: dash.config.roots,
     scriptPatterns: dash.config.scriptPatterns.filter((_, i) => i !== index),
+  });
+}
+
+export async function browseFolder() {
+  dash.error = null;
+  try {
+    const picked = await pickFolder();
+    if (!picked?.path) return;
+    dash.rootDraft = picked.path;
+  } catch (err: unknown) {
+    dash.error = err instanceof Error ? err.message : "Could not open the folder dialog.";
+  }
+}
+
+export async function savePortOverrides(portOverrides: PortOverride[]) {
+  if (!dash.config) return;
+  await persist({
+    roots: dash.config.roots,
+    scriptPatterns: dash.config.scriptPatterns,
+    portOverrides,
   });
 }
 

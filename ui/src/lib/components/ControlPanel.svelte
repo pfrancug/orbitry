@@ -1,5 +1,6 @@
 <script lang="ts">
   import { dash } from "$lib/dashboard.svelte";
+  import { openPath } from "$lib/api";
   import {
     displayPorts,
     formatUptime,
@@ -27,6 +28,7 @@
   import PortChips from "./PortChips.svelte";
   import LogViewer from "./LogViewer.svelte";
   import WarningList from "./WarningList.svelte";
+  import PortOverrides from "./PortOverrides.svelte";
 
   let { part }: { part: ProjectPart | null } = $props();
 
@@ -60,6 +62,21 @@
           : warningsForPart(part.id, runState.runs, [...(runState.warnings ?? []), ...(dash.warnings ?? [])]))
       : [],
   );
+
+  let opening = $state<string | null>(null);
+
+  async function openWith(kind: "terminal" | "vscode") {
+    if (!part) return;
+    opening = kind;
+    dash.error = null;
+    try {
+      await openPath(kind, part.path);
+    } catch (err: unknown) {
+      dash.error = err instanceof Error ? err.message : "Could not open the folder.";
+    } finally {
+      opening = null;
+    }
+  }
 
   function statusLabel(run: typeof current): string {
     if (!run) return "idle";
@@ -105,6 +122,17 @@
       <span class="build" class:ok={part.build?.built}>
         {part.build?.built ? `Built ${timeAgo(part.build.lastBuiltAt)}` : "Not built"}
       </span>
+    </div>
+
+    <div class="open-actions">
+      <button class="btn" type="button" disabled={opening !== null} onclick={() => openWith("terminal")}>
+        <Icon name="terminal" size={14} />
+        {opening === "terminal" ? "Opening..." : "Terminal"}
+      </button>
+      <button class="btn" type="button" disabled={opening !== null} onclick={() => openWith("vscode")}>
+        <Icon name="code" size={14} />
+        {opening === "vscode" ? "Opening..." : "VS Code"}
+      </button>
     </div>
 
     <div class="panel-controls">
@@ -178,6 +206,8 @@
         <WarningList {warnings} />
       </section>
     {/if}
+
+    <PortOverrides {part} {ports} />
 
     <LogViewer runId={current?.id ?? null} />
   {/if}

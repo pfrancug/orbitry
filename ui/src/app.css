@@ -1047,3 +1047,76 @@ button.chip.pending { opacity: 0.7; }
   align-items: center;
   gap: 4px;
 }
+
+.root-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+}
+@media (max-width: 720px) {
+  .root-form { grid-template-columns: minmax(0, 1fr); }
+}
+
+.open-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 16px 10px;
+}
+
+.panel-overrides {
+  padding: 0 16px 12px;
+}
+.panel-overrides h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.override-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+.override-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 0.8fr) minmax(0, 1.2fr) auto auto;
+  gap: 6px;
+  align-items: center;
+}
+.override-row input[type="text"],
+.override-row input:not([type="checkbox"]),
+.add-port {
+  width: 100%;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  color: var(--text);
+}
+.override-row .ignore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.override-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.add-port { max-width: 110px; }
+
+@media (max-width: 720px) {
+  .override-row {
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+  }
+  .override-row input:nth-child(3) { grid-column: 1 / -1; }
+}

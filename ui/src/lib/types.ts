@@ -46,6 +46,16 @@ export type PortInfo = {
   pid?: number | null;
   process?: string | null;
   url?: string | null;
+  healthUrl?: string | null;
+  ignored?: boolean;
+};
+
+export type PortOverride = {
+  partId: string;
+  port: number;
+  name?: string | null;
+  healthUrl?: string | null;
+  ignore?: boolean;
 };
 
 export type PortHealth = {
@@ -103,6 +113,7 @@ export type AppConfig = {
   roots: string[];
   scriptPatterns: ScriptPattern[];
   defaultPatterns: { kind: ScriptKind; pattern: string }[];
+  portOverrides?: PortOverride[];
 };
 
 export type RunStatus = "running" | "exited" | "failed";

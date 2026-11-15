@@ -48,7 +48,7 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 - [x] First-run (and later) folder picker for one or more project roots
 - [x] Persist roots and preferences in user config (e.g. `~/.orbitry/config.json`), not in the repo
 - [x] Paths and process spawning work the same on Windows, macOS, and Linux
-- [ ] Native folder dialog (text input is enough for now)
+- [x] Native folder dialog (Browse in Settings; text input remains as a fallback)
 
 ### 3. Project scanner (Rust core)
 
@@ -75,7 +75,7 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 - [x] Kill the full process tree on stop (`taskkill /T /F` on Windows, process group on Unix)
 - [x] Stream live logs per process to the UI over WebSocket from the Rust server (ring buffer of the last 2000 lines, replayed on connect)
 - [x] Kill all children when Orbitry exits (Ctrl+C, plus a Windows Job Object with `KILL_ON_JOB_CLOSE`)
-- [ ] Optional actions: open in the system terminal, open in VS Code
+- [x] Optional actions: open in the system terminal, open in VS Code (from the control panel, on user click)
 
 ### 7. Port detection (Rust core + optional plugin)
 
@@ -88,7 +88,7 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 - [x] Global port conflicts when two apps share a port, when a foreign process occupies an expected port, and possible conflicts when a framework default (Vite 5173, Next/Express 3000, Rust 8080, Astro 4321, ...) is also used by another project
 - [ ] If the config-bridge plugin is present, use it for resolved ports/settings from `vite.config.ts`, `next.config.js`, and similar
 - [x] If the plugin is missing, fall back to regex + framework defaults + live PID/log detection
-- [ ] Manual per-port overrides in the dashboard (name, health URL, or ignore), stored in Orbitry config
+- [x] Manual per-port overrides in the dashboard (name, health URL, or ignore), stored in Orbitry config
 
 ### 8. Optional Node config-bridge plugin
 

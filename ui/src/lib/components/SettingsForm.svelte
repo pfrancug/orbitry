@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addPattern, addRoot, dash, removePattern, removeRoot } from "$lib/dashboard.svelte";
+  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot } from "$lib/dashboard.svelte";
   import type { ScriptKind, ScriptScope } from "$lib/types";
 
   let kind = $state<ScriptKind>("dev");
@@ -26,6 +26,7 @@
         placeholder="C:\Projects\private"
         spellcheck="false"
       />
+      <button type="button" disabled={dash.saving} onclick={() => browseFolder()}>Browse</button>
       <button type="submit" disabled={dash.saving || !dash.rootDraft.trim()}>Add folder</button>
     </form>
     <div class="root-list">

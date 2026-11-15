@@ -1,4 +1,4 @@
-import type { AppConfig, AppWarning, RepoGroup, Run, ScriptPattern } from "./types";
+import type { AppConfig, AppWarning, PortOverride, RepoGroup, Run, ScriptPattern } from "./types";
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -27,10 +27,38 @@ export function fetchConfig(): Promise<AppConfig> {
 export function saveConfig(config: {
   roots: string[];
   scriptPatterns: ScriptPattern[];
+  portOverrides?: PortOverride[];
 }): Promise<AppConfig> {
   return request("/api/config", {
     method: "PUT",
     body: JSON.stringify(config),
+  });
+}
+
+export function pickFolder(): Promise<{ path: string } | null> {
+  return fetch("/api/pick-folder", {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  }).then(async (response) => {
+    if (response.status === 204) return null;
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(detail || `${response.status} ${response.statusText}`);
+    }
+    return response.json() as Promise<{ path: string }>;
+  });
+}
+
+export function openPath(kind: "terminal" | "vscode", path: string): Promise<void> {
+  return fetch("/api/open", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, path }),
+  }).then(async (response) => {
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(detail || `${response.status} ${response.statusText}`);
+    }
   });
 }
 

@@ -79,11 +79,11 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 
 ### 7. Port detection (Rust core + optional plugin)
 
-- [ ] Static: `.env`, CLI flags, framework defaults, and regex on code-based configs
-- [ ] Live: ports bound by the process PID tree (`netstat` / `lsof`)
-- [ ] From log lines such as `Local: http://localhost:5173`
+- [x] Static: `.env`, CLI flags, framework defaults, and regex on code-based configs
+- [x] Live: ports bound by the process PID tree (`netstat` / `lsof`)
+- [x] From log lines such as `Local: http://localhost:5173`
 - [ ] If the config-bridge plugin is present, use it for resolved ports/settings from `vite.config.ts`, `next.config.js`, and similar
-- [ ] If the plugin is missing, fall back to regex + framework defaults + live PID/log detection
+- [x] If the plugin is missing, fall back to regex + framework defaults + live PID/log detection
 
 ### 8. Optional Node config-bridge plugin
 
@@ -93,14 +93,14 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 
 ### 9. Health
 
-- [ ] Running or not, plus a health check when a project exposes one (e.g. `/api/health`)
+- [x] Running or not, plus a health check when a project exposes one (e.g. `/api/health`)
 
 ### 10. Dashboard UI polish
 
 - [x] First visible slice: custom dark, iOS-like cards (not a generic component kit), search, root picker, settings sheet
 - [x] Group workspace packages and FE/BE parts under their repository; every repo, including single-package ones, uses the same stack layout
-- [ ] Clear per-app cards: version, git, build, running state, ports, FE/BE split
-- [ ] Calm, precise, instrument-panel feel
+- [x] Clear per-app rows: version, git, build, running state, ports, FE/BE split
+- [x] Calm, precise, instrument-panel feel
 - [x] The Rust server serves the built UI
 
 ### 11. Packaging

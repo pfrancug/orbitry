@@ -7,6 +7,7 @@ use crate::artifacts::BuildInfo;
 use crate::config::{canonical, display_path, normalize_path_str, paths_equal};
 use crate::git::find_git_root;
 use crate::scan::{Project, ProjectKind};
+use crate::ports::PortInfo;
 use crate::scripts::DetectedScript;
 use crate::GitInfo;
 
@@ -36,6 +37,7 @@ pub struct ProjectPart {
     pub parent: Option<String>,
     pub role: PartRole,
     pub relative_path: String,
+    pub ports: Vec<PortInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,6 +175,7 @@ fn build_group(id: String, members: Vec<Project>) -> RepoGroup {
                 parent: project.parent,
                 role,
                 relative_path,
+                ports: project.ports,
             }
         })
         .collect();

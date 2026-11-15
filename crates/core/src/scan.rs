@@ -8,6 +8,7 @@ use serde_json::Value;
 use crate::artifacts::{detect_build, has_node_modules, BuildInfo};
 use crate::config::{canonical, display_path, Config};
 use crate::git::{detect_git, GitInfo};
+use crate::ports::{detect_static_ports, PortInfo};
 use crate::scripts::{detect_scripts, guess_js_framework, DetectedScript};
 
 const SKIP_DIRS: &[&str] = &[
@@ -51,6 +52,7 @@ pub struct Project {
     pub build: BuildInfo,
     pub node_modules: bool,
     pub parent: Option<String>,
+    pub ports: Vec<PortInfo>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -229,6 +231,7 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
         kind = ProjectKind::Mixed;
     }
 
+    let ports = detect_static_ports(dir, &scripts, None, framework.as_deref());
     Some(Project {
         id: path.clone(),
         path,
@@ -241,6 +244,7 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
         build: detect_build(dir),
         node_modules: has_js && has_node_modules(dir),
         parent,
+        ports,
     })
 }
 

@@ -1,0 +1,171 @@
+//! HTTP health checks against ports discovered for a running process.
+
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use serde::{Deserialize, Serialize};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::time::timeout;
+
+use crate::ports::PortInfo;
+
+const PROBE_TIMEOUT: Duration = Duration::from_millis(400);
+const HEALTH_PATHS: &[&str] = &["/api/health", "/health", "/healthz", "/"];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HealthStatus {
+    Unknown,
+    Ok,
+    Fail,
+    Skipped,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthInfo {
+    pub status: HealthStatus,
+    pub url: Option<String>,
+    pub checked_at: Option<i64>,
+}
+
+impl HealthInfo {
+    pub fn unknown() -> Self {
+        Self {
+            status: HealthStatus::Unknown,
+            url: None,
+            checked_at: None,
+        }
+    }
+
+    pub fn skipped(now: i64) -> Self {
+        Self {
+            status: HealthStatus::Skipped,
+            url: None,
+            checked_at: Some(now),
+        }
+    }
+
+    pub fn is_stale(&self, now: i64, max_age_ms: i64) -> bool {
+        match self.checked_at {
+            Some(at) => now.saturating_sub(at) >= max_age_ms,
+            None => true,
+        }
+    }
+}
+
+pub async fn check_health(ports: &[PortInfo]) -> HealthInfo {
+    let now = now_ms();
+    if ports.is_empty() {
+        return HealthInfo::skipped(now);
+    }
+
+    let mut last_fail: Option<HealthInfo> = None;
+    for item in ports {
+        let result = probe_port(item.port).await;
+        if result.status == HealthStatus::Ok {
+            return HealthInfo {
+                checked_at: Some(now),
+                ..result
+            };
+        }
+        last_fail = Some(HealthInfo {
+            checked_at: Some(now),
+            ..result
+        });
+    }
+    last_fail.unwrap_or_else(|| HealthInfo::skipped(now))
+}
+
+async fn probe_port(port: u16) -> HealthInfo {
+    let addr = ("127.0.0.1", port);
+    match timeout(PROBE_TIMEOUT, TcpStream::connect(addr)).await {
+        Ok(Ok(_)) => {}
+        _ => {
+            return HealthInfo {
+                status: HealthStatus::Fail,
+                url: Some(format!("http://127.0.0.1:{port}")),
+                checked_at: None,
+            };
+        }
+    }
+
+    for path in HEALTH_PATHS {
+        match http_get(port, path).await {
+            Some(status) if (200..400).contains(&status) => {
+                return HealthInfo {
+                    status: HealthStatus::Ok,
+                    url: Some(format!("http://127.0.0.1:{port}{path}")),
+                    checked_at: None,
+                };
+            }
+            Some(_) if *path == "/" => {
+                // The server answered something that is not a dedicated health
+                // route. Treat it as up: the port is serving HTTP.
+                return HealthInfo {
+                    status: HealthStatus::Ok,
+                    url: Some(format!("http://127.0.0.1:{port}/")),
+                    checked_at: None,
+                };
+            }
+            Some(_) => {}
+            None if *path == "/" => {
+                // TCP is open but the peer is not speaking HTTP (or was slow).
+                return HealthInfo {
+                    status: HealthStatus::Ok,
+                    url: Some(format!("http://127.0.0.1:{port}")),
+                    checked_at: None,
+                };
+            }
+            None => {}
+        }
+    }
+
+    HealthInfo {
+        status: HealthStatus::Ok,
+        url: Some(format!("http://127.0.0.1:{port}")),
+        checked_at: None,
+    }
+}
+
+async fn http_get(port: u16, path: &str) -> Option<u16> {
+    let mut stream = timeout(PROBE_TIMEOUT, TcpStream::connect(("127.0.0.1", port)))
+        .await
+        .ok()?
+        .ok()?;
+    let request = format!(
+        "GET {path} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    );
+    timeout(PROBE_TIMEOUT, stream.write_all(request.as_bytes()))
+        .await
+        .ok()?
+        .ok()?;
+    let _ = stream.shutdown().await;
+    let mut buf = [0u8; 128];
+    let n = timeout(PROBE_TIMEOUT, stream.read(&mut buf))
+        .await
+        .ok()?
+        .ok()?;
+    if n == 0 {
+        return None;
+    }
+    parse_status(&buf[..n])
+}
+
+fn parse_status(bytes: &[u8]) -> Option<u16> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let line = text.lines().next()?;
+    let mut parts = line.split_whitespace();
+    let version = parts.next()?;
+    if !version.starts_with("HTTP/") {
+        return None;
+    }
+    parts.next()?.parse().ok()
+}
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}

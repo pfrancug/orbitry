@@ -9,6 +9,8 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::{broadcast, Mutex};
 
 use crate::display_path;
+use crate::health::{check_health, HealthInfo, HealthStatus};
+use crate::ports::{detect_static_ports, listening_ports_for, ports_from_log};
 use crate::process::{
     detect_package_manager, kill_process_tree, kill_process_tree_force, now_ms, run_command_label,
     script_command, LogLine, LogStream, Run, RunEvent, RunStatus,
@@ -108,7 +110,7 @@ impl ProcessManager {
             part_id,
             part_name,
             part_path,
-            script,
+            script: script.clone(),
             command: command.clone(),
             cwd: display_path(&cwd),
             pid,
@@ -116,6 +118,8 @@ impl ProcessManager {
             exit_code: None,
             started_at: now_ms(),
             ended_at: None,
+            ports: detect_static_ports(&cwd, &[], Some(&script), None),
+            health: HealthInfo::unknown(),
         };
 
         let (tx, _) = broadcast::channel(BROADCAST_CAP);
@@ -231,6 +235,7 @@ impl ProcessManager {
     }
 
     pub async fn list(&self) -> Vec<Run> {
+        self.refresh_live().await;
         let inner = self.inner.lock().await;
         let mut runs: Vec<Run> = inner.runs.values().map(|rec| rec.info.clone()).collect();
         runs.sort_by(|a, b| {
@@ -273,6 +278,11 @@ impl ProcessManager {
         } else {
             RunStatus::Failed
         };
+        rec.info.health = HealthInfo {
+            status: HealthStatus::Unknown,
+            url: rec.info.health.url.clone(),
+            checked_at: rec.info.health.checked_at,
+        };
         let code_label = exit_code
             .map(|code| code.to_string())
             .unwrap_or_else(|| "unknown".into());
@@ -285,7 +295,80 @@ impl ProcessManager {
     async fn push_line(&self, id: &str, stream: LogStream, text: String) {
         let mut inner = self.inner.lock().await;
         if let Some(rec) = inner.runs.get_mut(id) {
+            let found = ports_from_log(&text);
             rec.push(stream, text);
+            if !found.is_empty() {
+                rec.info.merge_ports(found);
+            }
+        }
+    }
+
+    async fn refresh_live(&self) {
+        let snapshots: Vec<(String, Option<u32>, bool)> = {
+            let inner = self.inner.lock().await;
+            inner
+                .runs
+                .values()
+                .filter(|rec| rec.info.status == RunStatus::Running)
+                .map(|rec| {
+                    (
+                        rec.info.id.clone(),
+                        rec.info.pid,
+                        rec.info.health.is_stale(now_ms(), 2500),
+                    )
+                })
+                .collect()
+        };
+        if snapshots.is_empty() {
+            return;
+        }
+
+        let mut updates = Vec::new();
+        for (id, pid, stale) in snapshots {
+            let live = if let Some(value) = pid {
+                tokio::task::spawn_blocking(move || listening_ports_for(value))
+                    .await
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            updates.push((id, live, stale));
+        }
+
+        let probes: Vec<(String, Vec<crate::ports::PortInfo>)> = {
+            let mut inner = self.inner.lock().await;
+            let mut ready = Vec::new();
+            for (id, live, stale) in updates {
+                let Some(rec) = inner.runs.get_mut(&id) else {
+                    continue;
+                };
+                if rec.info.status != RunStatus::Running {
+                    continue;
+                }
+                rec.info.merge_ports(live);
+                if stale {
+                    ready.push((id, rec.info.ports.clone()));
+                }
+            }
+            ready
+        };
+
+        let mut healths = Vec::new();
+        for (id, ports) in probes {
+            let health = check_health(&ports).await;
+            healths.push((id, health));
+        }
+
+        if healths.is_empty() {
+            return;
+        }
+        let mut inner = self.inner.lock().await;
+        for (id, health) in healths {
+            if let Some(rec) = inner.runs.get_mut(&id) {
+                if rec.info.status == RunStatus::Running {
+                    rec.info.health = health;
+                }
+            }
         }
     }
 }

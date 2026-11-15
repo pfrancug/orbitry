@@ -6,9 +6,11 @@
 
 use std::path::Path;
 use std::process::Stdio;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+
+use crate::health::HealthInfo;
+use crate::ports::{merge_ports, PortInfo};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -33,6 +35,14 @@ pub struct Run {
     pub exit_code: Option<i32>,
     pub started_at: i64,
     pub ended_at: Option<i64>,
+    pub ports: Vec<PortInfo>,
+    pub health: HealthInfo,
+}
+
+impl Run {
+    pub fn merge_ports(&mut self, incoming: impl IntoIterator<Item = PortInfo>) {
+        merge_ports(&mut self.ports, incoming);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,12 +76,7 @@ pub enum RunEvent {
     },
 }
 
-pub fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-}
+pub use crate::util::now_ms;
 
 /// Pick npm, pnpm, yarn, or bun from lockfiles, walking up to the git root.
 pub fn detect_package_manager(start: &Path) -> &'static str {

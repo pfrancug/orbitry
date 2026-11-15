@@ -80,10 +80,15 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 ### 7. Port detection (Rust core + optional plugin)
 
 - [x] Static: `.env`, CLI flags, framework defaults, and regex on code-based configs
-- [x] Live: ports bound by the process PID tree (`netstat` / `lsof`)
-- [x] From log lines such as `Local: http://localhost:5173`
+- [x] Live: ports bound by the process PID tree (`netstat` / `lsof`), including bind address, owner pid, and process name
+- [x] From log lines such as `Local: http://localhost:5173` (used to name ports, shown only after they are actually listening)
+- [x] Running apps show only live process ports; static env/config/default guesses appear only when the app is stopped, as muted expected ports, and never as red health
+- [x] Health probes the address the port actually binds (`::1`, `127.0.0.1`, or a wildcard via `127.0.0.1`); links use `http://localhost:<port>`
+- [x] Anomaly warnings from the Rust core: IPv6-only binds, all-interface binds, expected vs actual port, missing ports after startup, health failures
+- [x] Global port conflicts when two apps share a port, when a foreign process occupies an expected port, and possible conflicts when a framework default (Vite 5173, Next/Express 3000, Rust 8080, Astro 4321, ...) is also used by another project
 - [ ] If the config-bridge plugin is present, use it for resolved ports/settings from `vite.config.ts`, `next.config.js`, and similar
 - [x] If the plugin is missing, fall back to regex + framework defaults + live PID/log detection
+- [ ] Manual per-port overrides in the dashboard (name, health URL, or ignore), stored in Orbitry config
 
 ### 8. Optional Node config-bridge plugin
 

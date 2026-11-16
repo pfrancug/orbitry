@@ -47,6 +47,10 @@ Orbitry should feel like a modern instrument panel, not a settings page. Calm, p
 
 It lives in your tray, always a glance away.
 
+## Get Orbitry
+
+Grab the latest build for Windows, macOS, or Linux from the [Releases](https://github.com/pfrancug/orbitry/releases) page. Once it's installed, Orbitry can check for a newer version from the tray and update itself when you ask it to.
+
 ## Status
 
 Early. In the making. The orbit is taking shape.

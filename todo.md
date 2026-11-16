@@ -114,7 +114,9 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 - [x] Ship Orbitry as a standalone Windows exe with the UI embedded, a tray icon, and no console window
 - [x] Left click and "Otwórz" open the dashboard in the browser; "Wyjdź" stops all child processes and exits
 - [x] Single instance: a second launch opens the browser and exits
-- [ ] Optional later: a thin npm wrapper only if `npx` convenience is worth it
+- [x] GitHub Actions builds a release when a version tag is pushed, with Windows, macOS, and Linux binaries plus checksums
+- [x] In-tray and dashboard updates: check GitHub Releases on a schedule or by hand, then install only after a click
+- [ ] Optional later: a winget (or Scoop) package that points at the same GitHub Release files, if it's worth the extra listing
 - [x] `package.json` remains only for the UI and the optional config-bridge plugin
 
 ### 12. Later: Tauri (optional)

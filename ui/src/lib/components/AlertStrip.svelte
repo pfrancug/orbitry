@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { dash } from "$lib/dashboard.svelte";
+  import { t } from "$lib/i18n";
   import { dedupeWarnings, warningSummaryLabel } from "$lib/format";
   import { runState } from "$lib/runs.svelte";
   import Icon from "./Icon.svelte";
@@ -67,8 +68,8 @@
       <span class="chevron" class:open></span>
     </button>
     {#if open}
-      <div class="alert-popover" role="dialog" aria-label="Ostrzeżenia">
-        <WarningList {warnings} />
+      <div class="alert-popover" role="dialog" aria-label={t("alerts.title")}>
+        <WarningList {warnings} flat />
       </div>
     {/if}
   </div>

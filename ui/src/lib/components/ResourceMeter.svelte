@@ -31,7 +31,7 @@
     <div class="meter-bar" class:hot style="width: {bar}%; background: {hot ? 'var(--danger)' : color}"></div>
   </div>
   <div class="meter-spark">
-    <Sparkline {color} {values} height={14} />
+    <Sparkline {color} {values} height={40} />
   </div>
   {#if sub}
     <span class="meter-sub">{sub}</span>

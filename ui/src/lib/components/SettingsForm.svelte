@@ -1,8 +1,11 @@
 <script lang="ts">
   import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, setStartWithSystem } from "$lib/dashboard.svelte";
   import { formatCheckedAt } from "$lib/format";
+  import { i18n, setLocale, t, type Locale } from "$lib/i18n";
   import { checkForUpdate, installUpdate, update } from "$lib/update.svelte";
   import type { ConfigBridgeMode, ScriptKind, ScriptScope } from "$lib/types";
+
+  const locale = $derived(i18n.locale);
 
   let kind = $state<ScriptKind>("dev");
   let scope = $state<ScriptScope>("shared");
@@ -18,34 +21,51 @@
 </script>
 
 {#if dash.config}
-  <section class="settings-block">
-    <p class="label">Project folders</p>
+  <section class="settings-card" data-locale={locale}>
+    <h2 class="settings-heading">{t("settings.language")}</h2>
+    <p class="settings-hint">{t("settings.languageHint")}</p>
+    <div class="segmented">
+      {#each ([["en", "settings.lang.en"], ["pl", "settings.lang.pl"]] as const) as option (option[0])}
+        <button
+          type="button"
+          class:active={locale === option[0]}
+          onclick={() => setLocale(option[0] as Locale)}
+        >
+          {t(option[1])}
+        </button>
+      {/each}
+    </div>
+  </section>
+
+  <section class="settings-card">
+    <h2 class="settings-heading">{t("settings.folders")}</h2>
+    <p class="settings-hint">{t("settings.foldersHint")}</p>
     <form class="root-form" onsubmit={addRoot}>
-      <label class="sr-only" for="root-path">Project root folder</label>
+      <label class="sr-only" for="root-path">{t("settings.folderLabel")}</label>
       <input
         id="root-path"
         bind:value={dash.rootDraft}
-        placeholder="C:\Projects\private"
+        placeholder={t("settings.folderPh")}
         spellcheck="false"
       />
-      <button type="button" disabled={dash.saving} onclick={() => browseFolder()}>Browse</button>
-      <button type="submit" disabled={dash.saving || !dash.rootDraft.trim()}>Add folder</button>
+      <button type="button" disabled={dash.saving} onclick={() => browseFolder()}>{t("settings.browse")}</button>
+      <button type="submit" disabled={dash.saving || !dash.rootDraft.trim()}>{t("settings.addFolder")}</button>
     </form>
     <div class="root-list">
       {#each dash.config.roots as root (root)}
-        <button class="root-chip" type="button" onclick={() => removeRoot(root)} title="Remove folder">
+        <button class="root-chip" type="button" onclick={() => removeRoot(root)} title={t("settings.removeFolder")}>
           <span>{root}</span>
           <i aria-hidden="true">×</i>
         </button>
       {/each}
       {#if dash.config.roots.length === 0}
-        <p class="hint">Point Orbitry at a folder of projects to begin.</p>
+        <p class="hint">{t("settings.noFolders")}</p>
       {/if}
     </div>
   </section>
 
-  <section class="settings-block">
-    <p class="label">Built in</p>
+  <section class="settings-card">
+    <h2 class="settings-heading">{t("settings.builtin")}</h2>
     <div class="chips">
       {#each dash.config.defaultPatterns as item (`${item.kind}-${item.pattern}`)}
         <span class="chip quiet">
@@ -56,27 +76,29 @@
     </div>
   </section>
 
-  <section class="settings-block">
-    <p class="label">Custom script patterns</p>
+  <section class="settings-card">
+    <h2 class="settings-heading">{t("settings.custom")}</h2>
+    <p class="settings-hint">{t("settings.customHint")}</p>
     <form class="pattern-form" onsubmit={submit}>
       <select bind:value={kind}>
-        <option value="dev">dev</option>
-        <option value="preview">preview / start</option>
+        <option value="dev">{t("settings.kind.dev")}</option>
+        <option value="preview">{t("settings.kind.preview")}</option>
+        <option value="build">{t("settings.kind.build")}</option>
       </select>
       <select bind:value={scope}>
-        <option value="shared">shared</option>
-        <option value="fe">frontend</option>
-        <option value="be">backend</option>
+        <option value="shared">{t("settings.scope.shared")}</option>
+        <option value="fe">{t("settings.scope.fe")}</option>
+        <option value="be">{t("settings.scope.be")}</option>
       </select>
-      <input bind:value={pattern} placeholder="e.g. dev:mobile or serve*" spellcheck="false" />
-      <button type="submit" disabled={dash.saving || !pattern.trim()}>Add</button>
+      <input bind:value={pattern} placeholder={t("settings.patternPh")} spellcheck="false" />
+      <button type="submit" disabled={dash.saving || !pattern.trim()}>{t("settings.add")}</button>
     </form>
     <div class="custom-list">
       {#if dash.config.scriptPatterns.length === 0}
-        <p class="hint">No custom patterns yet. They live here, not in a config file you have to edit.</p>
+        <p class="hint">{t("settings.noPatterns")}</p>
       {:else}
         {#each dash.config.scriptPatterns as item, index (`${item.kind}-${item.scope}-${item.pattern}-${index}`)}
-          <button class="root-chip" type="button" onclick={() => removePattern(index)} title="Remove pattern">
+          <button class="root-chip" type="button" onclick={() => removePattern(index)} title={t("settings.removePattern")}>
             <span>{item.kind} · {item.scope} · {item.pattern}</span>
             <i aria-hidden="true">×</i>
           </button>
@@ -85,18 +107,18 @@
     </div>
   </section>
 
-  <section class="settings-block">
-    <p class="label">Config bridge</p>
-    <p class="hint">When a project has a Vite or Next config, Orbitry can read the real port from it. This is optional and needs Node.</p>
+  <section class="settings-card">
+    <h2 class="settings-heading">{t("settings.bridge")}</h2>
+    <p class="hint">{t("settings.bridgeHint")}</p>
     <div class="bridge-row">
-      <span class="badge quiet">{dash.config.bridgeStatus?.label ?? (dash.config.configBridge === "off" ? "disabled" : "unknown")}</span>
+      <span class="badge quiet">{dash.config.bridgeStatus?.label ?? (dash.config.configBridge === "off" ? t("settings.bridgeOff") : t("settings.bridgeUnknown"))}</span>
     </div>
     {#if dash.config.bridgeStatus?.nodeVersion}
       <p class="hint">Node {dash.config.bridgeStatus.nodeVersion}{dash.config.bridgeStatus.nodePath ? ` · ${dash.config.bridgeStatus.nodePath}` : ""}</p>
     {:else if dash.config.bridgeStatus?.state === "node-missing"}
-      <p class="hint">Node was not found on this machine. The bridge stays off until it is installed and on your PATH.</p>
+      <p class="hint">{t("settings.nodeMissing")}</p>
     {:else if dash.config.bridgeStatus?.state === "plugin-missing"}
-      <p class="hint">The config-bridge plugin is missing.</p>
+      <p class="hint">{t("settings.pluginMissing")}</p>
     {:else if dash.config.bridgeStatus?.error}
       <p class="hint">{dash.config.bridgeStatus.error}</p>
     {/if}
@@ -108,18 +130,15 @@
           disabled={dash.saving}
           onclick={() => setConfigBridge(mode as ConfigBridgeMode)}
         >
-          {mode === "auto" ? "Auto" : mode === "on" ? "On" : "Off"}
+          {mode === "auto" ? t("settings.auto") : mode === "on" ? t("settings.on") : t("settings.off")}
         </button>
       {/each}
     </div>
   </section>
 
-  <section class="settings-block">
-    <p class="label">Maks. rozmiar logów na aplikację</p>
-    <p class="hint">
-      Domyślnie 10 MB na aplikację (5 MB plus jedna kopia obrotowa). Zakres 2–100 MB.
-      Limit globalny rośnie wraz z tą wartością. Zmiana obowiązuje od razu, bez restartu.
-    </p>
+  <section class="settings-card">
+    <h2 class="settings-heading">{t("settings.logs")}</h2>
+    <p class="hint">{t("settings.logsHint")}</p>
     <label class="log-limit-row">
       <select
         value={dash.config.logLimitMb ?? 10}
@@ -133,7 +152,7 @@
     </label>
   </section>
 
-  <section class="settings-block">
+  <section class="settings-card">
     <label class="check-row autostart-row">
       <input
         type="checkbox"
@@ -141,29 +160,24 @@
         disabled={dash.saving}
         onchange={(event) => setStartWithSystem(event.currentTarget.checked)}
       />
-      Uruchamiaj Orbitry razem z systemem
+      {t("autostart.system")}
     </label>
-    <p class="hint">
-      Po zalogowaniu Orbitry wystartuje w zasobniku, bez otwierania przeglądarki.
-      Gdy to włączysz, wybrane aplikacje można uruchamiać automatycznie przy starcie Orbitry.
-    </p>
+    <p class="hint">{t("autostart.systemHint")}</p>
     {#if dash.config.autostart?.stale}
-      <p class="hint">
-        Zarejestrowana ścieżka do Orbitry jest nieaktualna i zostanie zaktualizowana.
-      </p>
+      <p class="hint">{t("autostart.stale")}</p>
     {/if}
   </section>
 
-  <section class="settings-block">
-    <p class="label">Updates</p>
+  <section class="settings-card">
+    <h2 class="settings-heading">{t("settings.updates")}</h2>
     <p class="hint">
-      You're on {update.current || "a development build"}.
+      {t("settings.updatesOn", { version: update.current || "dev" })}
       {#if update.dev}
-        Development builds show the version but don't install updates.
-      {:else if update.updateAvailable}
-        {update.latest} is available.
+        {t("settings.updatesDev")}
+      {:else if update.updateAvailable && update.latest}
+        {t("settings.updatesAvailable", { version: update.latest })}
       {:else if update.latest}
-        You're up to date.
+        {t("settings.updatesCurrent")}
       {/if}
     </p>
     <label class="check-row">
@@ -173,32 +187,32 @@
         disabled={dash.saving}
         onchange={(event) => setAutoCheckUpdates(event.currentTarget.checked)}
       />
-      Check for updates automatically
+      {t("settings.autoCheck")}
     </label>
     <div class="bridge-row update-check-row">
       <button type="button" disabled={update.checking || update.dev} onclick={() => checkForUpdate()}>
-        {update.checking ? "Sprawdzanie…" : "Check now"}
+        {update.checking ? t("settings.checking") : t("settings.checkNow")}
       </button>
       <div class="update-inline">
         {#if update.checking}
-          <span class="hint">Sprawdzanie aktualizacji…</span>
+          <span class="hint">{t("settings.checkingUpdates")}</span>
         {:else if update.error}
           <span class="hint error">{update.error}</span>
         {:else if update.updateAvailable && update.latest}
           <span class="hint">
-            Dostępna {update.latest}.
+            {t("settings.updatesAvailable", { version: update.latest })}
             {#if update.notesUrl}
-              <a href={update.notesUrl} target="_blank" rel="noreferrer">Informacje o wydaniu</a>
+              <a href={update.notesUrl} target="_blank" rel="noreferrer">{t("settings.releaseNotes")}</a>
             {/if}
           </span>
           <button type="button" class="primary" disabled={update.installing || update.dev} onclick={() => installUpdate()}>
-            {update.installing ? "Aktualizowanie…" : "Aktualizuj"}
+            {update.installing ? t("settings.updating") : t("settings.update")}
           </button>
         {:else if update.current}
           <span class="hint">
-            Masz najnowszą wersję ({update.current})
+            {t("settings.latest", { version: update.current })}
             {#if update.checkedAt}
-              · sprawdzono {formatCheckedAt(update.checkedAt)}
+              · {t("settings.checked", { time: formatCheckedAt(update.checkedAt) })}
             {/if}
           </span>
         {/if}

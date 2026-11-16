@@ -1,13 +1,18 @@
 <script lang="ts">
-  let { values = [], color = "#818cf8", height = 14 }: { values?: number[]; color?: string; height?: number } = $props();
+  let { values = [], color = "#818cf8", height = 40 }: { values?: number[]; color?: string; height?: number } = $props();
 
   const W = 300;
   const pts = $derived.by(() => {
     const n = values.length;
-    const top = Math.max(100, ...values, 1e-9);
+    const max = Math.max(0, ...values);
+    const min = Math.min(0, ...values, max);
+    const pad = Math.max((max - min) * 0.12, max === min ? 1 : 0.4);
+    const top = max + pad;
+    const bottom = min - pad;
+    const span = Math.max(top - bottom, 1e-9);
     return values.map((value, i) => {
       const x = n <= 1 ? W : (i / (n - 1)) * W;
-      const y = height - (Math.max(0, Math.min(value, top)) / top) * (height - 2) - 1;
+      const y = height - ((value - bottom) / span) * (height - 2) - 1;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     });
   });

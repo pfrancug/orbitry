@@ -1,4 +1,4 @@
-export type ScriptKind = "dev" | "preview";
+export type ScriptKind = "dev" | "preview" | "build";
 export type ScriptScope = "fe" | "be" | "shared";
 export type ProjectKind = "javascript" | "rust" | "python" | "go" | "docker" | "mixed";
 export type PartRole = "root" | "fe" | "be" | "shared" | "lib";
@@ -20,11 +20,17 @@ export type BridgeStatus = {
 };
 export type HealthStatus = "unknown" | "ok" | "fail" | "skipped";
 
+export type ScriptSource = "package" | "workspace";
+
 export type DetectedScript = {
   name: string;
   command: string;
   kind: ScriptKind;
   scope: ScriptScope;
+  cwd?: string | null;
+  source?: ScriptSource;
+  sourceName?: string | null;
+  label?: string | null;
 };
 
 export type GitInfo = {
@@ -37,6 +43,7 @@ export type BuildInfo = {
   built: boolean;
   dir: string | null;
   lastBuiltAt: number | null;
+  stale?: boolean;
 };
 
 export type WarningSeverity = "info" | "warning" | "error";
@@ -102,6 +109,7 @@ export type ProjectPart = {
   role: PartRole;
   relativePath: string;
   ports: PortInfo[];
+  packageManager?: string | null;
 };
 
 export type RepoGroup = {

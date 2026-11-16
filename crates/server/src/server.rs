@@ -14,7 +14,7 @@ use orbitry_core::{
     config_fingerprint, diff_groups, evaluate_warnings, export_cache, group_projects, load_config,
     empty_models_inventory, load_models_cache, load_scan_cache, models_cache_path, now_ms,
     run_app_autostart, save_config, save_models_cache, save_scan_cache, scan, scan_cache_path,
-    scan_models, set_autostart_enabled, AppAutostartReport, AutostartStatus, BridgeStatus, Config,
+    scan_models_with_sink, set_autostart_enabled, AppAutostartReport, AutostartStatus, BridgeStatus, Config,
     ConfigBridgeMode, ListeningSnapshot, MetricsHub, MetricsSnapshot, ModelsInventory,
     ModelsScanState, PortOverride, ProcessManager, Project, RepoGroup, Run, RunStatus,
     SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
@@ -49,7 +49,7 @@ struct AppState {
     startup_autostart: AtomicBool,
     app_autostart: StdMutex<AppAutostartReport>,
     autostart_warnings: StdMutex<Vec<Warning>>,
-    models: StdMutex<ModelsInventory>,
+    models: Arc<StdMutex<ModelsInventory>>,
     models_scanning: AtomicBool,
     models_cache_path: PathBuf,
 }
@@ -172,7 +172,7 @@ async fn serve(
         startup_autostart: AtomicBool::new(true),
         app_autostart: StdMutex::new(AppAutostartReport::default()),
         autostart_warnings: StdMutex::new(Vec::new()),
-        models: StdMutex::new(load_models_cache(&models_cache_path, &config).unwrap_or_else(empty_models_inventory)),
+        models: Arc::new(StdMutex::new(load_models_cache(&models_cache_path, &config).unwrap_or_else(empty_models_inventory))),
         models_scanning: AtomicBool::new(false),
         models_cache_path,
     });
@@ -182,6 +182,7 @@ async fn serve(
         .route("/api/scan", post(post_scan))
         .route("/api/config", get(get_config).put(put_config))
         .route("/api/run", post(post_run))
+        .route("/api/install", post(post_install))
         .route("/api/stop", post(post_stop))
         .route("/api/stop-all", post(post_stop_all))
         .route("/api/runs", get(get_runs))
@@ -435,7 +436,11 @@ async fn post_run(
             part.id.clone(),
             part.name.clone(),
             part.path.clone(),
-            body.script,
+            body.script.clone(),
+            part.scripts
+                .iter()
+                .find(|script| script.name == body.script)
+                .and_then(|script| script.cwd.clone()),
         )
         .await
     {
@@ -443,6 +448,48 @@ async fn post_run(
         Err(StartError::AlreadyRunning) => Err((
             StatusCode::CONFLICT,
             "This script is already running.".into(),
+        )),
+        Err(StartError::Message(err)) => Err(internal(err)),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InstallRequest {
+    part_id: String,
+}
+
+async fn post_install(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<InstallRequest>,
+) -> Result<Json<Run>, (StatusCode, String)> {
+    let groups = {
+        let inventory = state
+            .inventory
+            .lock()
+            .map_err(|_| internal("inventory lock".into()))?;
+        if inventory.scan.state != ScanState::Fresh {
+            return Err((
+                StatusCode::CONFLICT,
+                "Verifying… waiting for rescan".into(),
+            ));
+        }
+        inventory.groups.clone()
+    };
+    let part = groups
+        .iter()
+        .flat_map(|group| group.parts.iter())
+        .find(|item| item.id == body.part_id || item.path == body.part_id)
+        .ok_or((StatusCode::NOT_FOUND, "part not found".into()))?;
+    match state
+        .manager
+        .start_install(part.id.clone(), part.name.clone(), part.path.clone())
+        .await
+    {
+        Ok(run) => Ok(Json(run)),
+        Err(StartError::AlreadyRunning) => Err((
+            StatusCode::CONFLICT,
+            "Dependencies are already being installed.".into(),
         )),
         Err(StartError::Message(err)) => Err(internal(err)),
     }
@@ -921,8 +968,19 @@ fn start_models_scan(state: Arc<AppState>) {
             .map(|inventory| inventory.groups.clone())
             .unwrap_or_default();
         let cache_path = state.models_cache_path.clone();
+        let models = Arc::clone(&state.models);
         let result = tokio::task::spawn_blocking(move || {
-            let inventory = scan_models(&config, &groups);
+            let inventory = scan_models_with_sink(&config, &groups, |partial| {
+                if let Ok(mut slot) = models.lock() {
+                    let started_at = slot.scan.started_at;
+                    let previous_scanned = slot.scan.scanned_at;
+                    *slot = partial.clone();
+                    slot.scan.state = ModelsScanState::Scanning;
+                    slot.scan.started_at = started_at.or(slot.scan.started_at);
+                    slot.scan.scanned_at = previous_scanned;
+                    slot.scan.stale = previous_scanned.is_some();
+                }
+            });
             if let Err(err) = save_models_cache(&cache_path, &inventory) {
                 eprintln!("orbitry: models cache: {err}");
             }

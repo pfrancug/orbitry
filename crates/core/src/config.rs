@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub enum ScriptKind {
     Dev,
     Preview,
+    Build,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,6 +180,8 @@ pub fn default_kind_patterns() -> Vec<(ScriptKind, &'static str)> {
         (ScriptKind::Preview, "preview:*"),
         (ScriptKind::Preview, "start"),
         (ScriptKind::Preview, "start:*"),
+        (ScriptKind::Build, "build"),
+        (ScriptKind::Build, "build:*"),
     ]
 }
 

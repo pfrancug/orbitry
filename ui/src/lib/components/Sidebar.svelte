@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { runState } from "$lib/runs.svelte";
+  import { i18n, t } from "$lib/i18n";
   import Icon from "./Icon.svelte";
 
   let {
@@ -13,13 +14,14 @@
 
   const running = $derived(runState.runs.filter((run) => run.status === "running").length);
 
-  const items = [
-    { href: "/", label: "Overview", icon: "overview", exact: true },
-    { href: "/projects", label: "Projects", icon: "projects", exact: false },
-    { href: "/models", label: "Modele AI", icon: "models", exact: false },
-    { href: "/logs", label: "Logs", icon: "logs", exact: false },
-    { href: "/settings", label: "Settings", icon: "settings", exact: false },
-  ];
+  const locale = $derived(i18n.locale);
+  const items = $derived([
+    { href: "/", label: t("nav.overview"), icon: "overview", exact: true },
+    { href: "/projects", label: t("nav.projects"), icon: "projects", exact: false },
+    { href: "/models", label: t("nav.models"), icon: "models", exact: false },
+    { href: "/logs", label: t("nav.logs"), icon: "logs", exact: false },
+    { href: "/settings", label: t("nav.settings"), icon: "settings", exact: false },
+  ]);
 
   function active(href: string, exact: boolean) {
     const path = page.url.pathname;
@@ -27,7 +29,7 @@
   }
 </script>
 
-<aside class="sidebar" class:collapsed aria-label="Navigation">
+<aside class="sidebar" class:collapsed aria-label={t("nav.overview")} data-locale={locale}>
   <div class="sidebar-brand">
     <span class="mark" aria-hidden="true"></span>
     {#if !collapsed}

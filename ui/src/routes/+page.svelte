@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { dash, startBlockReason } from "$lib/dashboard.svelte";
+  import { i18n, t } from "$lib/i18n";
   import {
     displayRunPorts,
     findPart,
@@ -12,7 +13,7 @@
     portUrl,
     warningsForRun,
   } from "$lib/format";
-  import { favoriteKey, loadFavorites, loadRecent, toggleFavorite, type RecentScript } from "$lib/recent";
+  import { clearAllDone, clearAllRecent, dismissDone, doneKey, favoriteKey, loadDismissedDone, loadFavorites, loadRecent, removeRecent, toggleFavorite, type RecentScript } from "$lib/recent";
   import {
     isPending,
     openRun,
@@ -34,8 +35,10 @@
 
   let now = $state(Date.now());
   let confirmStop = $state(false);
+  const locale = $derived(i18n.locale);
   let recent = $state<RecentScript[]>(loadRecent());
   let favorites = $state<string[]>(loadFavorites());
+  let dismissedDone = $state<string[]>(loadDismissedDone());
   let clock: ReturnType<typeof setInterval> | undefined;
 
   $effect(() => {
@@ -43,6 +46,7 @@
       now = Date.now();
       recent = loadRecent();
       favorites = loadFavorites();
+      dismissedDone = loadDismissedDone();
     }, 1000);
     return () => clearInterval(clock);
   });
@@ -62,10 +66,33 @@
   const recentDone = $derived(
     runState.runs
       .filter((run) => run.status === "exited" || run.status === "failed")
+      .filter((run) => !dismissedDone.includes(doneKey(run.partId, run.script, run.endedAt, run.id)))
       .slice()
       .sort((a, b) => (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt))
       .slice(0, 8),
   );
+
+  function clearRecentList() {
+    recent = clearAllRecent();
+  }
+
+  function removeRecentItem(partId: string, script: string) {
+    recent = removeRecent(partId, script);
+  }
+
+  function dismissStopped(run: Run) {
+    dismissedDone = dismissDone(doneKey(run.partId, run.script, run.endedAt, run.id));
+  }
+
+  function clearStopped() {
+    dismissedDone = clearAllDone(recentDone.map((run) => doneKey(run.partId, run.script, run.endedAt, run.id)));
+  }
+
+  function processCount(n: number): string {
+    if (n === 0) return t("overview.none");
+    if (n == 1) return `1 ${t("overview.process.one")}`;
+    return `${n} ${t("overview.process.many")}`;
+  }
 
   const quickStarts = $derived.by(() => {
     const fav = favorites
@@ -116,21 +143,21 @@
   }
 </script>
 
-<div class="page-head">
+<div class="page-head" data-locale={locale}>
   <div>
-    <h1>Overview</h1>
-    <p>Everything currently running, in one place.</p>
+    <h1>{t("overview.title")}</h1>
+    <p>{t("overview.subtitle")}</p>
   </div>
   <div class="page-actions">
     {#if running.length > 0}
       <button class="btn danger" type="button" disabled={runState.stoppingAll} onclick={onStopAll}>
         <Icon name="stop" size={12} />
         {#if runState.stoppingAll}
-          Stopping...
+          {t("overview.stopping")}
         {:else if confirmStop}
-          Confirm stop all
+          {t("overview.stopAllConfirm")}
         {:else}
-          Stop all
+          {t("overview.stopAll")}
         {/if}
       </button>
     {/if}
@@ -139,24 +166,24 @@
 
 <div class="kpi-grid">
   <div class="kpi" class:live={running.length > 0}>
-    <span class="kpi-label"><Icon name="activity" size={14} /> Running</span>
+    <span class="kpi-label"><Icon name="activity" size={14} /> {t("overview.kpi.running")}</span>
     <b>{running.length}</b>
-    <em>{dash.loading ? "Scanning..." : `${dash.groups.length} projects`}</em>
+    <em>{dash.loading ? t("overview.kpi.scanning") : t("overview.kpi.projects", { count: dash.groups.length })}</em>
   </div>
   <div class="kpi">
-    <span class="kpi-label"><Icon name="port" size={14} /> Ports in use</span>
+    <span class="kpi-label"><Icon name="port" size={14} /> {t("overview.kpi.ports")}</span>
     <b>{portsInUse}</b>
-    <em>live bindings</em>
+    <em>{t("overview.kpi.portsSub")}</em>
   </div>
   <div class="kpi" class:ok={healthy > 0}>
-    <span class="kpi-label"><Icon name="heart" size={14} /> Healthy</span>
+    <span class="kpi-label"><Icon name="heart" size={14} /> {t("overview.kpi.healthy")}</span>
     <b>{healthy}</b>
-    <em>of {running.length} running</em>
+    <em>{t("overview.kpi.healthySub", { count: running.length })}</em>
   </div>
   <div class="kpi" class:alert={unhealthy > 0}>
-    <span class="kpi-label"><Icon name="alert" size={14} /> Issues</span>
+    <span class="kpi-label"><Icon name="alert" size={14} /> {t("overview.kpi.issues")}</span>
     <b>{unhealthy}</b>
-    <em>failures and warnings</em>
+    <em>{t("overview.kpi.issuesSub")}</em>
   </div>
 </div>
 
@@ -165,13 +192,13 @@
   {@const ramPct = system.memTotal ? (system.memUsed / system.memTotal) * 100 : null}
   <section class="section resource-section">
     <header class="section-head">
-      <h2>Zasoby</h2>
-      <span class="muted">system i uruchomione aplikacje</span>
+      <h2>{t("overview.resources")}</h2>
+      <span class="muted">{t("overview.resourcesSub")}</span>
     </header>
     <div class="resource-grid">
-      <ResourceMeter label="CPU" color="#818cf8" pct={system.cpuPct} value={fmtPct(system.cpuPct)} values={metrics.snapshot.history.cpu} />
+      <ResourceMeter label={t("common.cpu")} color="#818cf8" pct={system.cpuPct} value={fmtPct(system.cpuPct)} values={metrics.snapshot.history.cpu} />
       <ResourceMeter
-        label="RAM"
+        label={t("common.ram")}
         color="#22d3ee"
         pct={ramPct}
         value={fmtPct(ramPct)}
@@ -184,34 +211,42 @@
 
 <section class="section">
   <header class="section-head">
-    <h2>Running processes</h2>
-    <span class="muted">{running.length === 0 ? "None" : running.length === 1 ? "1 process" : `${running.length} processes`}</span>
+    <h2>{t("overview.running")}</h2>
+    <span class="muted">{processCount(running.length)}</span>
   </header>
 
   {#if running.length === 0}
     <div class="empty-card">
-      <strong>Nothing is running.</strong>
-      <p>Start a recent script here, or open Projects to pick an app.</p>
+      <strong>{t("overview.emptyTitle")}</strong>
+      <p>{t("overview.emptyBody")}</p>
       {#if quickStarts.length > 0}
+        <div class="quick-toolbar">
+          <button class="btn ghost" type="button" onclick={clearRecentList}>{t("overview.clearAll")}</button>
+        </div>
         <div class="quick-list">
           {#each quickStarts as item (`${item.partId}::${item.script}`)}
-            <button
-              class="quick-item"
-              type="button"
-              disabled={isPending(item.partId, item.script) || Boolean(startBlockReason(item.partId, item.script))}
-              title={startBlockReason(item.partId, item.script) ?? `Start ${item.script}`}
-              onclick={() => startScript(item.partId, item.script, dash.groups)}
-            >
-              <Icon name="play" size={12} />
-              <span>
-                <strong>{item.partName}</strong>
-                <em>{item.groupName} · {item.script}</em>
-              </span>
-            </button>
+            <div class="quick-row">
+              <button
+                class="quick-item"
+                type="button"
+                disabled={isPending(item.partId, item.script) || Boolean(startBlockReason(item.partId, item.script))}
+                title={startBlockReason(item.partId, item.script) ?? `${t("script.start")} ${item.script}`}
+                onclick={() => startScript(item.partId, item.script, dash.groups)}
+              >
+                <Icon name="play" size={12} />
+                <span>
+                  <strong>{item.partName}</strong>
+                  <em>{item.groupName} · {item.script}</em>
+                </span>
+              </button>
+              {#if !item.favorite}
+                <button class="icon-btn ghost" type="button" title={t("overview.clearItem")} onclick={() => removeRecentItem(item.partId, item.script)}>×</button>
+              {/if}
+            </div>
           {/each}
         </div>
       {:else}
-        <a class="btn primary" href="/projects">Open projects</a>
+        <a class="btn primary" href="/projects">{t("overview.openProjects")}</a>
       {/if}
     </div>
   {:else}
@@ -219,14 +254,14 @@
       <table class="run-table">
         <thead>
           <tr>
-            <th>Project</th>
-            <th>App</th>
-            <th>Script</th>
-            <th>Health</th>
-            <th>Port</th>
-            <th>Uptime</th>
-            <th>CPU / RAM</th>
-            <th>PID</th>
+            <th>{t("overview.col.project")}</th>
+            <th>{t("overview.col.app")}</th>
+            <th>{t("overview.col.script")}</th>
+            <th>{t("overview.col.health")}</th>
+            <th>{t("overview.col.port")}</th>
+            <th>{t("overview.col.uptime")}</th>
+            <th>{t("overview.col.cpuRam")}</th>
+            <th>{t("overview.col.pid")}</th>
             <th></th>
           </tr>
         </thead>
@@ -259,17 +294,17 @@
               <td class="tabular muted">{run.pid ?? "—"}</td>
               <td class="row-actions">
                 {#if port}
-                  <a class="icon-btn ghost" href={portUrl(port.port, port.url)} target="_blank" rel="noopener noreferrer" title="Open in browser">
+                  <a class="icon-btn ghost" href={portUrl(port.port, port.url)} target="_blank" rel="noopener noreferrer" title={t("overview.openBrowser")}>
                     <Icon name="external" />
                   </a>
                 {/if}
-                <button class="icon-btn ghost" type="button" title="Logs" onclick={() => showLogs(run)}>
+                <button class="icon-btn ghost" type="button" title={t("overview.logs")} onclick={() => showLogs(run)}>
                   <Icon name="logs" />
                 </button>
                 <button
                   class="icon-btn ghost"
                   type="button"
-                  title={startBlockReason(run.partId, run.script) ?? "Restart"}
+                  title={startBlockReason(run.partId, run.script) ?? t("overview.restart")}
                   disabled={pending || Boolean(startBlockReason(run.partId, run.script))}
                   onclick={() => restartScript(run.partId, run.script, dash.groups)}
                 >
@@ -278,7 +313,7 @@
                 <button
                   class="icon-btn ghost danger"
                   type="button"
-                  title="Stop"
+                  title={t("overview.stop")}
                   disabled={pending}
                   onclick={() => stopScript(run.partId, run.script)}
                 >
@@ -296,17 +331,18 @@
 {#if recentDone.length > 0}
   <section class="section">
     <header class="section-head">
-      <h2>Recently stopped</h2>
+      <h2>{t("overview.recentStopped")}</h2>
+      <button class="btn ghost" type="button" onclick={clearStopped}>{t("overview.clearAll")}</button>
     </header>
     <div class="table-wrap">
       <table class="run-table compact">
         <thead>
           <tr>
-            <th>Project</th>
-            <th>App</th>
-            <th>Script</th>
-            <th>Status</th>
-            <th>Ended</th>
+            <th>{t("overview.col.project")}</th>
+            <th>{t("overview.col.app")}</th>
+            <th>{t("overview.col.script")}</th>
+            <th>{t("overview.col.status")}</th>
+            <th>{t("overview.col.ended")}</th>
             <th></th>
           </tr>
         </thead>
@@ -321,15 +357,15 @@
                   {run.status}{run.exitCode != null ? ` (${run.exitCode})` : ""}
                 </span>
               </td>
-              <td class="muted">{formatUptime(run.endedAt, now)} ago</td>
+              <td class="muted">{t("overview.ago", { time: formatUptime(run.endedAt, now) })}</td>
               <td class="row-actions">
-                <button class="icon-btn ghost" type="button" title="Logs" onclick={() => showLogs(run)}>
+                <button class="icon-btn ghost" type="button" title={t("overview.logs")} onclick={() => showLogs(run)}>
                   <Icon name="logs" />
                 </button>
                 <button
                   class="icon-btn ghost"
                   type="button"
-                  title={startBlockReason(run.partId, run.script) ?? "Start again"}
+                  title={startBlockReason(run.partId, run.script) ?? t("overview.startAgain")}
                   disabled={isPending(run.partId, run.script) || Boolean(startBlockReason(run.partId, run.script))}
                   onclick={() => startScript(run.partId, run.script, dash.groups)}
                 >
@@ -338,11 +374,12 @@
                 <button
                   class="icon-btn ghost"
                   type="button"
-                  title={favorites.includes(favoriteKey(run.partId, run.script)) ? "Unfavorite" : "Favorite"}
+                  title={favorites.includes(favoriteKey(run.partId, run.script)) ? t("overview.unfavorite") : t("overview.favorite")}
                   onclick={() => (favorites = toggleFavorite(run.partId, run.script))}
                 >
                   <Icon name={favorites.includes(favoriteKey(run.partId, run.script)) ? "star-fill" : "star"} />
                 </button>
+                <button class="icon-btn ghost" type="button" title={t("overview.clearItem")} onclick={() => dismissStopped(run)}>×</button>
               </td>
             </tr>
           {/each}

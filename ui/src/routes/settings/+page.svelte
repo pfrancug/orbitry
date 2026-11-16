@@ -1,11 +1,13 @@
 <script lang="ts">
   import SettingsForm from "$lib/components/SettingsForm.svelte";
+  import { i18n, t } from "$lib/i18n";
+  const locale = $derived(i18n.locale);
 </script>
 
-<div class="page-head">
+<div class="page-head" data-locale={locale}>
   <div>
-    <h1>Settings</h1>
-    <p>Project folders and the extra script patterns Orbitry should detect.</p>
+    <h1>{t("settings.title")}</h1>
+    <p>{t("settings.subtitle")}</p>
   </div>
 </div>
 

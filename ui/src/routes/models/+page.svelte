@@ -3,6 +3,8 @@
   import Icon from "$lib/components/Icon.svelte";
   import { formatCheckedAt, fmtBytes, shortPath } from "$lib/format";
   import { models, modelsScanning, refreshModels, rescanModels } from "$lib/models.svelte";
+  import { i18n, t } from "$lib/i18n";
+  const locale = $derived(i18n.locale);
   import type { CacheSource, ModelUsage, OllamaInventory } from "$lib/types";
 
   onMount(() => {
@@ -51,18 +53,19 @@
   }
 
   function scanLine(): string {
-    if (models.loading && !inventory) return "Wczytywanie…";
+    if (models.loading && !inventory) return t("models.loading");
     if (scanning) {
       return inventory?.scan?.scannedAt
-        ? `Skanowanie… ostatni wynik: ${formatCheckedAt(inventory.scan.scannedAt)}`
-        : "Skanowanie…";
+        ? t("models.scanProgress", { time: formatCheckedAt(inventory.scan.scannedAt) })
+        : t("models.scanning");
     }
-    if (inventory?.scan?.error) return inventory.scan.error;
+    if (inventory?.scan?.error) return t("models.scanFailed", { error: inventory.scan.error });
     if (inventory?.scan?.scannedAt) {
-      const stale = inventory.scan.stale ? " (nieaktualne — korzenie projektów się zmieniły)" : "";
-      return `Ostatnie skanowanie: ${formatCheckedAt(inventory.scan.scannedAt)}${stale}`;
+      return inventory.scan.stale
+        ? t("models.lastScanStale", { time: formatCheckedAt(inventory.scan.scannedAt) })
+        : t("models.lastScan", { time: formatCheckedAt(inventory.scan.scannedAt) });
     }
-    return "Inwentaryzacja lokalnych modeli i wag.";
+    return t("models.subtitle");
   }
 
   function cacheHint(cache: CacheSource): string {
@@ -72,9 +75,9 @@
   }
 </script>
 
-<div class="page-head">
+<div class="page-head" data-locale={locale}>
   <div>
-    <h1>Modele AI</h1>
+    <h1>{t("models.title")}</h1>
     <p>{scanLine()}</p>
   </div>
   <div class="page-actions">
@@ -85,14 +88,17 @@
       onclick={() => rescanModels()}
     >
       <Icon name="refresh" size={14} />
-      {scanning ? "Skanowanie…" : "Skanuj ponownie"}
+      {scanning ? t("models.scanning") : t("models.scanAgain")}
     </button>
   </div>
 </div>
 
+{#if inventory?.scan?.error}
+  <p class="hint error">{t("models.scanFailed", { error: inventory.scan.error })}</p>
+{/if}
 {#if models.error && !inventory}
   <div class="empty-card">
-    <strong>Nie udało się wczytać modeli</strong>
+    <strong>{t("models.loadError")}</strong>
     <p>{models.error}</p>
   </div>
 {:else if models.loading && !inventory}

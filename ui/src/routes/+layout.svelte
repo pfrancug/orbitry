@@ -13,7 +13,8 @@
   import { bannerMessage, dash, refreshAll } from "$lib/dashboard.svelte";
   import { refreshModels } from "$lib/models.svelte";
   import { refreshTools } from "$lib/tools.svelte";
-  import { refreshVersion, update } from "$lib/update.svelte";
+  import { initLocale } from "$lib/i18n";
+  import { refreshVersion, startUpdatePolling, update, updateInProgress } from "$lib/update.svelte";
   import { formatAgeMs } from "$lib/format";
   import { findPart } from "$lib/format";
   import { closePanel, refreshRuns, runState, setPanelOpen } from "$lib/runs.svelte";
@@ -63,7 +64,9 @@
       .finally(() => {
         dash.loading = false;
       });
+    initLocale();
     void refreshVersion();
+    startUpdatePolling();
     void refreshTools();
     void refreshModels();
     void refreshMetrics();
@@ -158,7 +161,7 @@
       <UpdateBanner />
       <AutostartToast />
     </div>
-    {#if update.installing || update.phase === "error" || update.phase === "restarting" || update.phase === "downloading" || update.phase === "verifying"}
+    {#if updateInProgress()}
       <UpdateOverlay />
     {/if}
 

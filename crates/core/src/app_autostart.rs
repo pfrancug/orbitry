@@ -272,6 +272,7 @@ pub async fn run_app_autostart(
                 part.name.clone(),
                 part.path.clone(),
                 script.name.clone(),
+                script.cwd.clone(),
             )
             .await
         {

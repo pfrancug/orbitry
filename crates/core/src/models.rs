@@ -15,13 +15,14 @@ use crate::group::RepoGroup;
 use crate::scan_cache::now_ms;
 
 /// Bump when the inventory shape or detection rules change.
-pub const MODELS_SCANNER_VERSION: u32 = 1;
+pub const MODELS_SCANNER_VERSION: u32 = 2;
 
 const OLLAMA_PORT: u16 = 11434;
 const OLLAMA_HOST: [u8; 4] = [127, 0, 0, 1];
-const HTTP_TIMEOUT: Duration = Duration::from_millis(1500);
+const HTTP_TIMEOUT: Duration = Duration::from_millis(800);
 const BIN_MIN_BYTES: u64 = 2 * 1024 * 1024;
-const ATTRIB_MAX_FILE_BYTES: u64 = 1024 * 1024;
+const ATTRIB_MAX_FILE_BYTES: u64 = 512 * 1024;
+const ATTRIB_MAX_FILES: usize = 4000;
 
 const SKIP_DIRS: &[&str] = &[
     "node_modules",
@@ -30,6 +31,32 @@ const SKIP_DIRS: &[&str] = &[
     ".git",
     "dist",
     "target",
+    "__pycache__",
+    ".cache",
+    ".svelte-kit",
+    ".next",
+    ".output",
+    ".nuxt",
+    "coverage",
+    ".turbo",
+    ".pnpm-store",
+    "backups",
+    "backup",
+    "archive",
+    "archives",
+];
+
+const ATTRIB_SKIP_DIRS: &[&str] = &[
+    "data",
+    "datasets",
+    "dataset",
+    "outputs",
+    "output",
+    "logs",
+    "tmp",
+    "temp",
+    "build",
+    "vendor",
 ];
 
 const WEIGHT_EXTS: &[&str] = &[
@@ -254,11 +281,68 @@ pub fn empty_models_inventory() -> ModelsInventory {
 
 /// Full inventory. Intended for a background thread, never the request path.
 pub fn scan_models(config: &Config, groups: &[RepoGroup]) -> ModelsInventory {
-    let mut ollama = scan_ollama();
-    let mut caches = scan_caches();
-    let mut project_files = scan_project_weights(&config.roots, groups);
-    attribute_usages(&mut ollama, &mut caches, &mut project_files, &config.roots, groups);
+    scan_models_with_sink(config, groups, |_| {})
+}
 
+/// Same as [`scan_models`], but publishes partial inventories (Ollama and caches
+/// first, then project weights) so the UI is not empty for the whole walk.
+pub fn scan_models_with_sink<F>(config: &Config, groups: &[RepoGroup], mut sink: F) -> ModelsInventory
+where
+    F: FnMut(&ModelsInventory),
+{
+    let started_at = now_ms();
+    let ollama = scan_ollama();
+    let caches = scan_caches();
+    let partial = assemble_inventory(
+        config,
+        ollama.clone(),
+        caches.clone(),
+        Vec::new(),
+        ModelsScanState::Scanning,
+        None,
+        Some(started_at),
+        None,
+    );
+    sink(&partial);
+
+    let mut ollama = ollama;
+    let mut caches = caches;
+    let mut project_files = scan_project_weights(&config.roots, groups);
+    let mid = assemble_inventory(
+        config,
+        ollama.clone(),
+        caches.clone(),
+        project_files.clone(),
+        ModelsScanState::Scanning,
+        None,
+        Some(started_at),
+        None,
+    );
+    sink(&mid);
+
+    attribute_usages(&mut ollama, &mut caches, &mut project_files, &config.roots, groups);
+    assemble_inventory(
+        config,
+        ollama,
+        caches,
+        project_files,
+        ModelsScanState::Fresh,
+        Some(now_ms()),
+        Some(started_at),
+        None,
+    )
+}
+
+fn assemble_inventory(
+    config: &Config,
+    ollama: OllamaInventory,
+    caches: Vec<CacheSource>,
+    project_files: Vec<ProjectWeights>,
+    state: ModelsScanState,
+    scanned_at: Option<i64>,
+    started_at: Option<i64>,
+    error: Option<String>,
+) -> ModelsInventory {
     let mut totals = Vec::new();
     if !ollama.models_dir.is_empty() || ollama.installed || !ollama.models.is_empty() {
         totals.push(SourceTotal {
@@ -287,13 +371,12 @@ pub fn scan_models(config: &Config, groups: &[RepoGroup]) -> ModelsInventory {
         });
     }
     let grand_total_bytes = totals.iter().map(|item| item.bytes).sum();
-
     ModelsInventory {
         scan: ModelsScanStatus {
-            state: ModelsScanState::Fresh,
-            scanned_at: Some(now_ms()),
-            started_at: None,
-            error: None,
+            state,
+            scanned_at,
+            started_at,
+            error,
             stale: false,
         },
         ollama,
@@ -785,7 +868,7 @@ fn scan_named_cache(
         }
         CacheListMode::WeightFiles => {
             let mut files = Vec::new();
-            walk_files(&root, false, &mut files);
+            walk_files(&root, WalkMode::Weights, &mut files);
             for (path, size) in files {
                 if !is_cache_listable(&path, size) {
                     continue;
@@ -828,7 +911,7 @@ fn scan_project_weights(roots: &[String], groups: &[RepoGroup]) -> Vec<ProjectWe
                 files.push((root_path, meta.len()));
             }
         } else {
-            walk_files(&root_path, true, &mut files);
+            walk_files(&root_path, WalkMode::Weights, &mut files);
         }
         for (path, size) in files {
             if !is_weight_file(&path, size) {
@@ -916,8 +999,10 @@ fn project_for(path: &Path, groups: &[RepoGroup], roots: &[String]) -> (String, 
         if let Ok(rel) = path.strip_prefix(&root_path) {
             if let Some(first) = rel.iter().next() {
                 let folder = root_path.join(first);
-                let name = first.to_string_lossy().to_string();
-                return (display_path(&folder), name, display_path(&folder));
+                if folder.is_dir() {
+                    let name = first.to_string_lossy().to_string();
+                    return (display_path(&folder), name, display_path(&folder));
+                }
             }
             return (display_path(&root_path), file_name(&root_path), display_path(&root_path));
         }
@@ -988,14 +1073,19 @@ fn attribute_usages(
             continue;
         }
         let mut files = Vec::new();
-        walk_files(&root_path, true, &mut files);
+        walk_files(&root_path, WalkMode::Attribution, &mut files);
+        let mut read = 0_usize;
         for (path, size) in files {
             if size == 0 || size > ATTRIB_MAX_FILE_BYTES || !is_text_file(&path) {
                 continue;
             }
+            if read >= ATTRIB_MAX_FILES {
+                break;
+            }
             let Ok(raw) = fs::read_to_string(&path) else {
                 continue;
             };
+            read += 1;
             let lower = raw.to_ascii_lowercase();
             let (project_id, project_name, project_path) = project_for(&path, groups, roots);
             let rel = display_path(&path);
@@ -1115,7 +1205,13 @@ fn merge_usage(slot: &mut Vec<ModelUsage>, usage: ModelUsage) {
     slot.push(usage);
 }
 
-fn walk_files(root: &Path, skip_tooling: bool, out: &mut Vec<(PathBuf, u64)>) {
+#[derive(Clone, Copy)]
+enum WalkMode {
+    Weights,
+    Attribution,
+}
+
+fn walk_files(root: &Path, mode: WalkMode, out: &mut Vec<(PathBuf, u64)>) {
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = fs::read_dir(&dir) else {
@@ -1130,7 +1226,7 @@ fn walk_files(root: &Path, skip_tooling: bool, out: &mut Vec<(PathBuf, u64)>) {
                 continue;
             }
             if meta.is_dir() {
-                if skip_tooling && is_skipped_dir(&path) {
+                if is_skipped_dir(&path, mode) {
                     continue;
                 }
                 stack.push(path);
@@ -1143,13 +1239,17 @@ fn walk_files(root: &Path, skip_tooling: bool, out: &mut Vec<(PathBuf, u64)>) {
     }
 }
 
-fn is_skipped_dir(path: &Path) -> bool {
+fn is_skipped_dir(path: &Path, mode: WalkMode) -> bool {
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
         return false;
     };
-    SKIP_DIRS
-        .iter()
-        .any(|skip| name.eq_ignore_ascii_case(skip))
+    if SKIP_DIRS.iter().any(|skip| name.eq_ignore_ascii_case(skip)) {
+        return true;
+    }
+    matches!(mode, WalkMode::Attribution)
+        && ATTRIB_SKIP_DIRS
+            .iter()
+            .any(|skip| name.eq_ignore_ascii_case(skip))
 }
 
 fn is_text_file(path: &Path) -> bool {
@@ -1216,7 +1316,22 @@ fn meta_mtime_ms(meta: &fs::Metadata) -> Option<i64> {
 }
 
 fn home_dir() -> Option<PathBuf> {
-    dirs::home_dir()
+    if let Some(path) = dirs::home_dir() {
+        if !path.as_os_str().is_empty() {
+            return Some(path);
+        }
+    }
+    if let Some(path) = env_path("USERPROFILE") {
+        return Some(path);
+    }
+    let drive = std::env::var("HOMEDRIVE").ok();
+    let rest = std::env::var("HOMEPATH").ok();
+    match (drive, rest) {
+        (Some(drive), Some(rest)) if !drive.trim().is_empty() && !rest.trim().is_empty() => {
+            Some(PathBuf::from(format!("{drive}{rest}")))
+        }
+        _ => None,
+    }
 }
 
 fn unix_cache_home() -> Option<PathBuf> {

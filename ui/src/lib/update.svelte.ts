@@ -1,6 +1,8 @@
-import { checkForUpdates, fetchVersion, startUpdate } from "./api";
-import { runState } from "./runs.svelte";
+import { checkForUpdates, fetchUpdateStatus, fetchVersion, startUpdate } from "./api";
+import { t } from "./i18n";
 import type { UpdatePhase, VersionInfo } from "./types";
+
+const ACTIVE_PHASES = new Set(["downloading", "verifying", "installing", "restarting", "error"]);
 
 export const update = $state({
   current: "",
@@ -19,7 +21,21 @@ export const update = $state({
   rolledBack: false,
   checkedAt: null as number | null,
   toast: null as null | { kind: "available" | "latest" | "error" },
+  waitingForRestart: false,
 });
+
+let baselineVersion = "";
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+let polling = false;
+let inFlight = false;
+
+export function updateInProgress(): boolean {
+  return (
+    update.installing ||
+    update.waitingForRestart ||
+    ACTIVE_PHASES.has(update.phase)
+  );
+}
 
 export function applyVersion(payload: VersionInfo) {
   update.current = payload.current ?? "";
@@ -37,6 +53,7 @@ export function applyVersion(payload: VersionInfo) {
   update.message = payload.message ?? null;
   update.rolledBack = Boolean(payload.rolledBack);
   update.checkedAt = payload.checkedAt ?? update.checkedAt;
+  if (update.current && !baselineVersion) baselineVersion = update.current;
 }
 
 export async function refreshVersion() {
@@ -68,7 +85,7 @@ function dismissedVersion(): string | null {
 }
 
 export function maybeShowUpdateToast(manual: boolean) {
-  if (update.dev || update.installing) return;
+  if (update.dev || update.installing || update.waitingForRestart) return;
   if (update.error) {
     if (manual) update.toast = { kind: "error" };
     return;
@@ -77,10 +94,6 @@ export function maybeShowUpdateToast(manual: boolean) {
     if (dismissedVersion() !== update.latest || manual) {
       update.toast = { kind: "available" };
     }
-    return;
-  }
-  if (manual && update.latest) {
-    update.toast = { kind: "latest" };
     return;
   }
   if (manual) {
@@ -96,16 +109,15 @@ export async function checkForUpdate() {
     maybeShowUpdateToast(true);
   } catch (err: unknown) {
     update.checking = false;
-    update.error = err instanceof Error ? err.message : "Nie udało się sprawdzić aktualizacji.";
+    update.error = err instanceof Error ? err.message : t("settings.checkFailed");
     update.toast = { kind: "error" };
   }
 }
 
 export async function installUpdate() {
   if (update.dev || update.installing) return;
-  const latest = update.latest ?? "nową wersję";
-  const message = `Zainstalować Orbitry ${latest}? Orbitry uruchomi się ponownie. Uruchomione aplikacje pozostaną włączone.`;
-  if (!confirm(message)) return;
+  const latest = update.latest ?? t("update.aNewVersion");
+  if (!confirm(t("update.confirm", { version: latest }))) return;
   update.installing = true;
   update.error = null;
   try {
@@ -122,6 +134,61 @@ export async function installUpdate() {
     }
   } catch (err: unknown) {
     update.installing = false;
-    update.error = err instanceof Error ? err.message : "The update could not be started.";
+    update.error = err instanceof Error ? err.message : t("update.startFailed");
+  }
+}
+
+export function startUpdatePolling() {
+  if (polling) return;
+  polling = true;
+  if (!baselineVersion) baselineVersion = update.current;
+  void pollUpdateStatus();
+  armPollTimer();
+}
+
+function armPollTimer() {
+  if (pollTimer) clearInterval(pollTimer);
+  const ms = updateInProgress() ? 300 : 1000;
+  pollTimer = setInterval(() => {
+    void pollUpdateStatus();
+    const next = updateInProgress() ? 300 : 1000;
+    if (next !== ms) armPollTimer();
+  }, ms);
+}
+
+async function pollUpdateStatus() {
+  if (inFlight) return;
+  inFlight = true;
+  try {
+    const info = await fetchUpdateStatus();
+    applyVersion(info);
+    if (!baselineVersion && info.current) baselineVersion = info.current;
+    if (info.phase === "restarting") {
+      update.waitingForRestart = true;
+    }
+    if (
+      update.waitingForRestart &&
+      info.current &&
+      baselineVersion &&
+      info.current !== baselineVersion
+    ) {
+      window.location.reload();
+      return;
+    }
+    if (
+      update.waitingForRestart &&
+      !info.installing &&
+      info.phase === "idle" &&
+      info.rolledBack &&
+      info.current === baselineVersion
+    ) {
+      update.waitingForRestart = false;
+    }
+  } catch {
+    if (updateInProgress() && update.phase !== "error") {
+      update.waitingForRestart = true;
+    }
+  } finally {
+    inFlight = false;
   }
 }

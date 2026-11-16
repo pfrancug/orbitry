@@ -26,8 +26,9 @@ use crate::ports::{apply_port_overrides, detect_expected_ports, ports_from_log, 
 use std::os::windows::process::CommandExt;
 
 use crate::process::{
-    detect_package_manager, kill_process_tree, kill_process_tree_force, now_ms, run_command_label,
-    script_command, LogLine, LogStream, Run, RunEvent, RunStatus,
+    detect_package_manager, install_command, install_command_label, kill_process_tree,
+    kill_process_tree_force, now_ms, run_command_label, script_command, LogLine, LogStream, Run,
+    RunEvent, RunStatus,
 };
 
 pub const LOG_BUFFER_CAP: usize = 2000;
@@ -159,11 +160,48 @@ impl ProcessManager {
         part_name: String,
         part_path: String,
         script: String,
+        cwd: Option<String>,
     ) -> Result<Run, StartError> {
-        let cwd = PathBuf::from(&part_path);
+        self.spawn_run(part_id, part_name, part_path, script, cwd, SpawnKind::Script)
+            .await
+    }
+
+    pub async fn start_install(
+        self: &Arc<Self>,
+        part_id: String,
+        part_name: String,
+        part_path: String,
+    ) -> Result<Run, StartError> {
+        self.spawn_run(
+            part_id,
+            part_name,
+            part_path,
+            "install".into(),
+            None,
+            SpawnKind::Install,
+        )
+        .await
+    }
+
+    async fn spawn_run(
+        self: &Arc<Self>,
+        part_id: String,
+        part_name: String,
+        part_path: String,
+        script: String,
+        cwd: Option<String>,
+        kind: SpawnKind,
+    ) -> Result<Run, StartError> {
+        let cwd_raw = cwd
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(part_path.as_str());
+        let cwd = PathBuf::from(cwd_raw);
         if !cwd.is_dir() {
             return Err(StartError::Message(format!(
-                "project folder not found: {part_path}"
+                "project folder not found: {}",
+                display_path(&cwd)
             )));
         }
 
@@ -184,11 +222,14 @@ impl ProcessManager {
         };
         let _ = ensure_logs_dir();
         let pm = detect_package_manager(&cwd);
-        let command = run_command_label(pm, &script);
+        let command = match kind {
+            SpawnKind::Script => run_command_label(pm, &script),
+            SpawnKind::Install => install_command_label(pm),
+        };
         let id = uuid::Uuid::new_v4().to_string();
         let log_path = run_log_path(&id);
         let file_cap = file_cap_bytes(self.log_limit_mb());
-                let child_and_pid = spawn_detached_app(pm, &script, &cwd, &log_path, file_cap)
+        let child_and_pid = spawn_detached_app(pm, &script, &cwd, &log_path, file_cap, kind)
             .map_err(StartError::Message)?;
         let (mut child, pid) = child_and_pid;
         let process_start = pid.and_then(process_start_time);
@@ -782,12 +823,26 @@ fn collect_cleanup_state(inner: &Inner) -> (Vec<String>, Vec<FinishedLog>) {
     (running, finished)
 }
 
+#[derive(Clone, Copy)]
+enum SpawnKind {
+    Script,
+    Install,
+}
+
+fn make_app_command(pm: &str, script: &str, cwd: &Path, kind: SpawnKind) -> tokio::process::Command {
+    match kind {
+        SpawnKind::Script => script_command(pm, script, cwd),
+        SpawnKind::Install => install_command(pm, cwd),
+    }
+}
+
 fn spawn_detached_app(
     pm: &str,
     script: &str,
     cwd: &Path,
     log_path: &Path,
     file_cap: u64,
+    kind: SpawnKind,
 ) -> Result<(tokio::process::Child, Option<u32>), String> {
     let (reader, writer) =
         os_pipe::pipe().map_err(|err| format!("log pipe: {err}"))?;
@@ -828,7 +883,7 @@ fn spawn_detached_app(
         let _ = pump.wait();
     });
 
-    let mut cmd = script_command(pm, script, cwd);
+    let mut cmd = make_app_command(pm, script, cwd, kind);
     cmd.stdout(std::process::Stdio::from(writer))
         .stderr(std::process::Stdio::from(writer_err));
     match cmd.spawn() {
@@ -839,14 +894,14 @@ fn spawn_detached_app(
         Err(err) => {
             #[cfg(windows)]
             {
-                let mut retry = script_command(pm, script, cwd);
+                let mut retry = make_app_command(pm, script, cwd, kind);
                 retry.creation_flags(detach_creation_flags_no_breakaway());
                 // The previous pipe writers were moved; we cannot retry with the same
                 // handles. Surface the original error instead of a broken retry.
                 let _ = detach_creation_flags();
                 let _ = retry;
             }
-            Err(format!("spawn {pm} run {script}: {err}"))
+            Err(format!("spawn {command}: {err}", command = match kind { SpawnKind::Script => format!("{pm} run {script}"), SpawnKind::Install => format!("{pm} install") }))
         }
     }
 }

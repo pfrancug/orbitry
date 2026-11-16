@@ -1,4 +1,4 @@
-import { fetchRuns, startRun, stopAllRuns, stopRun } from "./api";
+import { fetchRuns, startInstall as requestInstall, startRun, stopAllRuns, stopRun } from "./api";
 import { applyAppAutostartReport, startBlockReason } from "./dashboard.svelte";
 import { groupNameFor } from "./format";
 import { rememberRecent } from "./recent";
@@ -173,6 +173,17 @@ export async function toggleScript(partId: string, script: string, groups: RepoG
       selectPart(partId, script, true);
       openRun(run.id);
     }
+  });
+}
+
+export async function startInstall(partId: string, groups: RepoGroup[] = []) {
+  if (runningFor(partId, "install") || isPending(partId, "install")) return;
+  await withPending(partId, "install", async () => {
+    const run = await requestInstall(partId);
+    upsertRun(run);
+    remember(partId, "install", groups);
+    selectPart(partId, "install", true);
+    openRun(run.id);
   });
 }
 

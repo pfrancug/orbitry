@@ -86,6 +86,13 @@ export function startRun(partId: string, script: string): Promise<Run> {
   });
 }
 
+export function startInstall(partId: string): Promise<Run> {
+  return request("/api/install", {
+    method: "POST",
+    body: JSON.stringify({ partId }),
+  });
+}
+
 export function stopRun(runId: string): Promise<Run> {
   return request("/api/stop", {
     method: "POST",

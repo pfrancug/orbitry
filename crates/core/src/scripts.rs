@@ -4,15 +4,43 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::config::{
-    default_kind_patterns, pattern_matches, ScriptKind, ScriptPattern, ScriptScope,
+    default_kind_patterns, display_path, pattern_matches, ScriptKind, ScriptPattern, ScriptScope,
 };
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScriptSource {
+    #[default]
+    Package,
+    Workspace,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DetectedScript {
     pub name: String,
     pub command: String,
     pub kind: ScriptKind,
     pub scope: ScriptScope,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub source: ScriptSource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+impl DetectedScript {
+    pub fn display_label(&self) -> String {
+        if let Some(label) = &self.label {
+            if !label.is_empty() {
+                return label.clone();
+            }
+        }
+        self.name.clone()
+    }
 }
 
 const FE_DEPS: &[&str] = &[
@@ -89,6 +117,10 @@ pub fn detect_scripts(
                 command: command.clone(),
                 kind,
                 scope,
+                cwd: Some(display_path(package_dir)),
+                source: ScriptSource::Package,
+                source_name: None,
+                label: None,
             });
         }
     }
@@ -202,4 +234,78 @@ pub fn guess_js_framework(dep_names: &BTreeSet<String>) -> Option<String> {
         .iter()
         .find(|(dep, _)| dep_names.contains(*dep))
         .map(|(_, name)| (*name).to_string())
+}
+
+
+/// If `command` targets a workspace package (`-w`, `--workspace`, `--filter`,
+/// or `yarn workspace`), return that package name or relative path.
+pub fn workspace_target(command: &str) -> Option<String> {
+    let tokens = split_command(command);
+    if tokens.is_empty() {
+        return None;
+    }
+    let mut i = 0;
+    while i < tokens.len() {
+        let token = tokens[i].as_str();
+        if token == "-w" || token == "--workspace" || token == "--filter" {
+            if let Some(value) = tokens.get(i + 1) {
+                return Some(clean_workspace_name(value));
+            }
+        }
+        if let Some(value) = token
+            .strip_prefix("--workspace=")
+            .or_else(|| token.strip_prefix("--filter="))
+            .or_else(|| token.strip_prefix("-w="))
+        {
+            return Some(clean_workspace_name(value));
+        }
+        if token == "workspace" && i > 0 {
+            let prev = tokens[i - 1].as_str();
+            let prev_name = prev.rsplit(['/', '\\']).next().unwrap_or(prev).to_ascii_lowercase();
+            if prev_name == "yarn" || prev_name == "yarn.cmd" || prev_name == "yarn.exe" {
+                if let Some(value) = tokens.get(i + 1) {
+                    return Some(clean_workspace_name(value));
+                }
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+fn clean_workspace_name(value: &str) -> String {
+    let trimmed = value.trim().trim_matches('"').trim_matches('\'');
+    let trimmed = trimmed.strip_prefix("./").unwrap_or(trimmed);
+    trimmed.replace('\\', "/").trim_matches('/').to_string()
+}
+
+fn split_command(command: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    for ch in command.chars() {
+        if let Some(q) = quote {
+            if ch == q {
+                quote = None;
+            } else {
+                current.push(ch);
+            }
+            continue;
+        }
+        if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+            continue;
+        }
+        if ch.is_whitespace() {
+            if !current.is_empty() {
+                tokens.push(std::mem::take(&mut current));
+            }
+            continue;
+        }
+        current.push(ch);
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    tokens
 }

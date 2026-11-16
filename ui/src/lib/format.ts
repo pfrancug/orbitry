@@ -1,4 +1,4 @@
-import type { AppWarning, HealthInfo, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run, ScanChange, ScanDiff } from "./types";
+import type { AppWarning, DetectedScript, HealthInfo, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run, ScanChange, ScanDiff } from "./types";
 
 export function formatAgeMs(ms: number | null | undefined): string {
   if (!ms) return "just now";
@@ -291,4 +291,20 @@ export function formatCheckedAt(ts: number | null | undefined): string {
   const date = new Date(ts);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString("pl-PL", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+}
+
+export function runScripts(part: ProjectPart | null | undefined): DetectedScript[] {
+  return (part?.scripts ?? []).filter((script) => script.kind !== "build");
+}
+
+export function buildScripts(part: ProjectPart | null | undefined): DetectedScript[] {
+  return (part?.scripts ?? []).filter((script) => script.kind === "build");
+}
+
+export function scriptLabel(script: DetectedScript): string {
+  return script.label?.trim() || script.name;
+}
+
+export function installCommand(part: ProjectPart | null | undefined): string {
+  return `${part?.packageManager || "npm"} install`;
 }

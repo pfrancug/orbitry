@@ -177,6 +177,36 @@ pub fn script_command(pm: &str, script: &str, cwd: &Path) -> tokio::process::Com
     cmd
 }
 
+pub fn install_command_label(pm: &str) -> String {
+    format!("{pm} install")
+}
+
+/// `pm install` in `cwd`, without opening a new console window.
+pub fn install_command(pm: &str, cwd: &Path) -> tokio::process::Command {
+    let mut cmd = if cfg!(windows) {
+        let mut command = tokio::process::Command::new("cmd");
+        command.args(["/C", pm, "install"]);
+        #[cfg(windows)]
+        {
+            command.creation_flags(crate::logpump::detach_creation_flags());
+        }
+        command
+    } else {
+        let mut command = tokio::process::Command::new(pm);
+        command.args(["install"]);
+        crate::logpump::apply_detach_flags_tokio(&mut command);
+        command
+    };
+    cmd.current_dir(cwd)
+        .env("FORCE_COLOR", "1")
+        .env("npm_config_color", "always")
+        .env("TERM", "xterm-256color")
+        .env("PATH", path_with_node_bins(cwd))
+        .stdin(Stdio::null())
+        .kill_on_drop(false);
+    cmd
+}
+
 /// Prepend ancestor `node_modules/.bin` folders so hoisted workspace binaries resolve.
 fn path_with_node_bins(start: &Path) -> std::ffi::OsString {
     let mut bins = Vec::new();

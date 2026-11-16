@@ -1,5 +1,7 @@
 import { fetchConfig, fetchProjects, pickFolder, requestScan, saveConfig } from "./api";
 import { refreshRuns, restoreSelection, runState } from "./runs.svelte";
+import { findPart } from "./format";
+import { t } from "./i18n";
 import type { AppAutostartReport, AppConfig, AppWarning, ConfigBridgeMode, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanStatus, ScriptPattern } from "./types";
 
 const PROJECTS_CACHE_KEY = "orbitry.projects-cache";
@@ -114,8 +116,25 @@ export function isRemovedEntry(partId?: string, script?: string, projectId?: str
 }
 
 export function startBlockReason(partId?: string, script?: string): string | null {
-  if (startsLocked()) return "Verifying… waiting for rescan";
-  if (partId && isRemovedEntry(partId, script)) return "This app is no longer in the scan.";
+  if (startsLocked()) return t("script.verifying");
+  if (partId && isRemovedEntry(partId, script)) return t("script.removed");
+  if (partId && script) {
+    const part = findPart(partId, dash.groups);
+    const selected = part?.scripts?.find((item) => item.name === script);
+    if (selected?.kind === "preview" && part && !part.build?.built) {
+      return t("build.previewBlocked");
+    }
+  }
+  return null;
+}
+
+export function startWarnReason(partId?: string, script?: string): string | null {
+  if (!partId || !script) return null;
+  const part = findPart(partId, dash.groups);
+  const selected = part?.scripts?.find((item) => item.name === script);
+  if (selected?.kind === "preview" && part?.build?.built && part.build.stale) {
+    return t("build.previewStale");
+  }
   return null;
 }
 

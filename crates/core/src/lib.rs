@@ -43,7 +43,7 @@ pub use manager::{ProcessManager, StartError, Subscription};
 pub use metrics::{MetricsHub, MetricsSnapshot};
 pub use models::{
     empty_models_inventory, load_models_cache, models_cache_path, models_fingerprint, save_models_cache,
-    scan_models, CacheSource, CachedModel, ModelUsage, ModelsInventory, ModelsScanState, ModelsScanStatus,
+    scan_models, scan_models_with_sink, CacheSource, CachedModel, ModelUsage, ModelsInventory, ModelsScanState, ModelsScanStatus,
     MODELS_SCANNER_VERSION, OllamaInventory, OllamaModel, ProjectWeights, SourceTotal, WeightFile,
 };
 pub use ports::{
@@ -56,7 +56,7 @@ pub use scan_cache::{
     config_fingerprint, diff_groups, load_scan_cache, now_ms, save_scan_cache, scan_cache_path,
     ScanCache, ScanChange, ScanChangeKind, ScanDiff, ScanState, ScanStatus, SCANNER_VERSION,
 };
-pub use scripts::DetectedScript;
+pub use scripts::{DetectedScript, ScriptSource};
 pub use warnings::{
     attach_run_warnings, evaluate_warnings, Warning, WarningSeverity,
 };

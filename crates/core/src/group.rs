@@ -8,7 +8,8 @@ use crate::config::{canonical, display_path, normalize_path_str, paths_equal};
 use crate::git::find_git_root;
 use crate::scan::{Project, ProjectKind};
 use crate::ports::PortInfo;
-use crate::scripts::DetectedScript;
+use crate::process::detect_package_manager;
+use crate::scripts::{workspace_target, DetectedScript, ScriptSource};
 use crate::GitInfo;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +39,8 @@ pub struct ProjectPart {
     pub role: PartRole,
     pub relative_path: String,
     pub ports: Vec<PortInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_manager: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,6 +164,11 @@ fn build_group(id: String, members: Vec<Project>) -> RepoGroup {
         .map(|project| {
             let relative_path = relative_to(&project.path, &path);
             let role = part_role(&project, &path, &relative_path);
+            let package_manager = if is_js_like(project.kind) {
+                Some(detect_package_manager(Path::new(&project.path)).to_string())
+            } else {
+                None
+            };
             ProjectPart {
                 id: project.id,
                 path: project.path,
@@ -176,6 +184,7 @@ fn build_group(id: String, members: Vec<Project>) -> RepoGroup {
                 role,
                 relative_path,
                 ports: project.ports,
+                package_manager,
             }
         })
         .collect();
@@ -187,6 +196,7 @@ fn build_group(id: String, members: Vec<Project>) -> RepoGroup {
                 .cmp(&b.relative_path.to_ascii_lowercase())
         })
     });
+    attach_workspace_scripts(&mut parts, &path, &name);
 
     RepoGroup {
         id,
@@ -337,6 +347,92 @@ fn unify_kind(kinds: impl Iterator<Item = ProjectKind>) -> ProjectKind {
         [] => ProjectKind::Javascript,
         _ => ProjectKind::Mixed,
     }
+}
+
+
+fn attach_workspace_scripts(parts: &mut [ProjectPart], group_path: &str, group_name: &str) {
+    let Some(root_idx) = parts.iter().position(|part| {
+        part.role == PartRole::Root || paths_equal(&part.path, group_path)
+    }) else {
+        return;
+    };
+    let root_cwd = display_path(Path::new(group_path));
+    let root_name = if !group_name.is_empty() {
+        group_name.to_string()
+    } else {
+        parts[root_idx].name.clone()
+    };
+    let candidates: Vec<DetectedScript> = parts[root_idx].scripts.clone();
+    let mut moving: Vec<(usize, DetectedScript)> = Vec::new();
+    for script in candidates {
+        let Some(target) = workspace_target(&script.command) else {
+            continue;
+        };
+        let Some(idx) = find_part_for_workspace(parts, &target) else {
+            continue;
+        };
+        if idx == root_idx {
+            continue;
+        }
+        let mut moved = script.clone();
+        moved.cwd = Some(root_cwd.clone());
+        moved.source = ScriptSource::Workspace;
+        moved.source_name = Some(root_name.clone());
+        moved.label = Some(format!("root: {} → {}", script.name, script.command));
+        moving.push((idx, moved));
+    }
+    if moving.is_empty() {
+        return;
+    }
+    parts[root_idx].scripts.retain(|script| {
+        !moving.iter().any(|(_, moved)| {
+            moved.name == script.name && moved.command == script.command
+        })
+    });
+    for (idx, script) in moving {
+        if !parts[idx]
+            .scripts
+            .iter()
+            .any(|existing| existing.name == script.name && existing.source == ScriptSource::Workspace)
+        {
+            parts[idx].scripts.push(script);
+        }
+    }
+}
+
+fn find_part_for_workspace(parts: &[ProjectPart], target: &str) -> Option<usize> {
+    let target_norm = target.replace('\\', "/").trim_matches('/').to_ascii_lowercase();
+    let mut best: Option<(usize, usize)> = None;
+    for (idx, part) in parts.iter().enumerate() {
+        let rel = part
+            .relative_path
+            .replace('\\', "/")
+            .trim_start_matches('.')
+            .trim_matches('/')
+            .to_ascii_lowercase();
+        if rel == target_norm || rel.ends_with(&format!("/{target_norm}")) {
+            let score = rel.len();
+            if best.map(|(_, current)| score > current).unwrap_or(true) {
+                best = Some((idx, score));
+            }
+            continue;
+        }
+        if part.name.eq_ignore_ascii_case(target) {
+            if best.is_none() {
+                best = Some((idx, 1));
+            }
+            continue;
+        }
+        if let Some(folder) = Path::new(&part.path)
+            .file_name()
+            .and_then(|name| name.to_str())
+        {
+            if folder.eq_ignore_ascii_case(target) && best.is_none() {
+                best = Some((idx, 1));
+            }
+        }
+    }
+    best.map(|(idx, _)| idx)
 }
 
 fn aggregate_build(members: &[Project]) -> BuildInfo {

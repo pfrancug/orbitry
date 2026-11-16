@@ -13,7 +13,7 @@ use orbitry_core::{
     attach_run_warnings, bridge_status, config_fingerprint, diff_groups, evaluate_warnings,
     export_cache, group_projects, load_config, load_scan_cache, now_ms, save_config,
     save_scan_cache, scan, scan_cache_path, BridgeStatus, Config, ConfigBridgeMode,
-    ListeningSnapshot, PortOverride, ProcessManager, Project, RepoGroup, Run, SCANNER_VERSION,
+    ListeningSnapshot, PortOverride, ProcessManager, Project, RepoGroup, Run, RunStatus, SCANNER_VERSION,
     ScanCache, ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
 };
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::instance;
 use crate::shutdown::Shutdown;
 use crate::ui;
+use crate::update::{is_dev_build, UpdateService, VersionInfo};
 
 #[derive(Clone)]
 struct Inventory {
@@ -37,6 +38,9 @@ struct AppState {
     manager: Arc<ProcessManager>,
     inventory: StdMutex<Inventory>,
     scanning: AtomicBool,
+    update: UpdateService,
+    shutdown: Shutdown,
+    port: u16,
 }
 
 #[derive(Serialize)]
@@ -85,6 +89,7 @@ pub fn run_blocking(
     config_path: PathBuf,
     port: u16,
     shutdown: Shutdown,
+    update: UpdateService,
     ready: UnboundedSender<Result<u16, String>>,
 ) {
     let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -98,7 +103,7 @@ pub fn run_blocking(
         }
     };
     runtime.block_on(async move {
-        if let Err(err) = serve(config_path, port, shutdown, ready).await {
+        if let Err(err) = serve(config_path, port, shutdown, update, ready).await {
             eprintln!("orbitry: {err}");
         }
     });
@@ -108,6 +113,7 @@ async fn serve(
     config_path: PathBuf,
     port: u16,
     shutdown: Shutdown,
+    update: UpdateService,
     ready: UnboundedSender<Result<u16, String>>,
 ) -> Result<(), String> {
     let manager = ProcessManager::new();
@@ -135,6 +141,9 @@ async fn serve(
         manager: Arc::clone(&manager),
         inventory: StdMutex::new(inventory),
         scanning: AtomicBool::new(false),
+        update: update.clone(),
+        shutdown: shutdown.clone(),
+        port,
     });
 
     let router = Router::new()
@@ -148,6 +157,9 @@ async fn serve(
         .route("/api/runs/{id}/logs", get(logs_ws))
         .route("/api/pick-folder", post(post_pick_folder))
         .route("/api/open", post(post_open))
+        .route("/api/version", get(get_version))
+        .route("/api/update/check", post(post_update_check))
+        .route("/api/update", post(post_update))
         .fallback(ui::serve_ui)
         .with_state(state.clone());
 
@@ -172,6 +184,8 @@ async fn serve(
     let _ = ready.send(Ok(port));
     println!("Orbitry is running at {}", instance::dashboard_url(port));
     start_scan(Arc::clone(&state));
+    spawn_update_checker(Arc::clone(&state));
+
 
     let shutdown_manager = Arc::clone(&manager);
     axum::serve(listener, router)
@@ -239,6 +253,8 @@ async fn post_scan(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ProjectsResponse>, (StatusCode, String)> {
     start_scan(Arc::clone(&state));
+    spawn_update_checker(Arc::clone(&state));
+
     Ok(Json(snapshot_response(&state).await))
 }
 
@@ -260,6 +276,8 @@ struct ConfigBody {
     port_overrides: Option<Vec<PortOverride>>,
     #[serde(default)]
     config_bridge: Option<ConfigBridgeMode>,
+    #[serde(default)]
+    auto_check_updates: Option<bool>,
 }
 
 async fn put_config(
@@ -272,6 +290,9 @@ async fn put_config(
         script_patterns: body.script_patterns,
         port_overrides: body.port_overrides.unwrap_or(existing.port_overrides),
         config_bridge: body.config_bridge.unwrap_or(existing.config_bridge),
+        auto_check_updates: body
+            .auto_check_updates
+            .unwrap_or(existing.auto_check_updates),
     };
     config.roots = config
         .roots
@@ -288,6 +309,8 @@ async fn put_config(
         .set_port_overrides(config.port_overrides.clone())
         .await;
     start_scan(Arc::clone(&state));
+    spawn_update_checker(Arc::clone(&state));
+
     Ok(Json(config_response(config)))
 }
 
@@ -587,6 +610,125 @@ fn config_response(config: Config) -> ConfigResponse {
             .collect(),
         config,
     }
+}
+
+
+fn spawn_update_checker(state: Arc<AppState>) {
+    if is_dev_build() {
+        return;
+    }
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(45)).await;
+        loop {
+            let auto = load_config(&state.config_path)
+                .map(|config| config.auto_check_updates)
+                .unwrap_or(true);
+            if auto {
+                if let Err(err) = state.update.check().await {
+                    eprintln!("orbitry: update check: {err}");
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(6 * 60 * 60)).await;
+        }
+    });
+}
+
+fn version_payload(state: &AppState, auto_check: bool) -> VersionInfo {
+    state.update.snapshot(auto_check)
+}
+
+async fn auto_check_flag(state: &AppState) -> bool {
+    load_config(&state.config_path)
+        .map(|config| config.auto_check_updates)
+        .unwrap_or(true)
+}
+
+async fn get_version(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<VersionInfo>, (StatusCode, String)> {
+    let auto_check = auto_check_flag(&state).await;
+    Ok(Json(version_payload(&state, auto_check)))
+}
+
+async fn post_update_check(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<VersionInfo>, (StatusCode, String)> {
+    let auto_check = auto_check_flag(&state).await;
+    if is_dev_build() {
+        return Ok(Json(version_payload(&state, auto_check)));
+    }
+    match state.update.check().await {
+        Ok(info) => {
+            let mut info = info;
+            info.auto_check = auto_check;
+            Ok(Json(info))
+        }
+        Err(err) => Err((StatusCode::BAD_GATEWAY, err)),
+    }
+}
+
+#[derive(Deserialize)]
+struct UpdateRequest {
+    #[serde(default)]
+    confirm: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateResponse {
+    started: bool,
+    needs_confirm: bool,
+    running: usize,
+    #[serde(flatten)]
+    version: VersionInfo,
+}
+
+async fn running_count(state: &AppState) -> usize {
+    state
+        .manager
+        .list_cached()
+        .await
+        .iter()
+        .filter(|run| run.status == RunStatus::Running)
+        .count()
+}
+
+async fn post_update(
+    State(state): State<Arc<AppState>>,
+    body: Option<Json<UpdateRequest>>,
+) -> Result<Json<UpdateResponse>, (StatusCode, String)> {
+    let auto_check = auto_check_flag(&state).await;
+    let version = version_payload(&state, auto_check);
+    if is_dev_build() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Updates are disabled in development builds.".into(),
+        ));
+    }
+    let confirm = body.map(|Json(body)| body.confirm).unwrap_or(false);
+    let running = running_count(&state).await;
+    if running > 0 && !confirm {
+        return Ok(Json(UpdateResponse {
+            started: false,
+            needs_confirm: true,
+            running,
+            version,
+        }));
+    }
+    let update = state.update.clone();
+    let shutdown = state.shutdown.clone();
+    let port = state.port;
+    tokio::spawn(async move {
+        if let Err(err) = update.install(shutdown, port).await {
+            eprintln!("orbitry: update failed: {err}");
+        }
+    });
+    Ok(Json(UpdateResponse {
+        started: true,
+        needs_confirm: false,
+        running,
+        version,
+    }))
 }
 
 fn internal(err: String) -> (StatusCode, String) {

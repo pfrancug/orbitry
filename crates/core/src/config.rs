@@ -67,7 +67,15 @@ fn skip_auto_bridge(mode: &ConfigBridgeMode) -> bool {
     mode.is_auto()
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+fn default_true() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
     #[serde(default)]
@@ -78,6 +86,20 @@ pub struct Config {
     pub port_overrides: Vec<PortOverride>,
     #[serde(default, skip_serializing_if = "skip_auto_bridge")]
     pub config_bridge: ConfigBridgeMode,
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub auto_check_updates: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            roots: Vec::new(),
+            script_patterns: Vec::new(),
+            port_overrides: Vec::new(),
+            config_bridge: ConfigBridgeMode::Auto,
+            auto_check_updates: true,
+        }
+    }
 }
 
 impl Config {

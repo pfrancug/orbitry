@@ -1,5 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use orbitry_core::instance_path;
 use serde::{Deserialize, Serialize};
@@ -65,4 +67,73 @@ pub fn read_port() -> Option<u16> {
 pub fn clear() {
     let path: PathBuf = instance_path();
     let _ = fs::remove_file(path);
+}
+
+
+pub fn acquire_with_retry(timeout: Duration) -> Result<Option<InstanceLock>, String> {
+    let started = Instant::now();
+    loop {
+        match acquire()? {
+            Some(lock) => return Ok(Some(lock)),
+            None if started.elapsed() >= timeout => return Ok(None),
+            None => thread::sleep(Duration::from_millis(200)),
+        }
+    }
+}
+
+/// Wait until `pid` has exited, or return an error if `timeout` elapses.
+pub fn wait_for_pid(pid: u32, timeout: Duration) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        wait_for_pid_windows(pid, timeout)
+    }
+    #[cfg(unix)]
+    {
+        wait_for_pid_unix(pid, timeout)
+    }
+}
+
+#[cfg(windows)]
+fn wait_for_pid_windows(pid: u32, timeout: Duration) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0, WAIT_TIMEOUT};
+    use windows_sys::Win32::System::Threading::OpenProcess;
+
+    const PROCESS_SYNCHRONIZE: u32 = 0x00100000;
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+
+    unsafe {
+        let handle = OpenProcess(
+            PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+            0,
+            pid,
+        );
+        if handle.is_null() {
+            return Ok(());
+        }
+        let millis = timeout.as_millis().min(u32::MAX as u128) as u32;
+        let result = windows_sys::Win32::System::Threading::WaitForSingleObject(handle, millis);
+        CloseHandle(handle);
+        if result == WAIT_OBJECT_0 {
+            Ok(())
+        } else if result == WAIT_TIMEOUT {
+            Err(format!("timed out waiting for process {pid} to exit"))
+        } else {
+            Err(format!("wait for process {pid} failed"))
+        }
+    }
+}
+
+#[cfg(unix)]
+fn wait_for_pid_unix(pid: u32, timeout: Duration) -> Result<(), String> {
+    let started = Instant::now();
+    loop {
+        let alive = unsafe { libc::kill(pid as i32, 0) == 0 };
+        if !alive {
+            return Ok(());
+        }
+        if started.elapsed() >= timeout {
+            return Err(format!("timed out waiting for process {pid} to exit"));
+        }
+        thread::sleep(Duration::from_millis(200));
+    }
 }

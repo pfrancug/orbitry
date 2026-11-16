@@ -8,6 +8,7 @@ mod server;
 mod shutdown;
 mod tray;
 mod ui;
+mod update;
 
 use std::path::PathBuf;
 
@@ -17,6 +18,7 @@ use tokio::sync::mpsc;
 
 use crate::browser::{open_dashboard, show_error};
 use crate::shutdown::Shutdown;
+use crate::update::UpdateService;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -44,6 +46,10 @@ struct Args {
     /// Attach a console window so a release build can print logs.
     #[arg(long)]
     console: bool,
+
+    /// Wait for a previous Orbitry process to exit, then take over. Used by the updater.
+    #[arg(long, hide = true)]
+    replace_wait: Option<u32>,
 }
 
 fn main() {
@@ -59,6 +65,12 @@ fn main() {
 }
 
 fn run(args: Args) -> Result<(), String> {
+    crate::update::cleanup_stale_exe();
+
+    if let Some(pid) = args.replace_wait {
+        instance::wait_for_pid(pid, std::time::Duration::from_secs(60))?;
+    }
+
     let path = config_path();
     let mut config = load_config(&path)?;
     for root in &args.root {
@@ -69,7 +81,11 @@ fn run(args: Args) -> Result<(), String> {
         save_config(&path, &config)?;
     }
 
-    let lock = match instance::acquire()? {
+    let lock = match if args.replace_wait.is_some() {
+        instance::acquire_with_retry(std::time::Duration::from_secs(10))?
+    } else {
+        instance::acquire()?
+    } {
         Some(lock) => lock,
         None => {
             open_dashboard(&instance::running_url(args.port));
@@ -78,14 +94,16 @@ fn run(args: Args) -> Result<(), String> {
     };
 
     let shutdown = Shutdown::new();
+    let update = UpdateService::new(config.auto_check_updates);
     let (ready_tx, mut ready_rx) = mpsc::unbounded_channel();
     let server_path = path.clone();
     let server_port = args.port;
     let server_shutdown = shutdown.clone();
+    let server_update = update.clone();
     let server_thread = std::thread::Builder::new()
         .name("orbitry-server".into())
         .spawn(move || {
-            server::run_blocking(server_path, server_port, server_shutdown, ready_tx);
+            server::run_blocking(server_path, server_port, server_shutdown, server_update, ready_tx);
         })
         .map_err(|err| format!("spawn server thread: {err}"))?;
 
@@ -105,7 +123,7 @@ fn run(args: Args) -> Result<(), String> {
         open_dashboard(&instance::dashboard_url(bound_port));
     }
 
-    if let Err(err) = tray::run(bound_port, shutdown.clone()) {
+    if let Err(err) = tray::run(bound_port, shutdown.clone(), update.clone()) {
         eprintln!("orbitry: {err}");
         // Keep serving if the tray cannot start (for example a headless session).
         // Ctrl+C or closing the process still stops child runs.

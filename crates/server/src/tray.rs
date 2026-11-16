@@ -43,6 +43,7 @@ pub fn run(port: u16, shutdown: Shutdown, update: UpdateService) -> Result<(), S
         .with_tooltip(&tooltip(&update.snapshot(true)))
         .with_icon(icon)
         .with_menu(Box::new(menu))
+        .with_menu_on_left_click(false)
         .build()
         .map_err(|err| format!("tray: {err}"))?;
 

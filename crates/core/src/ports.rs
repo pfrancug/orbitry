@@ -24,6 +24,7 @@ pub enum PortSource {
     Config,
     Env,
     Flag,
+    Bridge,
     Log,
     Process,
 }
@@ -35,8 +36,9 @@ impl PortSource {
             PortSource::Config => 1,
             PortSource::Env => 2,
             PortSource::Flag => 3,
-            PortSource::Log => 4,
-            PortSource::Process => 5,
+            PortSource::Bridge => 4,
+            PortSource::Log => 5,
+            PortSource::Process => 6,
         }
     }
 }
@@ -88,7 +90,7 @@ impl PortInfo {
     pub fn is_explicit(&self) -> bool {
         matches!(
             self.source,
-            PortSource::Config | PortSource::Env | PortSource::Flag
+            PortSource::Config | PortSource::Env | PortSource::Flag | PortSource::Bridge
         )
     }
 
@@ -341,24 +343,12 @@ pub fn apply_port_overrides(ports: &mut Vec<PortInfo>, part_id: &str, overrides:
     ports.retain(|port| !port.ignored);
 }
 
-/// Hook for the optional Node config-bridge plugin. Returns `None` when the
-/// plugin is not installed, which is the usual case today.
-pub fn config_bridge_ports(_dir: &Path) -> Option<Vec<PortInfo>> {
-    None
-}
-
 pub fn detect_static_ports(
     dir: &Path,
     scripts: &[DetectedScript],
     script_filter: Option<&str>,
     framework: Option<&str>,
 ) -> Vec<PortInfo> {
-    if let Some(ports) = config_bridge_ports(dir) {
-        if !ports.is_empty() {
-            return ports;
-        }
-    }
-
     let filters: Vec<Option<String>> = if let Some(name) = script_filter {
         vec![Some(name.to_string())]
     } else if !scripts.is_empty() {
@@ -408,6 +398,7 @@ pub fn detect_static_ports(
         }
     }
 
+    merge_ports(&mut ports, crate::bridge::ports_for(dir, scripts));
     ports
 }
 

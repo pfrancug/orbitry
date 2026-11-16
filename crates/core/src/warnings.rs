@@ -537,7 +537,10 @@ fn is_explicit(port: &PortInfo) -> bool {
 }
 
 fn is_source_explicit(source: PortSource) -> bool {
-    matches!(source, PortSource::Config | PortSource::Env | PortSource::Flag)
+    matches!(
+        source,
+        PortSource::Config | PortSource::Env | PortSource::Flag | PortSource::Bridge
+    )
 }
 
 fn part_name_of(parts: &[PartView], run: &Run) -> String {

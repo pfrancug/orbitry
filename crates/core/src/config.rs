@@ -44,6 +44,29 @@ impl PortOverride {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConfigBridgeMode {
+    #[default]
+    Auto,
+    On,
+    Off,
+}
+
+impl ConfigBridgeMode {
+    pub fn is_auto(self) -> bool {
+        matches!(self, Self::Auto)
+    }
+
+    pub fn is_off(self) -> bool {
+        matches!(self, Self::Off)
+    }
+}
+
+fn skip_auto_bridge(mode: &ConfigBridgeMode) -> bool {
+    mode.is_auto()
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
@@ -53,6 +76,8 @@ pub struct Config {
     pub script_patterns: Vec<ScriptPattern>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub port_overrides: Vec<PortOverride>,
+    #[serde(default, skip_serializing_if = "skip_auto_bridge")]
+    pub config_bridge: ConfigBridgeMode,
 }
 
 impl Config {

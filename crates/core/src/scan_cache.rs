@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -43,7 +44,11 @@ pub fn config_fingerprint(config: &Config) -> String {
         })
         .collect();
     patterns.sort();
-    serde_json::to_string(&serde_json::json!({ "roots": roots, "patterns": patterns }))
+    serde_json::to_string(&serde_json::json!({
+        "roots": roots,
+        "patterns": patterns,
+        "configBridge": format!("{:?}", config.config_bridge).to_ascii_lowercase(),
+    }))
         .unwrap_or_default()
 }
 
@@ -54,6 +59,8 @@ pub struct ScanCache {
     pub fingerprint: String,
     pub scanned_at: i64,
     pub groups: Vec<RepoGroup>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bridge: BTreeMap<String, crate::bridge::BridgeCacheEntry>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -284,7 +291,11 @@ fn static_port_set(ports: &[PortInfo]) -> Vec<(u16, &'static str, Option<&str>)>
         .filter(|port| {
             matches!(
                 port.source,
-                PortSource::Default | PortSource::Config | PortSource::Env | PortSource::Flag
+                PortSource::Default
+                    | PortSource::Config
+                    | PortSource::Env
+                    | PortSource::Flag
+                    | PortSource::Bridge
             )
         })
         .map(|port| {
@@ -293,6 +304,7 @@ fn static_port_set(ports: &[PortInfo]) -> Vec<(u16, &'static str, Option<&str>)>
                 PortSource::Config => "config",
                 PortSource::Env => "env",
                 PortSource::Flag => "flag",
+                PortSource::Bridge => "bridge",
                 PortSource::Log => "log",
                 PortSource::Process => "process",
             };

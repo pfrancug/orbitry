@@ -1,6 +1,7 @@
 //! Orbitry core - scanner, process manager, port detection, and project metadata.
 
 mod artifacts;
+mod bridge;
 mod config;
 mod git;
 mod group;
@@ -16,9 +17,10 @@ mod util;
 mod warnings;
 
 pub use artifacts::BuildInfo;
+pub use bridge::{bridge_status, export_cache, BridgeCacheEntry, BridgeStatus};
 pub use config::{
     canonical, config_path, default_kind_patterns, display_path, instance_path, load_config,
-    save_config, Config, PortOverride, ScriptKind, ScriptPattern, ScriptScope,
+    save_config, Config, ConfigBridgeMode, PortOverride, ScriptKind, ScriptPattern, ScriptScope,
 };
 pub use git::{find_git_root, GitInfo};
 pub use health::{check_health, HealthInfo, HealthStatus};

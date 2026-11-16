@@ -10,11 +10,11 @@ use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use axum::Router;
 use orbitry_core::{
-    attach_run_warnings, config_fingerprint, diff_groups, evaluate_warnings, group_projects,
-    load_config, load_scan_cache, now_ms, save_config, save_scan_cache, scan, scan_cache_path,
-    Config, ListeningSnapshot, PortOverride, ProcessManager, Project, RepoGroup, Run,
-    SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus, StartError, Subscription,
-    Warning,
+    attach_run_warnings, bridge_status, config_fingerprint, diff_groups, evaluate_warnings,
+    export_cache, group_projects, load_config, load_scan_cache, now_ms, save_config,
+    save_scan_cache, scan, scan_cache_path, BridgeStatus, Config, ConfigBridgeMode,
+    ListeningSnapshot, PortOverride, ProcessManager, Project, RepoGroup, Run, SCANNER_VERSION,
+    ScanCache, ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -53,6 +53,7 @@ struct ConfigResponse {
     #[serde(flatten)]
     config: Config,
     default_patterns: Vec<DefaultPattern>,
+    bridge_status: BridgeStatus,
 }
 
 #[derive(Serialize)]
@@ -245,13 +246,7 @@ async fn get_config(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ConfigResponse>, (StatusCode, String)> {
     let config = load_config(&state.config_path).map_err(internal)?;
-    Ok(Json(ConfigResponse {
-        config,
-        default_patterns: orbitry_core::default_kind_patterns()
-            .into_iter()
-            .map(|(kind, pattern)| DefaultPattern { kind, pattern })
-            .collect(),
-    }))
+    Ok(Json(config_response(config)))
 }
 
 #[derive(Deserialize)]
@@ -263,6 +258,8 @@ struct ConfigBody {
     script_patterns: Vec<orbitry_core::ScriptPattern>,
     #[serde(default)]
     port_overrides: Option<Vec<PortOverride>>,
+    #[serde(default)]
+    config_bridge: Option<ConfigBridgeMode>,
 }
 
 async fn put_config(
@@ -274,6 +271,7 @@ async fn put_config(
         roots: body.roots,
         script_patterns: body.script_patterns,
         port_overrides: body.port_overrides.unwrap_or(existing.port_overrides),
+        config_bridge: body.config_bridge.unwrap_or(existing.config_bridge),
     };
     config.roots = config
         .roots
@@ -290,13 +288,7 @@ async fn put_config(
         .set_port_overrides(config.port_overrides.clone())
         .await;
     start_scan(Arc::clone(&state));
-    Ok(Json(ConfigResponse {
-        config,
-        default_patterns: orbitry_core::default_kind_patterns()
-            .into_iter()
-            .map(|(kind, pattern)| DefaultPattern { kind, pattern })
-            .collect(),
-    }))
+    Ok(Json(config_response(config)))
 }
 
 async fn post_run(
@@ -543,6 +535,7 @@ async fn run_scan(state: &AppState) -> Result<(), String> {
         fingerprint,
         scanned_at,
         groups: groups.clone(),
+        bridge: export_cache(),
     };
     save_scan_cache(&cache_path, &cache)?;
 
@@ -582,6 +575,17 @@ async fn snapshot_response(state: &AppState) -> ProjectsResponse {
         projects,
         warnings,
         scan,
+    }
+}
+
+fn config_response(config: Config) -> ConfigResponse {
+    ConfigResponse {
+        bridge_status: bridge_status(config.config_bridge),
+        default_patterns: orbitry_core::default_kind_patterns()
+            .into_iter()
+            .map(|(kind, pattern)| DefaultPattern { kind, pattern })
+            .collect(),
+        config,
     }
 }
 

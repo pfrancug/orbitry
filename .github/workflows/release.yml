@@ -1,0 +1,154 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build artifacts without publishing a GitHub Release
+        type: boolean
+        default: true
+      version:
+        description: Version to stamp on a dry run (e.g. 0.1.0). Ignored for tags.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.asset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: orbitry-windows-x64.exe
+            bin: orbitry.exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: orbitry-macos-aarch64
+            bin: orbitry
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            asset: orbitry-macos-x64
+            bin: orbitry
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: orbitry-linux-x64
+            bin: orbitry
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="0.0.0-dev"
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-].*)?$ ]]; then
+            echo "Refusing to stamp a non-semver version: $VERSION"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          python3 - << PY
+          from pathlib import Path
+          path = Path("Cargo.toml")
+          text = path.read_text()
+          needle = 'version = "0.0.0"'
+          if needle not in text:
+              raise SystemExit("workspace version line not found in Cargo.toml")
+          path.write_text(text.replace(needle, f'version = "{__import__("os").environ["VERSION"]}"', 1))
+          print(f"Stamped workspace version {__import__('os').environ['VERSION']}")
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install Linux tray dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            libxdo-dev \
+            pkg-config \
+            libclang-dev
+
+      - name: Build UI
+        working-directory: ui
+        run: npm ci && npm run build
+
+      - name: Build Orbitry
+        run: cargo build --release -p orbitry --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          src="target/${{ matrix.target }}/release/${{ matrix.bin }}"
+          cp "$src" "dist/${{ matrix.asset }}"
+          if [[ "${{ runner.os }}" != "Windows" ]]; then
+            chmod +x "dist/${{ matrix.asset }}"
+          fi
+          python3 - << PY
+          import hashlib
+          from pathlib import Path
+          asset = Path("dist/${{ matrix.asset }}")
+          digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+          line = f"{digest}  {asset.name}"
+          Path(f"dist/{asset.name}.sha256").write_text(line + "\n")
+          print(line)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: |
+            dist/${{ matrix.asset }}
+            dist/${{ matrix.asset }}.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Combine checksums
+        run: |
+          cat dist/*.sha256 | sed 's|.*/||' | sort > dist/SHA256SUMS.txt
+          rm -f dist/*.sha256
+          ls -l dist
+          cat dist/SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

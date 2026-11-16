@@ -190,6 +190,11 @@ pub fn apply_detach_flags(cmd: &mut Command) {
 }
 
 #[cfg(windows)]
+pub fn create_no_window_flags() -> u32 {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    CREATE_NO_WINDOW
+}
+
 pub fn detach_creation_flags() -> u32 {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;

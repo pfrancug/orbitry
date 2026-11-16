@@ -147,6 +147,7 @@ export type AppConfig = {
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
   autostartApps?: string[];
+  desktopNotifications?: boolean;
   bridgeStatus?: BridgeStatus;
   autostart?: AutostartStatus;
 };
@@ -232,11 +233,31 @@ export type ScanStatus = {
   error?: string | null;
 };
 
+export type ComposeService = {
+  name: string;
+  state?: string;
+  status?: string | null;
+  ports?: string[];
+  container?: string | null;
+};
+
+export type ComposeProject = {
+  projectId: string;
+  projectName: string;
+  workdir: string;
+  file: string;
+  services?: ComposeService[];
+  dockerAvailable: boolean;
+  dockerCommand?: string | null;
+  error?: string | null;
+};
+
 export type ProjectsResponse = {
   groups: RepoGroup[];
   warnings?: AppWarning[];
   scan?: ScanStatus;
   appAutostart?: AppAutostartReport;
+  compose?: ComposeProject[];
 };
 
 export type UpdatePhase = "idle" | "downloading" | "verifying" | "installing" | "restarting" | "error";

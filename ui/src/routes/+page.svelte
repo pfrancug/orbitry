@@ -187,7 +187,7 @@
   </div>
 </div>
 
-{#if metrics.snapshot}
+{#if metrics.snapshot?.system}
   {@const system = metrics.snapshot.system}
   {@const ramPct = system.memTotal ? (system.memUsed / system.memTotal) * 100 : null}
   <section class="section resource-section">
@@ -196,14 +196,14 @@
       <span class="muted">{t("overview.resourcesSub")}</span>
     </header>
     <div class="resource-grid">
-      <ResourceMeter label={t("common.cpu")} color="#818cf8" pct={system.cpuPct} value={fmtPct(system.cpuPct)} values={metrics.snapshot.history.cpu} />
+      <ResourceMeter label={t("common.cpu")} color="#818cf8" pct={system.cpuPct} value={fmtPct(system.cpuPct)} values={metrics.snapshot.history?.cpu ?? []} />
       <ResourceMeter
         label={t("common.ram")}
         color="#22d3ee"
         pct={ramPct}
         value={fmtPct(ramPct)}
         sub="{fmtBytes(system.memUsed)} / {fmtBytes(system.memTotal)}"
-        values={metrics.snapshot.history.memPct}
+        values={metrics.snapshot.history?.memPct ?? []}
       />
     </div>
   </section>

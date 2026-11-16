@@ -44,6 +44,7 @@ export function saveConfig(config: {
   logLimitMb?: number;
   startWithSystem?: boolean;
   autostartApps?: string[];
+  desktopNotifications?: boolean;
 }): Promise<AppConfig> {
   return request("/api/config", {
     method: "PUT",
@@ -149,4 +150,25 @@ export function fetchModels(): Promise<ModelsInventory> {
 
 export function requestModelsScan(): Promise<ModelsInventory> {
   return request("/api/models", { method: "POST" });
+}
+
+export function fetchDocker(): Promise<import("./types").ComposeProject[]> {
+  return request("/api/docker");
+}
+
+export function runDockerAction(
+  action: "up" | "down" | "restart",
+  projectId: string,
+  service?: string | null,
+): Promise<import("./types").ComposeProject[]> {
+  return request("/api/docker", {
+    method: "POST",
+    body: JSON.stringify({ action, projectId, service: service || undefined }),
+  });
+}
+
+export function fetchDockerLogs(projectId: string, service?: string | null): Promise<{ text: string }> {
+  const params = new URLSearchParams({ projectId });
+  if (service) params.set("service", service);
+  return request(`/api/docker/logs?${params}`);
 }

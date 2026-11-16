@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from "$lib/i18n.svelte";
   import { dismissUpdateToast, installUpdate, update } from "$lib/update.svelte";
 
   const visible = $derived(
@@ -10,23 +11,23 @@
   <div class="update-toast" class:error={update.toast.kind === "error"} role="status">
     <div class="copy">
       {#if update.toast.kind === "available"}
-        <p>Dostępna {update.latest}. Masz {update.current}.</p>
+        <p>{t("toast.update.available", { latest: update.latest, current: update.current })}</p>
         {#if update.notesUrl}
-          <a href={update.notesUrl} target="_blank" rel="noreferrer">Informacje o wydaniu</a>
+          <a href={update.notesUrl} target="_blank" rel="noreferrer">{t("settings.releaseNotes")}</a>
         {/if}
       {:else if update.toast.kind === "latest"}
-        <p>Masz najnowszą wersję ({update.current || update.latest}).</p>
+        <p>{t("toast.update.latest", { version: update.current || update.latest })}</p>
       {:else}
-        <p class="error">{update.error ?? "Nie udało się sprawdzić aktualizacji."}</p>
+        <p class="error">{update.error ?? t("toast.update.checkFailed")}</p>
       {/if}
     </div>
     <div class="actions">
       {#if update.toast.kind === "available"}
         <button type="button" disabled={update.installing} onclick={() => installUpdate()}>
-          {update.installing ? "Aktualizowanie…" : "Aktualizuj"}
+          {update.installing ? t("settings.updating") : t("settings.update")}
         </button>
       {/if}
-      <button class="icon-dismiss" type="button" onclick={dismissUpdateToast} title="Zamknij" aria-label="Zamknij">
+      <button class="icon-dismiss" type="button" onclick={dismissUpdateToast} title={t("common.close")} aria-label={t("common.close")}>
         ×
       </button>
     </div>

@@ -51,7 +51,18 @@ It lives in your tray, always a glance away.
 
 Grab the latest build for Windows, macOS, or Linux from the [Releases](https://github.com/pfrancug/orbitry/releases) page. Once it's installed, Orbitry can check for a newer version from the tray and update itself when you ask it to.
 
+## Develop
+
+Build the UI once (`npm run build` in `ui/`), then run:
+
+```
+cargo run -p orbitry -- --root /path/to/projects
+```
+
+Standing rules for the project live in [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
+
 ## Status
+
 
 Early. In the making. The orbit is taking shape.
 

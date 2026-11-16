@@ -310,6 +310,28 @@ export function buildScripts(part: ProjectPart | null | undefined): DetectedScri
   return (part?.scripts ?? []).filter((script) => script.kind === "build");
 }
 
+/** One button per distinct build command on an app (package + workspace duplicates collapse). */
+export function uniqueBuildScripts(part: ProjectPart | null | undefined): DetectedScript[] {
+  const seen = new Map<string, DetectedScript>();
+  for (const script of buildScripts(part)) {
+    const command = (script.command ?? "").trim().toLowerCase();
+    const cwd = (script.cwd ?? "").trim().toLowerCase();
+    const key = command
+      ? `${command}|${cwd}`
+      : `name:${script.name}|${cwd}|${script.source ?? ""}`;
+    if (!seen.has(key)) seen.set(key, script);
+  }
+  return [...seen.values()];
+}
+
+/** Distinct label when an app has more than one build script. */
+export function buildButtonName(script: DetectedScript): string {
+  const label = scriptLabel(script).trim();
+  if (label && label.toLowerCase() !== "build") return label;
+  const extra = (script.sourceName ?? "").trim() || script.name.replace(/^build:?/i, "").trim();
+  return extra || script.name;
+}
+
 export function scriptLabel(script: DetectedScript): string {
   return script.label?.trim() || script.name;
 }

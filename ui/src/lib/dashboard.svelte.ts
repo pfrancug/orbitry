@@ -2,7 +2,7 @@ import { fetchConfig, fetchProjects, pickFolder, requestScan, saveConfig } from 
 import { refreshRuns, restoreSelection, runState } from "./runs.svelte";
 import { findPart, normalizeScanDiff } from "./format";
 import { t } from "./i18n.svelte";
-import type { AppAutostartReport, AppConfig, AppWarning, ConfigBridgeMode, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanStatus, ScriptPattern } from "./types";
+import type { AppAutostartReport, AppConfig, AppWarning, ComposeProject, ConfigBridgeMode, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanStatus, ScriptPattern } from "./types";
 
 const PROJECTS_CACHE_KEY = "orbitry.projects-cache";
 
@@ -67,6 +67,7 @@ export const dash = $state({
   refreshing: false,
   appAutostart: null as AppAutostartReport | null,
   appAutostartDismissedAt: null as number | null,
+  compose: [] as ComposeProject[],
 });
 
 let scanPoll: ReturnType<typeof setInterval> | null = null;
@@ -75,6 +76,7 @@ export function applyProjectSnapshot(payload: ProjectsResponse) {
   dash.groups = payload.groups ?? [];
   dash.warnings = payload.warnings ?? [];
   dash.scan = payload.scan ?? null;
+  dash.compose = payload.compose ?? [];
   applyAppAutostartReport(payload.appAutostart);
   if (payload.scan?.error) {
     dash.error = payload.scan.error;
@@ -239,6 +241,7 @@ function withOverrides(next: {
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
   autostartApps?: string[];
+  desktopNotifications?: boolean;
 }) {
   return {
     roots: next.roots,
@@ -248,6 +251,7 @@ function withOverrides(next: {
     autoCheckUpdates: next.autoCheckUpdates ?? dash.config?.autoCheckUpdates ?? true,
     logLimitMb: next.logLimitMb ?? dash.config?.logLimitMb ?? 10,
     autostartApps: next.autostartApps ?? dash.config?.autostartApps ?? [],
+    desktopNotifications: next.desktopNotifications ?? dash.config?.desktopNotifications ?? false,
   };
 }
 
@@ -259,6 +263,7 @@ export async function persist(next: {
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
   autostartApps?: string[];
+  desktopNotifications?: boolean;
 }) {
   dash.saving = true;
   dash.error = null;
@@ -352,6 +357,24 @@ export async function setConfigBridge(mode: ConfigBridgeMode) {
 
 export function bannerMessage(): string | null {
   return dash.error || runState.error;
+}
+
+export function dismissBanner() {
+  dash.error = null;
+  runState.error = null;
+}
+
+export function composeFor(projectId: string): ComposeProject | null {
+  return dash.compose.find((item) => item.projectId === projectId) ?? null;
+}
+
+export async function setDesktopNotifications(enabled: boolean) {
+  if (!dash.config) return;
+  await persist({
+    roots: dash.config.roots,
+    scriptPatterns: dash.config.scriptPatterns,
+    desktopNotifications: enabled,
+  });
 }
 
 export async function setAutoCheckUpdates(enabled: boolean) {

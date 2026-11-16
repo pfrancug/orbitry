@@ -39,5 +39,11 @@ jobs:
         working-directory: ui
         run: npm ci && npm run build
 
+
+      - name: UI smoke
+        run: |
+          npm install --no-save --prefix ui playwright@1.55.0
+          npx --yes --prefix ui playwright install --with-deps chromium
+          node scripts/ui-smoke.mjs
       - name: Check Rust
         run: cargo check -p orbitry-core -p orbitry

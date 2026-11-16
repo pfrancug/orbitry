@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appAutostartEnabled, appAutostartTitle, dash, partMarker, setAppAutostart, startBlockReason, startWarnReason, systemAutostartEnabled } from "$lib/dashboard.svelte";
-  import { buildScripts, displayPorts, installCommand, isJsLike, partTitle, roleLabel, runScripts, scriptEachKey, scriptLabel, warningsForPart } from "$lib/format";
+  import { buildButtonName, displayPorts, installCommand, isJsLike, partTitle, roleLabel, runScripts, scriptEachKey, scriptLabel, uniqueBuildScripts, warningsForPart } from "$lib/format";
   import { i18n, t } from "$lib/i18n.svelte";
   import { isPending, runningFor, runState, startInstall, startScript, togglePart, toggleScript } from "$lib/runs.svelte";
   import type { ProjectPart } from "$lib/types";
@@ -26,7 +26,7 @@
   const autoOn = $derived(appAutostartEnabled(part.id));
   const autoTitle = $derived(appAutostartTitle());
   const startScripts = $derived(runScripts(part));
-  const builds = $derived(buildScripts(part));
+  const builds = $derived(uniqueBuildScripts(part));
   const missingDeps = $derived(isJsLike(part.kind) && !part.nodeModules);
   const depsCommand = $derived(installCommand(part));
   const installLive = $derived(runningFor(part.id, "install"));
@@ -34,12 +34,12 @@
 </script>
 
 <div class="app-row" class:selected class:live={Boolean(live)} class:removed={flag === "removed"} data-locale={locale}>
+  <span class="badge role role-{part.role}">{roleLabel(part.role)}</span>
   <button
     class="app-main"
     type="button"
     onclick={() => togglePart(part.id, live?.script ?? startScripts[0]?.name)}
   >
-    <span class="badge role role-{part.role}">{roleLabel(part.role)}</span>
     <div class="app-id">
       <div class="app-name">
         <span class="status-dot" class:on={Boolean(live)} class:fail={failed}></span>
@@ -125,7 +125,13 @@
             else startScript(part.id, script.name, dash.groups);
           }}
         >
-          {run ? t("build.running") : t("build.run")}
+          {#if run}
+            {t("build.running")}
+          {:else if builds.length > 1}
+            {t("build.runNamed", { name: buildButtonName(script) })}
+          {:else}
+            {t("build.run")}
+          {/if}
         </button>
       {/each}
     {/if}

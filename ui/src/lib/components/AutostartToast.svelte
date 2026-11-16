@@ -1,5 +1,6 @@
 <script lang="ts">
   import { dash, dismissAppAutostartToast } from "$lib/dashboard.svelte";
+  import { t } from "$lib/i18n.svelte";
   import type { AppAutostartEvent } from "$lib/types";
 
   const report = $derived(dash.appAutostart);
@@ -28,21 +29,28 @@
 
   function blockedLine(event: AppAutostartEvent): string {
     if (event.port != null && event.process) {
-      return `Nie uruchomiono ${event.partName} — port ${event.port} zajmuje ${event.process}.`;
+      return t("toast.autostart.blockedPort", {
+        name: event.partName,
+        port: event.port,
+        process: event.process,
+      });
     }
-    return `Nie uruchomiono ${event.partName}${event.reason ? ` — ${event.reason}` : "."}`;
+    if (event.reason) {
+      return t("toast.autostart.blockedReason", { name: event.partName, reason: event.reason });
+    }
+    return t("toast.autostart.blocked", { name: event.partName });
   }
 </script>
 
 {#if visible}
   <aside class="autostart-toast" class:alert={sticky} role="status">
     <div class="copy">
-      <p><strong>Autostart aplikacji</strong></p>
+      <p><strong>{t("toast.autostart.title")}</strong></p>
       {#if report?.started?.length}
-        <p>Uruchomiono: {names(report.started)}.</p>
+        <p>{t("toast.autostart.started", { names: names(report.started) })}</p>
       {/if}
       {#if report?.skipped?.length}
-        <p>Pominięto (już działa lub niedostępne): {names(report.skipped)}.</p>
+        <p>{t("toast.autostart.skipped", { names: names(report.skipped) })}</p>
       {/if}
       {#if report?.blocked?.length}
         {#each report.blocked as event (event.partId + String(event.port ?? "") + (event.process ?? ""))}
@@ -52,12 +60,14 @@
       {#if report?.failed?.length}
         {#each report.failed as event (event.partId + (event.reason ?? ""))}
           <p class="alert-line">
-            Nie udało się uruchomić {event.partName}{event.reason ? `: ${event.reason}` : "."}
+            {event.reason
+              ? t("toast.autostart.failedReason", { name: event.partName, reason: event.reason })
+              : t("toast.autostart.failed", { name: event.partName })}
           </p>
         {/each}
       {/if}
     </div>
-    <button class="icon-dismiss" type="button" aria-label="Zamknij" onclick={dismissAppAutostartToast}>×</button>
+    <button class="icon-dismiss" type="button" aria-label={t("common.close")} onclick={dismissAppAutostartToast}>×</button>
   </aside>
 {/if}
 

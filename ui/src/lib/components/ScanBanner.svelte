@@ -1,6 +1,7 @@
 <script lang="ts">
   import { changesVisible, dash, dismissChanges } from "$lib/dashboard.svelte";
   import { changeLabel, changeSummary, normalizeScanDiff } from "$lib/format";
+  import { t } from "$lib/i18n.svelte";
   import Icon from "./Icon.svelte";
 
   const diff = $derived(normalizeScanDiff(dash.scan?.diff));
@@ -10,15 +11,15 @@
 {#if visible && diff}
   <div class="change-banner" role="status">
     <div class="change-copy">
-      <strong>Changes since last scan</strong>
+      <strong>{t("scan.changes")}</strong>
       <span>{changeSummary(diff)}</span>
       {#if diff.removed.length}
         <span class="change-removed">
-          Removed: {diff.removed.map(changeLabel).join(", ")}
+          {t("scan.removed")}: {diff.removed.map(changeLabel).join(", ")}
         </span>
       {/if}
     </div>
-    <button class="icon-btn ghost" type="button" title="Dismiss" onclick={dismissChanges}>
+    <button class="icon-btn ghost" type="button" title={t("common.close")} onclick={dismissChanges}>
       <Icon name="close" size={14} />
     </button>
   </div>

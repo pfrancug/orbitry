@@ -5,6 +5,29 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-16
+
+### Added
+
+- Standing product principles in `docs/PRINCIPLES.md`, linked from the README. They record the rules this release is built around: overlays that never push layout, a single page scroller, no duplicate action buttons, aligned app-row columns, Polish and English, backward-compatible config, and generic changelog wording.
+- CI UI smoke: after the production UI build, a headless Chromium pass opens every dashboard route against mock APIs, fails on page errors or console errors, checks that a scan notice does not change the main content's top offset, and checks that a wheel gesture over a models list scrolls the main page region.
+- Incremental AI model scanning with a persisted directory index, so repeated scans skip unchanged weight trees and still return cached Ollama and cache results first.
+- Optional desktop notifications when an app exits unexpectedly or its health turns red. The toggle is in Settings and defaults to off. Existing config files stay valid without the new field.
+- Docker Compose on the Projects page: compose files are detected next to a project, service and container state is shown when Docker is available, and Up, Down, Restart, and Logs are user-initiated. When Docker is missing, the services from the file are still listed and the actions stay disabled. Windows CLI calls use `CREATE_NO_WINDOW`.
+- A single flat SVG mark for the tray icon, executable icon, favicon, and sidebar logo, derived from the previous exe/tray planet and moon, with fewer details so it stays crisp at 16px. `python scripts/generate-icons.py` regenerates the raster sizes from that SVG.
+
+### Changed
+
+- In-flow notices, including "Changes since last scan" and the error banner, are overlays anchored to the top bar. They can be dismissed and no longer push page content down.
+- The app shell's main region is the only page scroller. Tables, cards, and section lists no longer use their own scroll wrappers. Logs, the warnings popover, the side panel, and modals may still scroll internally.
+- The AI Models page is a top summary (count, total disk, sources) plus a simple list of name, size, location, and "Used by" project chips, sorted by size. Paths, IDs, and dates sit in expandable rows. The page is fully translated.
+- Build actions no longer repeat the same command as several identical "Build" buttons. One button is shown when the commands match; distinct build scripts get distinct labels.
+- App rows in an expanded project share a fixed column grid so roles, names, tags, ports, and buttons line up across apps.
+
+### Fixed
+
+- Historical changelog wording is generic. Personal paths, usernames, and private project names were removed from this file and from already-published GitHub release notes.
+
 ## [0.5.3] - 2026-11-16
 
 ### Fixed
@@ -38,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- The AI Models scan could take around two minutes on a large project root (for example `C:\Projects\private`) and left the page looking empty for the whole time. The first request after startup returned an empty inventory in state "scanning" because results were published only when the walk and attribution finished. The scanner now publishes Ollama and cache results first, skips backup/archive/data trees when attributing "Used by", caps how many source files it reads, and falls back to `USERPROFILE` / `HOMEDRIVE`+`HOMEPATH` if the home directory is missing. The page shows last-scan time and scan errors. After the 0.5.0 scan eventually completed on this machine (~2 minutes later) it did find the local inventory: four Ollama models (about 25.8 GB under `C:\Users\user\.ollama\models`, service at 127.0.0.1:11434 not running), Hugging Face, torch hub, and InsightFace caches, and weight files in the configured project roots.
+- The AI Models scan could take a long time on a large project root and left the page looking empty for the whole time. The first request after startup returned an empty inventory in state "scanning" because results were published only when the walk and attribution finished. The scanner now publishes Ollama and cache results first, skips backup/archive/data trees when attributing "Used by", caps how many source files it reads, and falls back to `USERPROFILE` / `HOMEDRIVE`+`HOMEPATH` if the home directory is missing. The page shows last-scan time and scan errors.
 - Updating 0.4.0 to 0.5.0 could finish in the background with no progress overlay. The overlay's status poller lived only inside the overlay component, and that component was mounted only after the UI already believed an update was in progress (`update.installing`, which the in-app Install button sets immediately). A tray-triggered update never set that flag in open tabs. The layout only polled `/api/version` every 60 seconds, and this update finished in about ten seconds, so tabs never saw `downloading` / `installing` / `restarting` and never started the post-restart reload poller. Every open tab now polls update status about once a second (every 300ms while an update is active) and shows the overlay for tray- or UI-triggered updates, then reloads when the new version comes up.
 
 ## [0.5.0] - 2026-11-16

@@ -5,6 +5,7 @@ mod artifacts;
 mod autostart;
 mod bridge;
 mod config;
+mod docker;
 mod git;
 mod group;
 mod health;
@@ -30,6 +31,10 @@ pub use autostart::{
     autostart_status, refresh_autostart_path, set_autostart_enabled, AutostartStatus,
 };
 pub use bridge::{bridge_status, export_cache, BridgeCacheEntry, BridgeStatus};
+pub use docker::{
+    compose_file_in, compose_logs, parse_compose_services, refresh_compose, run_compose_action,
+    static_compose_projects, ComposeAction, ComposeProject, ComposeService,
+};
 pub use config::{
     canonical, config_path, default_kind_patterns, display_path, instance_path, load_config,
     save_config, Config, ConfigBridgeMode, PortOverride, ScriptKind, ScriptPattern, ScriptScope,

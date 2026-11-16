@@ -13,8 +13,10 @@ use orbitry_core::{
     apply_port_overrides, attach_run_warnings, autostart_status, bridge_status, clamp_log_limit_mb,
     config_fingerprint, diff_groups, evaluate_warnings, export_cache, group_projects, load_config,
     empty_models_inventory, load_models_cache, load_scan_cache, models_cache_path, now_ms,
-    run_app_autostart, save_config, save_models_cache, save_scan_cache, scan, scan_cache_path,
-    scan_models_with_sink, set_autostart_enabled, AppAutostartReport, AutostartStatus, BridgeStatus, Config,
+    refresh_compose, run_app_autostart, run_compose_action, compose_logs, save_config,
+    save_models_cache, save_scan_cache, scan, scan_cache_path, scan_models_with_sink,
+    set_autostart_enabled, static_compose_projects, AppAutostartReport, AutostartStatus,
+    BridgeStatus, ComposeAction, ComposeProject, Config,
     ConfigBridgeMode, ListeningSnapshot, MetricsHub, MetricsSnapshot, ModelsInventory,
     ModelsScanState, PortOverride, ProcessManager, Project, RepoGroup, Run, RunStatus,
     SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
@@ -36,6 +38,12 @@ struct Inventory {
     warnings: Vec<Warning>,
 }
 
+#[derive(Default)]
+struct NotifySeen {
+    failed_runs: std::collections::HashSet<String>,
+    unhealthy: std::collections::HashSet<String>,
+}
+
 struct AppState {
     config_path: PathBuf,
     cache_path: PathBuf,
@@ -52,6 +60,8 @@ struct AppState {
     models: Arc<StdMutex<ModelsInventory>>,
     models_scanning: AtomicBool,
     models_cache_path: PathBuf,
+    compose: Arc<StdMutex<Vec<ComposeProject>>>,
+    notify_seen: StdMutex<NotifySeen>,
 }
 
 #[derive(Serialize)]
@@ -62,6 +72,8 @@ struct ProjectsResponse {
     warnings: Vec<Warning>,
     scan: ScanStatus,
     app_autostart: AppAutostartReport,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    compose: Vec<ComposeProject>,
 }
 
 #[derive(Serialize)]
@@ -175,6 +187,8 @@ async fn serve(
         models: Arc::new(StdMutex::new(load_models_cache(&models_cache_path, &config).unwrap_or_else(empty_models_inventory))),
         models_scanning: AtomicBool::new(false),
         models_cache_path,
+        compose: Arc::new(StdMutex::new(Vec::new())),
+        notify_seen: StdMutex::new(NotifySeen::default()),
     });
 
     let router = Router::new()
@@ -196,6 +210,8 @@ async fn serve(
         .route("/api/tools", get(get_tools))
         .route("/api/metrics", get(get_metrics))
         .route("/api/models", get(get_models).post(post_models_scan))
+        .route("/api/docker", get(get_docker).post(post_docker))
+        .route("/api/docker/logs", get(get_docker_logs))
         .fallback(ui::serve_ui)
         .with_state(state.clone());
 
@@ -221,6 +237,7 @@ async fn serve(
     println!("Orbitry is running at {}", instance::dashboard_url(port));
     start_scan(Arc::clone(&state));
     start_models_scan(Arc::clone(&state));
+    spawn_compose_refresher(Arc::clone(&state));
     spawn_update_checker(Arc::clone(&state));
     spawn_live_refresh(Arc::clone(&state));
 
@@ -330,6 +347,8 @@ struct ConfigBody {
     /// Replaces the per-app autostart list when present. Omitted keeps the saved list.
     #[serde(default)]
     autostart_apps: Option<Vec<String>>,
+    #[serde(default)]
+    desktop_notifications: Option<bool>,
 }
 
 async fn put_config(
@@ -352,6 +371,9 @@ async fn put_config(
         autostart_apps: body
             .autostart_apps
             .unwrap_or_else(|| existing.autostart_apps.clone()),
+        desktop_notifications: body
+            .desktop_notifications
+            .unwrap_or(existing.desktop_notifications),
     };
     config.normalize_autostart_apps();
     config.roots = config
@@ -654,7 +676,9 @@ fn start_scan(state: Arc<AppState>) {
         let result = run_scan(&state).await;
         state.scanning.store(false, Ordering::SeqCst);
         refresh_live_state(&state).await;
+        maybe_send_notifications(&state).await;
         if result.is_ok() {
+            refresh_compose_state(&state).await;
             maybe_run_app_autostart(&state).await;
         }
         if let Err(err) = result {
@@ -727,6 +751,7 @@ async fn snapshot_response(state: &AppState) -> ProjectsResponse {
             warnings: inventory.warnings.clone(),
             scan: inventory.scan.clone(),
             app_autostart,
+            compose: compose_snapshot(state),
         },
         Err(_) => ProjectsResponse {
             groups: Vec::new(),
@@ -734,6 +759,7 @@ async fn snapshot_response(state: &AppState) -> ProjectsResponse {
             warnings: Vec::new(),
             scan: ScanStatus::empty_scanning(),
             app_autostart,
+            compose: compose_snapshot(state),
         },
     }
 }
@@ -808,6 +834,7 @@ async fn refresh_live_state(state: &AppState) {
     if let Ok(mut inventory) = state.inventory.lock() {
         inventory.warnings = warnings;
     }
+    maybe_send_notifications(state).await;
 }
 
 fn app_autostart_report(state: &AppState) -> AppAutostartReport {
@@ -1098,4 +1125,129 @@ async fn post_update(
 
 fn internal(err: String) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, err)
+}
+
+fn compose_snapshot(state: &AppState) -> Vec<ComposeProject> {
+    state
+        .compose
+        .lock()
+        .map(|items| items.clone())
+        .unwrap_or_default()
+}
+
+async fn refresh_compose_state(state: &AppState) {
+    let groups = state
+        .inventory
+        .lock()
+        .map(|inventory| inventory.groups.clone())
+        .unwrap_or_default();
+    let mut projects = static_compose_projects(&groups);
+    refresh_compose(&mut projects).await;
+    if let Ok(mut slot) = state.compose.lock() {
+        *slot = projects;
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DockerBody {
+    action: ComposeAction,
+    project_id: String,
+    #[serde(default)]
+    service: Option<String>,
+}
+
+async fn get_docker(State(state): State<Arc<AppState>>) -> Json<Vec<ComposeProject>> {
+    refresh_compose_state(&state).await;
+    Json(compose_snapshot(&state))
+}
+
+async fn post_docker(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<DockerBody>,
+) -> Result<Json<Vec<ComposeProject>>, (StatusCode, String)> {
+    let project = compose_snapshot(&state)
+        .into_iter()
+        .find(|item| item.project_id == body.project_id)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "compose project not found".into()))?;
+    run_compose_action(&project, body.action, body.service.as_deref())
+        .await
+        .map_err(internal)?;
+    refresh_compose_state(&state).await;
+    Ok(Json(compose_snapshot(&state)))
+}
+
+async fn get_docker_logs(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(query): axum::extract::Query<DockerLogQuery>,
+) -> Result<Json<DockerLogs>, (StatusCode, String)> {
+    let project = compose_snapshot(&state)
+        .into_iter()
+        .find(|item| item.project_id == query.project_id)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "compose project not found".into()))?;
+    let text = compose_logs(&project, query.service.as_deref())
+        .await
+        .map_err(internal)?;
+    Ok(Json(DockerLogs { text }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DockerLogQuery {
+    project_id: String,
+    #[serde(default)]
+    service: Option<String>,
+}
+
+#[derive(Serialize)]
+struct DockerLogs {
+    text: String,
+}
+
+async fn maybe_send_notifications(state: &AppState) {
+    let enabled = load_config(&state.config_path)
+        .map(|config| config.desktop_notifications)
+        .unwrap_or(false);
+    if !enabled {
+        return;
+    }
+    let runs = state.manager.list_cached().await;
+    let mut seen = match state.notify_seen.lock() {
+        Ok(guard) => guard,
+        Err(_) => return,
+    };
+    for run in &runs {
+        if run.status == RunStatus::Failed && seen.failed_runs.insert(run.id.clone()) {
+            crate::notify::show(
+                "Orbitry",
+                &format!("{} exited unexpectedly", run.part_name),
+            );
+        }
+        if run.status == RunStatus::Running
+            && run.health.status == orbitry_core::HealthStatus::Fail
+            && seen.unhealthy.insert(run.id.clone())
+        {
+            crate::notify::show(
+                "Orbitry",
+                &format!("{} health check failed", run.part_name),
+            );
+        }
+        if run.status != RunStatus::Failed {
+            seen.failed_runs.remove(&run.id);
+        }
+        if run.health.status != orbitry_core::HealthStatus::Fail {
+            seen.unhealthy.remove(&run.id);
+        }
+    }
+}
+
+fn spawn_compose_refresher(state: Arc<AppState>) {
+    tokio::spawn(async move {
+        // First fill from the cached inventory, then ask Docker if it is present.
+        refresh_compose_state(&state).await;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            refresh_compose_state(&state).await;
+        }
+    });
 }

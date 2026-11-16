@@ -10,7 +10,7 @@
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import UpdateOverlay from "$lib/components/UpdateOverlay.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
-  import { bannerMessage, dash, refreshAll } from "$lib/dashboard.svelte";
+  import { bannerMessage, dash, dismissBanner, refreshAll } from "$lib/dashboard.svelte";
   import { refreshModels } from "$lib/models.svelte";
   import { refreshTools } from "$lib/tools.svelte";
   import { initLocale } from "$lib/i18n.svelte";
@@ -154,11 +154,17 @@
       </button>
     </header>
 
-    {#if bannerMessage()}
-      <div class="banner">{bannerMessage()}</div>
-    {/if}
-
-    <ScanBanner />
+    <div class="notice-layer">
+      {#if bannerMessage()}
+        <div class="banner" role="status">
+          <span>{bannerMessage()}</span>
+          <button class="icon-btn ghost" type="button" title={t("common.close")} onclick={dismissBanner}>
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+      {/if}
+      <ScanBanner />
+    </div>
     <div class="toast-stack">
       <UpdateBanner />
       <AutostartToast />
@@ -168,7 +174,7 @@
     {/if}
 
     <div class="workspace">
-      <main class="list-pane">
+      <main class="list-pane" data-main-scroll>
         {@render children()}
       </main>
       {#if runState.panelOpen}

@@ -2,7 +2,7 @@
   import { appAutostartEnabled, appAutostartTitle, dash, setAppAutostart, startBlockReason, startWarnReason, systemAutostartEnabled } from "$lib/dashboard.svelte";
   import { openPath } from "$lib/api";
   import {
-    buildScripts,
+    buildButtonName,
     displayPorts,
     formatUptime,
     healthLabel,
@@ -17,6 +17,7 @@
     warningsForPart,
     warningsForRun,
     scriptEachKey,
+    uniqueBuildScripts,
   } from "$lib/format";
   import { i18n, t } from "$lib/i18n.svelte";
   import {
@@ -48,7 +49,7 @@
   const autoOn = $derived(part ? appAutostartEnabled(part.id) : false);
   const autoTitle = $derived(appAutostartTitle());
   const startables = $derived(runScripts(part));
-  const builds = $derived(buildScripts(part));
+  const builds = $derived(uniqueBuildScripts(part));
 
   const scriptName = $derived.by(() => {
     if (!part) return null;
@@ -271,7 +272,13 @@
             title={script.command}
             onclick={() => (run ? stopScript(part.id, script.name) : startScript(part.id, script.name, dash.groups))}
           >
-            {run ? t("build.running") : t("build.run")}
+            {#if run}
+              {t("build.running")}
+            {:else if builds.length > 1}
+              {t("build.runNamed", { name: buildButtonName(script) })}
+            {:else}
+              {t("build.run")}
+            {/if}
           </button>
         {/each}
         {#if missingDeps}

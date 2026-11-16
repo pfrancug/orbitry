@@ -31,7 +31,7 @@
 
 <aside class="sidebar" class:collapsed aria-label={t("nav.overview")} data-locale={locale}>
   <div class="sidebar-brand">
-    <span class="mark" aria-hidden="true"></span>
+    <img class="mark" src="/orbitry.svg" width="28" height="28" alt="" />
     {#if !collapsed}
       <div>
         <p class="logo">Orbitry</p>

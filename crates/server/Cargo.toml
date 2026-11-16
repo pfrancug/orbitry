@@ -27,6 +27,7 @@ tokio = { version = "1", features = ["full"] }
 tray-icon = "0.21"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 sha2 = "0.10"
+notify-rust = "4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, setStartWithSystem } from "$lib/dashboard.svelte";
+  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, setDesktopNotifications, setStartWithSystem } from "$lib/dashboard.svelte";
   import { formatCheckedAt } from "$lib/format";
   import { i18n, setLocale, t, type Locale } from "$lib/i18n.svelte";
   import { checkForUpdate, installUpdate, update } from "$lib/update.svelte";
@@ -166,6 +166,20 @@
     {#if dash.config.autostart?.stale}
       <p class="hint">{t("autostart.stale")}</p>
     {/if}
+  </section>
+
+  <section class="settings-card">
+    <h2 class="settings-heading">{t("settings.notifications")}</h2>
+    <label class="check-row autostart-row">
+      <input
+        type="checkbox"
+        checked={dash.config.desktopNotifications === true}
+        disabled={dash.saving}
+        onchange={(event) => setDesktopNotifications(event.currentTarget.checked)}
+      />
+      {t("settings.notifications")}
+    </label>
+    <p class="hint">{t("settings.notificationsHint")}</p>
   </section>
 
   <section class="settings-card">

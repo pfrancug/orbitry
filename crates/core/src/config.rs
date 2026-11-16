@@ -35,7 +35,7 @@ pub struct PortOverride {
     pub name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub health_url: Option<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub ignore: bool,
 }
 
@@ -68,6 +68,10 @@ fn default_true() -> bool {
     true
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 fn is_true(value: &bool) -> bool {
     *value
 }
@@ -95,6 +99,9 @@ pub struct Config {
     /// Kept even if a later scan temporarily misses the app.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub autostart_apps: Vec<String>,
+    /// Desktop notifications for app crashes and red health. Off by default.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub desktop_notifications: bool,
 }
 
 impl Default for Config {
@@ -107,6 +114,7 @@ impl Default for Config {
             auto_check_updates: true,
             log_limit_mb: default_log_limit_mb(),
             autostart_apps: Vec::new(),
+            desktop_notifications: false,
         }
     }
 }

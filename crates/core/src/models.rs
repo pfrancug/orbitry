@@ -15,7 +15,7 @@ use crate::group::RepoGroup;
 use crate::scan_cache::now_ms;
 
 /// Bump when the inventory shape or detection rules change.
-pub const MODELS_SCANNER_VERSION: u32 = 2;
+pub const MODELS_SCANNER_VERSION: u32 = 3;
 
 const OLLAMA_PORT: u16 = 11434;
 const OLLAMA_HOST: [u8; 4] = [127, 0, 0, 1];
@@ -44,6 +44,12 @@ const SKIP_DIRS: &[&str] = &[
     "backup",
     "archive",
     "archives",
+    "datasets",
+    "dataset",
+    ".huggingface",
+    "huggingface",
+    ".ollama",
+    "lost+found",
 ];
 
 const ATTRIB_SKIP_DIRS: &[&str] = &[
@@ -232,6 +238,10 @@ pub fn models_cache_path() -> PathBuf {
     config_path().with_file_name("models-cache.json")
 }
 
+pub fn models_index_path() -> PathBuf {
+    config_path().with_file_name("models-index.json")
+}
+
 pub fn models_fingerprint(config: &Config) -> String {
     let mut roots: Vec<String> = config
         .roots
@@ -305,9 +315,10 @@ where
     );
     sink(&partial);
 
+    let mut index = load_models_index(&models_index_path(), config);
     let mut ollama = ollama;
     let mut caches = caches;
-    let mut project_files = scan_project_weights(&config.roots, groups);
+    let mut project_files = scan_project_weights(&config.roots, groups, &mut index);
     let mid = assemble_inventory(
         config,
         ollama.clone(),
@@ -320,7 +331,8 @@ where
     );
     sink(&mid);
 
-    attribute_usages(&mut ollama, &mut caches, &mut project_files, &config.roots, groups);
+    attribute_usages(&mut ollama, &mut caches, &mut project_files, &config.roots, groups, &mut index);
+    let _ = save_models_index(&models_index_path(), &index);
     assemble_inventory(
         config,
         ollama,
@@ -898,7 +910,7 @@ fn is_cache_listable(path: &Path, size: u64) -> bool {
     size >= 1024 * 1024
 }
 
-fn scan_project_weights(roots: &[String], groups: &[RepoGroup]) -> Vec<ProjectWeights> {
+fn scan_project_weights(roots: &[String], groups: &[RepoGroup], index: &mut ModelsIndex) -> Vec<ProjectWeights> {
     let mut by_project: BTreeMap<String, ProjectWeights> = BTreeMap::new();
     for root in roots {
         let root_path = PathBuf::from(root);
@@ -911,7 +923,7 @@ fn scan_project_weights(roots: &[String], groups: &[RepoGroup]) -> Vec<ProjectWe
                 files.push((root_path, meta.len()));
             }
         } else {
-            walk_files(&root_path, WalkMode::Weights, &mut files);
+            walk_weights_indexed(&root_path, index, &mut files);
         }
         for (path, size) in files {
             if !is_weight_file(&path, size) {
@@ -1030,6 +1042,7 @@ fn attribute_usages(
     project_files: &mut [ProjectWeights],
     roots: &[String],
     groups: &[RepoGroup],
+    index: &mut ModelsIndex,
 ) {
     let mut needles: Vec<AttribNeedle> = Vec::new();
     for model in &ollama.models {
@@ -1065,6 +1078,9 @@ fn attribute_usages(
         return;
     }
     needles.sort_by(|a, b| b.pattern.len().cmp(&a.pattern.len()));
+    let needle_fp = attrib_needle_fingerprint(&needles);
+    let reuse_attrib = index.attrib_fingerprint.as_deref() == Some(needle_fp.as_str());
+    let mut next_attrib: BTreeMap<String, AttribFile> = BTreeMap::new();
 
     let mut hits: Vec<(AttribTarget, ModelUsage)> = Vec::new();
     for root in roots {
@@ -1082,15 +1098,41 @@ fn attribute_usages(
             if read >= ATTRIB_MAX_FILES {
                 break;
             }
-            let Ok(raw) = fs::read_to_string(&path) else {
-                continue;
+            let key = display_path(&path);
+            let mtime = fs::metadata(&path).ok().and_then(|meta| meta_mtime_ms(&meta));
+            let cached = reuse_attrib
+                .then(|| index.attrib_files.get(&key))
+                .flatten()
+                .filter(|item| item.size == size && item.mtime == mtime);
+            let matched: Vec<String> = if let Some(cached) = cached {
+                cached.hits.clone()
+            } else {
+                let Ok(raw) = fs::read_to_string(&path) else {
+                    continue;
+                };
+                read += 1;
+                let lower = raw.to_ascii_lowercase();
+                needles
+                    .iter()
+                    .filter(|needle| lower.contains(&needle.pattern))
+                    .map(|needle| needle.pattern.clone())
+                    .collect()
             };
-            read += 1;
-            let lower = raw.to_ascii_lowercase();
+            next_attrib.insert(
+                key.clone(),
+                AttribFile {
+                    size,
+                    mtime,
+                    hits: matched.clone(),
+                },
+            );
+            if matched.is_empty() {
+                continue;
+            }
             let (project_id, project_name, project_path) = project_for(&path, groups, roots);
             let rel = display_path(&path);
             for needle in &needles {
-                if !lower.contains(&needle.pattern) {
+                if !matched.iter().any(|item| item == &needle.pattern) {
                     continue;
                 }
                 hits.push((
@@ -1105,6 +1147,8 @@ fn attribute_usages(
             }
         }
     }
+    index.attrib_fingerprint = Some(needle_fp);
+    index.attrib_files = next_attrib;
 
     for (target, usage) in hits {
         match target {
@@ -1233,7 +1277,11 @@ fn walk_files(root: &Path, mode: WalkMode, out: &mut Vec<(PathBuf, u64)>) {
                 continue;
             }
             if meta.is_file() {
-                out.push((path, meta.len()));
+                let size = meta.len();
+                if matches!(mode, WalkMode::Weights) && !is_weight_file(&path, size) {
+                    continue;
+                }
+                out.push((path, size));
             }
         }
     }
@@ -1466,4 +1514,180 @@ fn days_from_civil(year: i32, month: u32, day: u32) -> Option<i64> {
     let doy = (153 * mp + 2) / 5 + day as i64 - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     Some(era * 146_097 + doe - 719_468)
+}
+
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelsIndex {
+    #[serde(default)]
+    scanner_version: u32,
+    #[serde(default)]
+    fingerprint: String,
+    #[serde(default)]
+    dirs: BTreeMap<String, IndexedDir>,
+    #[serde(default)]
+    attrib_fingerprint: Option<String>,
+    #[serde(default)]
+    attrib_files: BTreeMap<String, AttribFile>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IndexedDir {
+    #[serde(default)]
+    sig: String,
+    #[serde(default)]
+    weights: Vec<IndexedWeight>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IndexedWeight {
+    path: String,
+    size: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AttribFile {
+    size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mtime: Option<i64>,
+    #[serde(default)]
+    hits: Vec<String>,
+}
+
+fn load_models_index(path: &Path, config: &Config) -> ModelsIndex {
+    let Ok(raw) = fs::read(path) else {
+        return ModelsIndex {
+            scanner_version: MODELS_SCANNER_VERSION,
+            fingerprint: models_fingerprint(config),
+            ..ModelsIndex::default()
+        };
+    };
+    let Ok(index) = serde_json::from_slice::<ModelsIndex>(&raw) else {
+        return ModelsIndex {
+            scanner_version: MODELS_SCANNER_VERSION,
+            fingerprint: models_fingerprint(config),
+            ..ModelsIndex::default()
+        };
+    };
+    let fingerprint = models_fingerprint(config);
+    if index.scanner_version != MODELS_SCANNER_VERSION || index.fingerprint != fingerprint {
+        return ModelsIndex {
+            scanner_version: MODELS_SCANNER_VERSION,
+            fingerprint,
+            ..ModelsIndex::default()
+        };
+    }
+    index
+}
+
+fn save_models_index(path: &Path, index: &ModelsIndex) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("models index dir: {err}"))?;
+    }
+    let json = serde_json::to_vec_pretty(index).map_err(|err| format!("models index encode: {err}"))?;
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, json).map_err(|err| format!("models index write: {err}"))?;
+    fs::rename(&tmp, path).map_err(|err| format!("models index rename: {err}"))?;
+    Ok(())
+}
+
+fn attrib_needle_fingerprint(needles: &[AttribNeedle]) -> String {
+    let mut parts: Vec<&str> = needles.iter().map(|item| item.pattern.as_str()).collect();
+    parts.sort();
+    parts.dedup();
+    parts.join("\n")
+}
+
+fn walk_weights_indexed(root: &Path, index: &mut ModelsIndex, out: &mut Vec<(PathBuf, u64)>) {
+    let previous = index.clone();
+    let mut next = ModelsIndex {
+        scanner_version: MODELS_SCANNER_VERSION,
+        fingerprint: index.fingerprint.clone(),
+        attrib_fingerprint: index.attrib_fingerprint.clone(),
+        attrib_files: index.attrib_files.clone(),
+        dirs: BTreeMap::new(),
+    };
+    walk_weights_dir(root, &previous, &mut next, out);
+    // Keep dirs from other roots already recorded in this scan.
+    for (key, value) in next.dirs {
+        index.dirs.insert(key, value);
+    }
+}
+
+fn walk_weights_dir(
+    dir: &Path,
+    previous: &ModelsIndex,
+    next: &mut ModelsIndex,
+    out: &mut Vec<(PathBuf, u64)>,
+) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut listing: Vec<(String, bool, u64, Option<i64>)> = Vec::new();
+    let mut children: Vec<(PathBuf, fs::Metadata, bool)> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(meta) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        let is_dir = meta.is_dir();
+        if is_dir && is_skipped_dir(&path, WalkMode::Weights) {
+            continue;
+        }
+        let name = file_name(&path);
+        listing.push((name, is_dir, meta.len(), meta_mtime_ms(&meta)));
+        children.push((path, meta, is_dir));
+    }
+    listing.sort();
+    let sig = dir_signature(&listing);
+    let key = display_path(dir);
+    if let Some(cached) = previous.dirs.get(&key) {
+        if cached.sig == sig {
+            for file in &cached.weights {
+                out.push((PathBuf::from(&file.path), file.size));
+            }
+            next.dirs.insert(key, cached.clone());
+            return;
+        }
+    }
+    let start = out.len();
+    for (path, meta, is_dir) in children {
+        if is_dir {
+            walk_weights_dir(&path, previous, next, out);
+            continue;
+        }
+        if meta.is_file() {
+            let size = meta.len();
+            if is_weight_file(&path, size) {
+                out.push((path, size));
+            }
+        }
+    }
+    let weights = out[start..]
+        .iter()
+        .map(|(path, size)| IndexedWeight {
+            path: display_path(path),
+            size: *size,
+        })
+        .collect();
+    next.dirs.insert(key, IndexedDir { sig, weights });
+}
+
+fn dir_signature(listing: &[(String, bool, u64, Option<i64>)]) -> String {
+    let mut parts = Vec::with_capacity(listing.len());
+    for (name, is_dir, size, mtime) in listing {
+        parts.push(format!(
+            "{name}|{}|{size}|{}",
+            if *is_dir { "d" } else { "f" },
+            mtime.unwrap_or(0)
+        ));
+    }
+    parts.join("\n")
 }

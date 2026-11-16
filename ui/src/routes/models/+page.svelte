@@ -1,55 +1,91 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import Icon from "$lib/components/Icon.svelte";
-  import { formatCheckedAt, fmtBytes, shortPath } from "$lib/format";
-  import { models, modelsScanning, refreshModels, rescanModels } from "$lib/models.svelte";
+  import { fmtBytes, formatCheckedAt, shortPath } from "$lib/format";
   import { i18n, t } from "$lib/i18n.svelte";
+  import { models, modelsScanning, rescanModels } from "$lib/models.svelte";
+  import type { ModelUsage, ModelsInventory } from "$lib/types";
+
   const locale = $derived(i18n.locale);
-  import type { CacheSource, ModelUsage, OllamaInventory } from "$lib/types";
-
-  onMount(() => {
-    refreshModels();
-  });
-
   const inventory = $derived(models.inventory);
   const scanning = $derived(modelsScanning());
-  const ollama = $derived(inventory?.ollama);
-  const totals = $derived(inventory?.totals ?? []);
-  const caches = $derived(inventory?.caches ?? []);
-  const projects = $derived(inventory?.projectFiles ?? []);
 
-  function usedByLabel(usages: ModelUsage[] | undefined): string {
-    if (!usages?.length) return "—";
-    return usages.map((item) => item.projectName).join(", ");
+  type FlatModel = {
+    key: string;
+    name: string;
+    sizeBytes: number;
+    location: string;
+    path?: string | null;
+    id?: string | null;
+    modifiedAt?: number | null;
+    usedBy?: ModelUsage[];
+  };
+
+  function flatten(inv: ModelsInventory): FlatModel[] {
+    const rows: FlatModel[] = [];
+    for (const model of inv.ollama?.models ?? []) {
+      rows.push({
+        key: `ollama:${model.name}:${model.id ?? ""}`,
+        name: model.name,
+        sizeBytes: model.sizeBytes ?? 0,
+        location: inv.ollama?.modelsDir ? shortPath(inv.ollama.modelsDir) : "Ollama",
+        path: inv.ollama?.modelsDir ?? null,
+        id: model.id ?? null,
+        modifiedAt: model.modifiedAt ?? null,
+        usedBy: model.usedBy,
+      });
+    }
+    for (const cache of inv.caches ?? []) {
+      for (const model of cache.models ?? []) {
+        rows.push({
+          key: `cache:${model.path}`,
+          name: model.name,
+          sizeBytes: model.sizeBytes ?? 0,
+          location: cache.label,
+          path: model.path,
+          usedBy: model.usedBy,
+        });
+      }
+    }
+    for (const project of inv.projectFiles ?? []) {
+      for (const file of project.files ?? []) {
+        rows.push({
+          key: `project:${file.path}`,
+          name: file.name,
+          sizeBytes: file.sizeBytes ?? 0,
+          location: project.projectName,
+          path: file.path,
+          usedBy: file.usedBy,
+        });
+      }
+    }
+    return rows.sort((a, b) => b.sizeBytes - a.sizeBytes || a.name.localeCompare(b.name));
   }
 
-  function usedByTitle(usages: ModelUsage[] | undefined): string {
-    if (!usages?.length) return "";
-    return usages
-      .map((item) => {
-        const files = (item.files ?? []).map((file) => shortPath(file)).join(", ");
-        return files ? `${item.projectName}: ${files}` : item.projectName;
-      })
-      .join("\n");
+  const rows = $derived(inventory ? flatten(inventory) : []);
+  const sourceCount = $derived.by(() => {
+    if (!inventory) return 0;
+    const labels = new Set<string>();
+    if (inventory.ollama?.models?.length) labels.add("ollama");
+    for (const cache of inventory.caches ?? []) {
+      if (cache.models?.length) labels.add(cache.id);
+    }
+    for (const project of inventory.projectFiles ?? []) {
+      if (project.files?.length) labels.add(project.projectId);
+    }
+    return labels.size;
+  });
+
+  let expanded = $state(new Set<string>());
+
+  function toggle(key: string) {
+    const next = new Set(expanded);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    expanded = next;
   }
 
-  function ollamaStatus(info: OllamaInventory | null | undefined): string {
-    if (!info) return "";
-    const bits: string[] = [];
-    if (info.installed) {
-      bits.push(info.version ? `Ollama ${info.version}` : "Ollama jest zainstalowana");
-    } else {
-      bits.push("Nie znaleziono instalacji Ollamy");
-    }
-    if (info.serviceReachable) {
-      bits.push(`serwis działa (${info.serviceUrl})`);
-    } else {
-      bits.push("serwis nie odpowiada — lista z katalogu manifestów");
-    }
-    if (info.modelsDir) {
-      bits.push(`katalog ${shortPath(info.modelsDir)} (${fmtBytes(info.modelsDirBytes)})`);
-    }
-    return bits.join(" · ");
+  function countLabel(count: number, one: string, many: string): string {
+    return count === 1 ? t(one) : t(many, { count });
   }
 
   function scanLine(): string {
@@ -66,12 +102,6 @@
         : t("models.lastScan", { time: formatCheckedAt(inventory.scan.scannedAt) });
     }
     return t("models.subtitle");
-  }
-
-  function cacheHint(cache: CacheSource): string {
-    if (!cache.present) return "Brak tego cache'u na tym komputerze.";
-    if (!cache.models?.length) return "Katalog jest, ale nie znaleziono modeli.";
-    return `${cache.models.length} · ${fmtBytes(cache.totalBytes)}`;
   }
 </script>
 
@@ -103,170 +133,76 @@
   </div>
 {:else if models.loading && !inventory}
   <div class="models-page">
-    <div class="table-wrap"><div class="skeleton models-skel"></div></div>
+    <div class="skeleton models-skel"></div>
   </div>
 {:else if inventory}
   <div class="models-page">
-    <section class="models-section">
-      <header class="models-head">
-        <h2>Suma</h2>
-        <p class="muted">{fmtBytes(inventory.grandTotalBytes)} łącznie</p>
-      </header>
-      {#if totals.length}
-        <div class="table-wrap">
-          <table class="run-table compact">
-            <thead>
-              <tr>
-                <th>Źródło</th>
-                <th>Katalog</th>
-                <th class="num">Razem</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each totals as row (row.id)}
-                <tr>
-                  <td>{row.label}</td>
-                  <td class="muted path" title={row.path ?? ""}>{row.path ? shortPath(row.path) : "—"}</td>
-                  <td class="num tabular">{fmtBytes(row.bytes)}</td>
-                </tr>
-              {/each}
-              <tr class="total-row">
-                <td>Razem</td>
-                <td></td>
-                <td class="num tabular">{fmtBytes(inventory.grandTotalBytes)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      {:else}
-        <p class="muted">Brak danych o zajętości, dopóki skanowanie się nie skończy.</p>
-      {/if}
+    <section class="models-summary" aria-label={t("models.totals")}>
+      <div>
+        <strong>{countLabel(rows.length, "models.summaryCountOne", "models.summaryCount")}</strong>
+      </div>
+      <div>
+        <strong>{fmtBytes(inventory.grandTotalBytes)}</strong>
+        <span class="muted">{t("models.together")}</span>
+      </div>
+      <div>
+        <strong>{countLabel(sourceCount, "models.summarySourcesOne", "models.summarySources")}</strong>
+      </div>
     </section>
 
-    <section class="models-section">
-      <header class="models-head">
-        <h2>Ollama</h2>
-        <p class="muted">{ollamaStatus(ollama)}</p>
-      </header>
-      {#if ollama?.models?.length}
-        <div class="table-wrap">
-          <table class="run-table compact">
-            <thead>
-              <tr>
-                <th>Model</th>
-                <th>ID</th>
-                <th class="num">Rozmiar</th>
-                <th>Zmodyfikowano</th>
-                <th>Używane przez</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each ollama.models as model (model.name)}
-                <tr>
-                  <td><span class="mono" title={model.name}>{model.name}</span></td>
-                  <td class="muted tabular">{model.id ?? "—"}</td>
-                  <td class="num tabular">{fmtBytes(model.sizeBytes)}</td>
-                  <td class="muted">{formatCheckedAt(model.modifiedAt) || "—"}</td>
-                  <td title={usedByTitle(model.usedBy)}>{usedByLabel(model.usedBy)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {:else}
-        <p class="muted">
-          {#if ollama?.installed || ollama?.modelsDir}
-            Brak modeli w Ollamie.
-          {:else}
-            Nie znaleziono instalacji Ollamy ani katalogu modeli.
-          {/if}
-        </p>
-      {/if}
-    </section>
-
-    <section class="models-section">
-      <header class="models-head">
-        <h2>Cache'e</h2>
-      </header>
-      {#each caches as cache (cache.id)}
-        <article class="cache-block">
-          <header class="cache-head">
-            <h3>{cache.label}</h3>
-            <p class="muted" title={cache.path}>
-              {#if cache.path}{shortPath(cache.path)} · {/if}{cacheHint(cache)}
-            </p>
-          </header>
-          {#if cache.models?.length}
-            <div class="table-wrap">
-              <table class="run-table compact">
-                <thead>
-                  <tr>
-                    <th>Model</th>
-                    <th class="num">Rozmiar</th>
-                    <th>Używane przez</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each cache.models as model (model.path)}
-                    <tr>
-                      <td>
-                        <span class="mono" title={model.path}>{model.name}</span>
-                      </td>
-                      <td class="num tabular">{fmtBytes(model.sizeBytes)}</td>
-                      <td title={usedByTitle(model.usedBy)}>{usedByLabel(model.usedBy)}</td>
-                    </tr>
+    {#if rows.length}
+      <ul class="model-list">
+        {#each rows as row (row.key)}
+          {@const open = expanded.has(row.key)}
+          <li class="model-item" class:open>
+            <button
+              class="model-line"
+              type="button"
+              aria-expanded={open}
+              title={open ? t("models.collapse") : t("models.expand")}
+              onclick={() => toggle(row.key)}
+            >
+              <span class="model-name" title={row.name}>{row.name}</span>
+              <span class="num tabular">{fmtBytes(row.sizeBytes)}</span>
+              <span class="muted loc" title={row.path ?? ""}>{row.location}</span>
+              <span class="used">
+                {#if row.usedBy?.length}
+                  {#each row.usedBy as usage (`${row.key}:${usage.projectId}`)}
+                    <span class="chip quiet" title={usage.projectPath}>{usage.projectName}</span>
                   {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
-        </article>
-      {/each}
-    </section>
-
-    <section class="models-section">
-      <header class="models-head">
-        <h2>Wagi w projektach</h2>
-        <p class="muted">
-          {#if projects.length}
-            {projects.length} {projects.length === 1 ? "projekt" : "projekty"} · {fmtBytes(projects.reduce((sum, item) => sum + (item.totalBytes ?? 0), 0))}
-          {:else}
-            Brak plików wag w skonfigurowanych katalogach projektów.
-          {/if}
-        </p>
-      </header>
-      {#each projects as project (project.projectId)}
-        <article class="cache-block">
-          <header class="cache-head">
-            <h3 title={project.projectPath}>{project.projectName}</h3>
-            <p class="muted">{shortPath(project.projectPath)} · {fmtBytes(project.totalBytes)}</p>
-          </header>
-          <div class="table-wrap">
-            <table class="run-table compact">
-              <thead>
-                <tr>
-                  <th>Plik</th>
-                  <th class="num">Rozmiar</th>
-                  <th>Używane przez</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each project.files ?? [] as file (file.path)}
-                  <tr>
-                    <td>
-                      <span class="mono" title={file.path}>{file.name}</span>
-                      <div class="muted path">{shortPath(file.path)}</div>
-                    </td>
-                    <td class="num tabular">{fmtBytes(file.sizeBytes)}</td>
-                    <td title={usedByTitle(file.usedBy)}>{usedByLabel(file.usedBy)}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        </article>
-      {/each}
-    </section>
+                {:else}
+                  <span class="muted">{t("models.usedByNone")}</span>
+                {/if}
+              </span>
+            </button>
+            {#if open}
+              <dl class="model-details">
+                {#if row.path}
+                  <div>
+                    <dt>{t("models.location")}</dt>
+                    <dd class="mono" title={row.path}>{row.path}</dd>
+                  </div>
+                {/if}
+                {#if row.id}
+                  <div>
+                    <dt>{t("models.col.id")}</dt>
+                    <dd class="mono">{row.id}</dd>
+                  </div>
+                {/if}
+                {#if row.modifiedAt}
+                  <div>
+                    <dt>{t("models.col.modified")}</dt>
+                    <dd>{formatCheckedAt(row.modifiedAt)}</dd>
+                  </div>
+                {/if}
+              </dl>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="muted">{t("models.empty")}</p>
+    {/if}
   </div>
 {/if}
 
@@ -274,31 +210,71 @@
   .models-page {
     display: flex;
     flex-direction: column;
-    gap: 1.4rem;
+    gap: 1rem;
     padding-bottom: 2rem;
   }
-  .models-section { min-width: 0; }
-  .models-head, .cache-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    margin-bottom: 0.55rem;
+  .models-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
   }
-  .models-head h2, .cache-head h3 {
-    margin: 0;
-    font-size: 0.95rem;
-    font-weight: 650;
-  }
-  .cache-block { margin: 0.7rem 0 1rem; }
+  .models-summary strong { display: block; font-size: 0.95rem; }
   .muted { color: var(--muted); font-size: 12px; }
-  .path { word-break: break-all; }
-  .mono {
-    font-family: var(--mono);
-    font-size: 12px;
+  .model-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    overflow: visible;
+  }
+  .model-item + .model-item { border-top: 1px solid rgba(255, 255, 255, 0.04); }
+  .model-line {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1.4fr) max-content minmax(6rem, 1fr) minmax(7rem, 1.2fr);
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+    padding: 9px 12px;
+    background: transparent;
+    border: 0;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .model-name {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .num { text-align: right; white-space: nowrap; }
-  .total-row td { font-weight: 700; border-top: 1px solid var(--line); }
+  .loc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .used { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+  .model-details {
+    margin: 0;
+    padding: 0 12px 12px 12px;
+    display: grid;
+    gap: 6px;
+  }
+  .model-details div {
+    display: grid;
+    grid-template-columns: 8rem minmax(0, 1fr);
+    gap: 8px;
+    font-size: 12px;
+  }
+  dt { color: var(--muted); margin: 0; }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  .mono { font-family: var(--mono); font-size: 12px; }
   .models-skel { height: 8rem; }
+  .error { color: var(--danger); }
+  @media (max-width: 800px) {
+    .models-summary, .model-line { grid-template-columns: 1fr 1fr; }
+    .model-details div { grid-template-columns: 1fr; }
+  }
 </style>

@@ -1,10 +1,12 @@
 <script lang="ts">
   import { slide } from "svelte/transition";
   import { isJsLike, shortPath, warningsForPart } from "$lib/format";
-  import { dash, groupMarker as markerForGroup, removedPartsFor } from "$lib/dashboard.svelte";
+  import { composeFor, dash, groupMarker as markerForGroup, removedPartsFor } from "$lib/dashboard.svelte";
+  import { t } from "$lib/i18n.svelte";
   import { runState } from "$lib/runs.svelte";
   import type { RepoGroup as RepoGroupType } from "$lib/types";
   import AppRow from "./AppRow.svelte";
+  import ComposeSection from "./ComposeSection.svelte";
   import WarningBadge from "./WarningBadge.svelte";
 
   let {
@@ -40,6 +42,15 @@
       warningsForPart(part.id, runState.runs, [...(runState.warnings ?? []), ...(dash.warnings ?? [])]),
     ),
   );
+  const compose = $derived(composeFor(group.id));
+
+  function appsLabel(count: number): string {
+    if (count === 1) return t("projects.app.one");
+    if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14)) {
+      return t("projects.app.few", { count });
+    }
+    return t("projects.app.many", { count });
+  }
 </script>
 
 <section class="project" class:open class:live={running.length > 0} class:removed={groupMarker === "removed"}>
@@ -49,31 +60,31 @@
       <div class="title-row">
         <h2 title={group.name}>{group.name}</h2>
         {#if running.length > 0}
-          <span class="pulse" title="Running" aria-label="Running"></span>
+          <span class="pulse" title={t("projects.runningLabel")} aria-label={t("projects.runningLabel")}></span>
           <span class="run-count">{running.length}</span>
         {:else if failed}
-          <span class="dot fail" title="A process failed"></span>
+          <span class="dot fail" title={t("projects.failed")}></span>
         {/if}
         <WarningBadge {warnings} />
-        {#if groupMarker === "new"}<span class="marker new">New</span>{/if}
-        {#if groupMarker === "changed"}<span class="marker changed">Changed</span>{/if}
-        {#if groupMarker === "removed"}<span class="marker removed">Removed</span>{/if}
+        {#if groupMarker === "new"}<span class="marker new">{t("common.new")}</span>{/if}
+        {#if groupMarker === "changed"}<span class="marker changed">{t("common.changed")}</span>{/if}
+        {#if groupMarker === "removed"}<span class="marker removed">{t("common.removed")}</span>{/if}
       </div>
       <p class="path" title={group.path}>{shortPath(group.path)}</p>
     </div>
     <div class="project-meta">
       {#if group.git}
-        <span class="git" title={group.git.dirty ? "Uncommitted changes" : "Clean working tree"}>
+        <span class="git" title={group.git.dirty ? t("projects.dirty") : t("projects.clean")}>
           <span class="dot {group.git.dirty ? 'dirty' : 'clean'}"></span>
           {group.git.branch}
         </span>
       {:else}
-        <span class="muted">no git</span>
+        <span class="muted">{t("projects.noGit")}</span>
       {/if}
       {#if versions[0]}
         <span class="badge quiet">v{versions[0]}</span>
       {/if}
-      <span class="count">{(group.parts ?? []).length === 1 ? "1 app" : `${(group.parts ?? []).length} apps`}</span>
+      <span class="count">{appsLabel((group.parts ?? []).length)}</span>
       {#if needsInstall && !open}
         <span class="warn-inline">deps</span>
       {/if}
@@ -87,16 +98,22 @@
       {/each}
       {#each removedParts as item (item.partId)}
         <div class="app-row removed">
+          <span class="role"></span>
           <div class="app-main">
             <div class="app-id">
               <div class="app-name">
                 <strong>{item.part ?? item.partId}</strong>
-                <span class="marker removed">Removed</span>
+                <span class="marker removed">{t("common.removed")}</span>
               </div>
             </div>
           </div>
+          <span class="port-cell"></span>
+          <div class="app-actions"></div>
         </div>
       {/each}
     </div>
+    {#if compose}
+      <ComposeSection {compose} />
+    {/if}
   {/if}
 </section>

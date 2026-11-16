@@ -25,7 +25,7 @@ export async function refreshModels() {
     applyModelsSnapshot(await fetchModels());
   } catch (err: unknown) {
     models.loading = false;
-    models.error = err instanceof Error ? err.message : "Nie udało się pobrać inwentaryzacji modeli.";
+    models.error = err instanceof Error ? err.message : "Could not load the models inventory.";
   }
 }
 
@@ -34,7 +34,7 @@ export async function rescanModels() {
   try {
     applyModelsSnapshot(await requestModelsScan());
   } catch (err: unknown) {
-    models.error = err instanceof Error ? err.message : "Nie udało się uruchomić skanowania.";
+    models.error = err instanceof Error ? err.message : "Could not start a models scan.";
   }
 }
 

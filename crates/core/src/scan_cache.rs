@@ -47,9 +47,23 @@ pub fn config_fingerprint(config: &Config) -> String {
     serde_json::to_string(&serde_json::json!({
         "roots": roots,
         "patterns": patterns,
-        "configBridge": format!("{:?}", config.config_bridge).to_ascii_lowercase(),
     }))
         .unwrap_or_default()
+}
+
+fn fingerprints_compatible(stored: &str, current: &str) -> bool {
+    if stored == current {
+        return true;
+    }
+    let stored: serde_json::Value = match serde_json::from_str(stored) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    let current: serde_json::Value = match serde_json::from_str(current) {
+        Ok(value) => value,
+        Err(_) => return false,
+    };
+    stored.get("roots") == current.get("roots") && stored.get("patterns") == current.get("patterns")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,7 +175,7 @@ pub fn load_scan_cache(path: &Path, config: &Config) -> Option<ScanCache> {
     if cache.scanner_version != SCANNER_VERSION {
         return None;
     }
-    if cache.fingerprint != config_fingerprint(config) {
+    if !fingerprints_compatible(&cache.fingerprint, &config_fingerprint(config)) {
         return None;
     }
     Some(cache)

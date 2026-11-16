@@ -85,6 +85,7 @@ impl Workspaces {
 }
 
 pub fn scan(config: &Config) -> Vec<Project> {
+    crate::git::clear_git_cache();
     let _bridge = crate::bridge::begin(config.config_bridge, &config.roots);
     let mut seen = HashSet::new();
     let mut projects = Vec::new();

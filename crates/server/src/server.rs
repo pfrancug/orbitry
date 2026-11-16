@@ -10,9 +10,9 @@ use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use axum::Router;
 use orbitry_core::{
-    attach_run_warnings, bridge_status, config_fingerprint, diff_groups, evaluate_warnings,
-    export_cache, group_projects, load_config, load_scan_cache, now_ms, save_config,
-    save_scan_cache, scan, scan_cache_path, BridgeStatus, Config, ConfigBridgeMode,
+    apply_port_overrides, attach_run_warnings, bridge_status, config_fingerprint, diff_groups,
+    evaluate_warnings, export_cache, group_projects, load_config, load_scan_cache, now_ms,
+    save_config, save_scan_cache, scan, scan_cache_path, BridgeStatus, Config, ConfigBridgeMode,
     ListeningSnapshot, PortOverride, ProcessManager, Project, RepoGroup, Run, RunStatus, SCANNER_VERSION,
     ScanCache, ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
 };
@@ -30,6 +30,7 @@ struct Inventory {
     groups: Vec<RepoGroup>,
     projects: Vec<Project>,
     scan: ScanStatus,
+    warnings: Vec<Warning>,
 }
 
 struct AppState {
@@ -127,12 +128,14 @@ async fn serve(
             groups: cache.groups,
             projects: Vec::new(),
             scan: ScanStatus::from_cache(cache.scanned_at),
+            warnings: Vec::new(),
         }
     } else {
         Inventory {
             groups: Vec::new(),
             projects: Vec::new(),
             scan: ScanStatus::empty_scanning(),
+            warnings: Vec::new(),
         }
     };
     let state = Arc::new(AppState {
@@ -185,6 +188,8 @@ async fn serve(
     println!("Orbitry is running at {}", instance::dashboard_url(port));
     start_scan(Arc::clone(&state));
     spawn_update_checker(Arc::clone(&state));
+    spawn_live_refresh(Arc::clone(&state));
+
 
 
     let shutdown_manager = Arc::clone(&manager);
@@ -253,8 +258,6 @@ async fn post_scan(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ProjectsResponse>, (StatusCode, String)> {
     start_scan(Arc::clone(&state));
-    spawn_update_checker(Arc::clone(&state));
-
     Ok(Json(snapshot_response(&state).await))
 }
 
@@ -288,7 +291,7 @@ async fn put_config(
     let mut config = Config {
         roots: body.roots,
         script_patterns: body.script_patterns,
-        port_overrides: body.port_overrides.unwrap_or(existing.port_overrides),
+        port_overrides: body.port_overrides.unwrap_or_else(|| existing.port_overrides.clone()),
         config_bridge: body.config_bridge.unwrap_or(existing.config_bridge),
         auto_check_updates: body
             .auto_check_updates
@@ -303,13 +306,21 @@ async fn put_config(
     config
         .script_patterns
         .retain(|pattern| !pattern.pattern.trim().is_empty());
+    let roots_or_patterns_changed =
+        config.roots != existing.roots || config.script_patterns != existing.script_patterns;
+    let bridge_changed = config.config_bridge != existing.config_bridge;
+    let overrides_changed = config.port_overrides != existing.port_overrides;
     save_config(&state.config_path, &config).map_err(internal)?;
-    state
-        .manager
-        .set_port_overrides(config.port_overrides.clone())
-        .await;
-    start_scan(Arc::clone(&state));
-    spawn_update_checker(Arc::clone(&state));
+    if overrides_changed {
+        state
+            .manager
+            .set_port_overrides(config.port_overrides.clone())
+            .await;
+        apply_overrides_to_inventory(&state, &config.port_overrides);
+    }
+    if roots_or_patterns_changed || bridge_changed {
+        start_scan(Arc::clone(&state));
+    }
 
     Ok(Json(config_response(config)))
 }
@@ -384,9 +395,7 @@ async fn post_stop_all(State(state): State<Arc<AppState>>) -> Json<RunsResponse>
 }
 
 async fn get_runs(State(state): State<Arc<AppState>>) -> Json<RunsResponse> {
-    let runs = state.manager.list().await;
-    let (runs, warnings) = annotate_runs(&state, runs).await;
-    Json(RunsResponse { runs, warnings })
+    cached_runs_response(&state).await
 }
 
 async fn logs_ws(
@@ -521,6 +530,7 @@ fn start_scan(state: Arc<AppState>) {
     tokio::spawn(async move {
         let result = run_scan(&state).await;
         state.scanning.store(false, Ordering::SeqCst);
+        refresh_live_state(&state).await;
         if let Err(err) = result {
             if let Ok(mut inventory) = state.inventory.lock() {
                 inventory.scan.error = Some(err);
@@ -583,21 +593,74 @@ async fn run_scan(state: &AppState) -> Result<(), String> {
 }
 
 async fn snapshot_response(state: &AppState) -> ProjectsResponse {
-    let (groups, projects, scan) = match state.inventory.lock() {
-        Ok(inventory) => (
-            inventory.groups.clone(),
-            inventory.projects.clone(),
-            inventory.scan.clone(),
-        ),
-        Err(_) => (Vec::new(), Vec::new(), ScanStatus::empty_scanning()),
+    match state.inventory.lock() {
+        Ok(inventory) => ProjectsResponse {
+            groups: inventory.groups.clone(),
+            projects: inventory.projects.clone(),
+            warnings: inventory.warnings.clone(),
+            scan: inventory.scan.clone(),
+        },
+        Err(_) => ProjectsResponse {
+            groups: Vec::new(),
+            projects: Vec::new(),
+            warnings: Vec::new(),
+            scan: ScanStatus::empty_scanning(),
+        },
+    }
+}
+
+async fn cached_runs_response(state: &AppState) -> Json<RunsResponse> {
+    let mut runs = state.manager.list_cached().await;
+    let warnings = state
+        .inventory
+        .lock()
+        .map(|inventory| inventory.warnings.clone())
+        .unwrap_or_default();
+    attach_run_warnings(&mut runs, &warnings);
+    Json(RunsResponse { runs, warnings })
+}
+
+fn apply_overrides_to_inventory(state: &AppState, overrides: &[PortOverride]) {
+    let Ok(mut inventory) = state.inventory.lock() else {
+        return;
     };
+    for group in &mut inventory.groups {
+        for part in &mut group.parts {
+            apply_port_overrides(&mut part.ports, &part.id, overrides);
+        }
+    }
+    for project in &mut inventory.projects {
+        apply_port_overrides(&mut project.ports, &project.id, overrides);
+    }
+}
+
+fn spawn_live_refresh(state: Arc<AppState>) {
+    tokio::spawn(async move {
+        let mut first = true;
+        loop {
+            if !first {
+                tokio::select! {
+                    _ = state.shutdown.wait() => break,
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {}
+                }
+            }
+            first = false;
+            refresh_live_state(&state).await;
+        }
+    });
+}
+
+async fn refresh_live_state(state: &AppState) {
+    state.manager.refresh_live().await;
+    let groups = state
+        .inventory
+        .lock()
+        .map(|inventory| inventory.groups.clone())
+        .unwrap_or_default();
     let runs = state.manager.list_cached().await;
     let warnings = collect_warnings(&groups, &runs).await;
-    ProjectsResponse {
-        groups,
-        projects,
-        warnings,
-        scan,
+    if let Ok(mut inventory) = state.inventory.lock() {
+        inventory.warnings = warnings;
     }
 }
 

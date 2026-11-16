@@ -336,7 +336,7 @@ impl ProcessManager {
         }
     }
 
-    async fn refresh_live(&self) {
+    pub async fn refresh_live(&self) {
         let snapshots: Vec<(String, Option<u32>, bool)> = {
             let inner = self.inner.lock().await;
             inner

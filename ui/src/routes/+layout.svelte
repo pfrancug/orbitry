@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { afterNavigate } from "$app/navigation";
   import "../app.css";
   import AlertStrip from "$lib/components/AlertStrip.svelte";
   import ControlPanel from "$lib/components/ControlPanel.svelte";
@@ -18,12 +17,11 @@
   import { refreshVersion, startUpdatePolling, update, updateInProgress } from "$lib/update.svelte";
   import { formatAgeMs } from "$lib/format";
   import { findPart } from "$lib/format";
-  import { closePanel, refreshRuns, runState, setPanelOpen } from "$lib/runs.svelte";
+  import { closePanel, refreshRuns, runState } from "$lib/runs.svelte";
   import { refreshMetrics } from "$lib/metrics.svelte";
 
   let { children } = $props();
   let sidebarCollapsed = $state(false);
-  let mobileNav = $state(false);
 
   const selectedPart = $derived(
     runState.selectedPartId ? findPart(runState.selectedPartId, dash.groups) ?? null : null,
@@ -47,13 +45,7 @@
   }
 
   function onKey(event: KeyboardEvent) {
-    if (event.key === "Escape") {
-      if (mobileNav) {
-        mobileNav = false;
-        return;
-      }
-      if (runState.panelOpen) closePanel();
-    }
+    if (event.key === "Escape" && runState.panelOpen) closePanel();
   }
 
   onMount(() => {
@@ -89,28 +81,17 @@
     };
   });
 
-  afterNavigate(() => {
-    mobileNav = false;
-  });
 </script>
 
 <div
   class="app-shell"
   class:sidebar-collapsed={sidebarCollapsed}
   class:panel-open={runState.panelOpen}
-  class:mobile-nav={mobileNav}
 >
-  {#if mobileNav}
-    <button class="nav-scrim" type="button" aria-label="Close navigation" onclick={() => (mobileNav = false)}></button>
-  {/if}
-
   <Sidebar collapsed={sidebarCollapsed} ontoggle={toggleSidebar} />
 
   <div class="main-column">
     <header class="chrome">
-      <button class="icon-btn ghost menu-btn" type="button" onclick={() => (mobileNav = !mobileNav)} aria-label="Open navigation">
-        <Icon name="menu" />
-      </button>
       <div class="chrome-spacer"></div>
       {#if dash.scan}
         <div
@@ -141,16 +122,6 @@
       >
         <Icon name="refresh" />
         <span class="btn-label">{dash.refreshing || dash.scan?.state === "scanning" ? "Verifying..." : "Refresh"}</span>
-      </button>
-      <button
-        class="icon-btn ghost"
-        type="button"
-        class:active={runState.panelOpen}
-        onclick={() => setPanelOpen(!runState.panelOpen)}
-        title={runState.panelOpen ? "Hide control panel" : "Show control panel"}
-        aria-pressed={runState.panelOpen}
-      >
-        <Icon name="panel" />
       </button>
     </header>
 

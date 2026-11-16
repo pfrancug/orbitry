@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { slide } from "svelte/transition";
   import { isJsLike, shortPath, warningsForPart } from "$lib/format";
   import { composeFor, dash, groupMarker as markerForGroup, removedPartsFor, visibleWarnings } from "$lib/dashboard.svelte";
   import { t } from "$lib/i18n.svelte";
@@ -90,30 +89,32 @@
     </div>
   </button>
 
-  {#if open}
-    <div class="app-list" transition:slide={{ duration: 160 }}>
-      {#each (group.parts ?? []) as part (part.id)}
-        <AppRow {part} />
-      {/each}
-      {#each removedParts as item (item.partId)}
-        <div class="app-row removed">
-          <span class="role"></span>
-          <div class="app-main">
-            <div class="app-id">
-              <div class="app-name">
-                <strong>{item.part ?? item.partId}</strong>
-                <span class="marker removed">{t("common.removed")}</span>
+  <div class="reveal" class:open>
+    <div class="reveal-inner">
+      <div class="app-list">
+        {#each (group.parts ?? []) as part (part.id)}
+          <AppRow {part} />
+        {/each}
+        {#each removedParts as item (item.partId)}
+          <div class="app-row removed">
+            <span class="role"></span>
+            <div class="app-main">
+              <div class="app-id">
+                <div class="app-name">
+                  <strong>{item.part ?? item.partId}</strong>
+                  <span class="marker removed">{t("common.removed")}</span>
+                </div>
               </div>
             </div>
+            <span class="port-cell"></span>
+            <div class="app-actions"></div>
+            <div class="app-status"></div>
           </div>
-          <span class="port-cell"></span>
-          <div class="app-actions"></div>
-          <div class="app-status"></div>
-        </div>
-      {/each}
+        {/each}
+      </div>
+      {#if compose}
+        <ComposeSection {compose} />
+      {/if}
     </div>
-    {#if compose}
-      <ComposeSection {compose} />
-    {/if}
-  {/if}
+  </div>
 </section>

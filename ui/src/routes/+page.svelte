@@ -16,9 +16,9 @@
   import {
     isPending,
     openRun,
+    togglePart,
     restartScript,
     runState,
-    selectPart,
     startScript,
     stopAll,
     stopScript,
@@ -129,7 +129,7 @@
   }
 
   function inspect(run: Run) {
-    selectPart(run.partId, run.script, true);
+    togglePart(run.partId, run.script);
   }
 
   async function onStopAll() {

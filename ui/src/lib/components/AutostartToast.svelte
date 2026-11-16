@@ -88,16 +88,16 @@
     border-color: color-mix(in srgb, var(--warn, var(--danger)) 50%, transparent);
   }
   .copy { min-width: 0; }
-  p { margin: 0; font-size: 0.85rem; }
+  p { margin: 0; font-size: 12px; }
   p + p { margin-top: 0.3rem; }
   .alert-line { color: var(--warn, var(--danger)); }
   .icon-dismiss {
-    width: 1.6rem;
-    height: 1.6rem;
+    width: 28px;
+    height: 28px;
     border: 0;
     background: transparent;
     color: var(--muted);
-    font-size: 1.15rem;
+    font-size: 16px;
     line-height: 1;
     cursor: pointer;
     flex-shrink: 0;

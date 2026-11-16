@@ -33,6 +33,10 @@ These are standing rules for the project. Follow them in every change. They repl
 - **No port-ignore UI.** The dashboard does not offer an "ignore this port" control. An existing `ignore` field in config is still accepted so older files load, but it is not applied.
 - **Fine-grained updates.** Saving a setting must update only the state that changed. Do not replace the whole config object, remount the page, refetch the project list, or flash a loading/disabled state on unrelated controls.
 
+- **Compact desktop dashboard.** The UI is a professional tech dashboard, not a mobile or marketing layout. Use a dense type scale (13px base, 12px secondary, 11px labels, 16px page titles, 13px section and project titles, 20px tabular KPI numbers), compact controls about 28px tall, tight spacing, and small radii (6px default, 4px small, 8px large). Apply the same tokens on every page, the side panel, modals, and popovers. Inter, with Segoe UI and system-ui as fallbacks, is the only UI typeface; do not use a separate display font for headings.
+- **Smooth collapse.** Expanding or collapsing a project or section animates height and opacity. Icons, including chevrons, stay in a fixed box and rotate in place; they must not jump or change margin. Honor `prefers-reduced-motion`.
+- **No top-nav chrome for the sidebar or details panel.** The left sidebar stays visible (it may collapse to an icon rail from its own control). There is no hamburger menu. The details panel opens from a list item, closes when that same item is clicked again or when the panel's close control is used, and is not persisted. Reopening must not restore previous content. Older localStorage keys for panel or alert-popover state are dropped in a versioned migration.
+- **Warnings popover.** The notifications popover is a wider, simple list: one border, a short header, minimal dividers, clear per-item actions, comfortable click targets, and its own contained scroll.
 
 ## Compatibility and releases
 

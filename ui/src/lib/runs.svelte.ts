@@ -4,9 +4,6 @@ import { groupNameFor } from "./format";
 import { rememberRecent } from "./recent";
 import type { AppWarning, ProjectPart, RepoGroup, Run } from "./types";
 
-const SELECTED_PART_KEY = "orbitry.selectedPart";
-const SELECTED_SCRIPT_KEY = "orbitry.selectedScript";
-const PANEL_KEY = "orbitry.panelOpen";
 
 export const runState = $state({
   runs: [] as Run[],
@@ -22,16 +19,6 @@ export const runState = $state({
 
 function keyOf(partId: string, script: string): string {
   return `${partId}::${script}`;
-}
-
-function persistSelection() {
-  try {
-    if (runState.selectedPartId) localStorage.setItem(SELECTED_PART_KEY, runState.selectedPartId);
-    if (runState.selectedScript) localStorage.setItem(SELECTED_SCRIPT_KEY, runState.selectedScript);
-    localStorage.setItem(PANEL_KEY, runState.panelOpen ? "1" : "0");
-  } catch {
-    // Private mode can block storage.
-  }
 }
 
 export function upsertRun(run: Run) {
@@ -62,13 +49,18 @@ export function latestRun(partId: string, script?: string | null): Run | undefin
   );
 }
 
-export function setPanelOpen(open: boolean) {
-  runState.panelOpen = open;
-  persistSelection();
+export function closePanel() {
+  runState.panelOpen = false;
+  runState.selectedPartId = null;
+  runState.selectedScript = null;
 }
 
-export function closePanel() {
-  setPanelOpen(false);
+export function setPanelOpen(open: boolean) {
+  if (open) {
+    if (runState.selectedPartId) runState.panelOpen = true;
+    return;
+  }
+  closePanel();
 }
 
 export function selectPart(partId: string, script?: string, openPanel = true) {
@@ -83,7 +75,6 @@ export function selectPart(partId: string, script?: string, openPanel = true) {
     runningFor(partId, runState.selectedScript) ?? latestRun(partId, runState.selectedScript);
   runState.selectedId = run?.id ?? null;
   if (openPanel) runState.panelOpen = true;
-  persistSelection();
 }
 
 /** Select an app, or close the panel if this app is already selected and open. */
@@ -97,19 +88,9 @@ export function togglePart(partId: string, script?: string) {
   selectPart(partId, script, true);
 }
 
-export function restoreSelection(parts: ProjectPart[]) {
-  try {
-    const partId = localStorage.getItem(SELECTED_PART_KEY);
-    const script = localStorage.getItem(SELECTED_SCRIPT_KEY);
-    const panel = localStorage.getItem(PANEL_KEY) === "1";
-    if (partId && parts.some((part) => part.id === partId)) {
-      selectPart(partId, script ?? undefined, panel);
-    } else {
-      runState.panelOpen = false;
-    }
-  } catch {
-    // Ignore storage errors on first load.
-  }
+export function restoreSelection(_parts: ProjectPart[]) {
+  // 0.9.0: do not restore a previous panel or selection.
+  void _parts;
 }
 
 export function openRun(id: string, openPanel = true) {
@@ -120,7 +101,6 @@ export function openRun(id: string, openPanel = true) {
     runState.selectedScript = run.script;
   }
   if (openPanel) runState.panelOpen = true;
-  persistSelection();
 }
 
 export function isPending(partId: string, script: string): boolean {

@@ -77,7 +77,7 @@
     min-width: 11rem;
     padding: 4px;
     border: 1px solid var(--line-strong);
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     background: rgba(16, 16, 22, 0.98);
     box-shadow: var(--shadow);
     display: flex;
@@ -96,7 +96,7 @@
     margin: 0;
     padding: 7px 10px;
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--radius);
     background: transparent;
     color: var(--text);
     font: inherit;

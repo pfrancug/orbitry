@@ -48,15 +48,15 @@
   }
   .meter-label {
     color: var(--muted);
-    font-size: 0.78rem;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.02em;
     text-transform: uppercase;
   }
   .meter-value {
-    font-size: 1.15rem;
+    font-size: 16px;
     font-variant-numeric: tabular-nums;
-    font-weight: 800;
+    font-weight: 600;
   }
   .meter-track {
     height: 8px;
@@ -74,7 +74,7 @@
     display: block;
     margin-top: 0.15rem;
     color: var(--muted);
-    font-size: 0.66rem;
+    font-size: 11px;
     font-variant-numeric: tabular-nums;
   }
 </style>

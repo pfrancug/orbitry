@@ -208,6 +208,7 @@ const en: Record<string, string> = {
   "alerts.message.one": "message",
   "alerts.message.few": "messages",
   "alerts.message.many": "messages",
+  "alerts.openDetails": "Open details",
 
   "settings.title": "Settings",
   "settings.subtitle": "Project folders, script detection, and how Orbitry behaves.",
@@ -577,6 +578,7 @@ const pl: Record<string, string> = {
   "alerts.message.one": "komunikat",
   "alerts.message.few": "komunikaty",
   "alerts.message.many": "komunikatów",
+  "alerts.openDetails": "Otwórz szczegóły",
 
   "settings.title": "Ustawienia",
   "settings.subtitle": "Foldery projektów, wykrywanie skryptów i zachowanie Orbitry.",

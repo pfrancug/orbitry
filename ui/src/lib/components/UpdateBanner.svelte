@@ -51,7 +51,7 @@
     border-color: color-mix(in srgb, var(--danger) 45%, transparent);
   }
   .copy { min-width: 0; }
-  p { margin: 0; font-size: 0.85rem; }
+  p { margin: 0; font-size: 12px; }
   a {
     display: inline-block;
     margin-top: 0.3rem;
@@ -67,12 +67,12 @@
     flex-shrink: 0;
   }
   .icon-dismiss {
-    width: 1.6rem;
-    height: 1.6rem;
+    width: 28px;
+    height: 28px;
     border: 0;
     background: transparent;
     color: var(--muted);
-    font-size: 1.15rem;
+    font-size: 16px;
     line-height: 1;
     cursor: pointer;
   }

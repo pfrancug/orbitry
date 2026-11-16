@@ -1,6 +1,6 @@
 /** Versioned, backward-compatible helpers for Orbitry's localStorage keys. */
 
-export const STORAGE_VERSION = 2;
+export const STORAGE_VERSION = 3;
 const VERSION_KEY = "orbitry.storageVersion";
 const PREFIX = "orbitry.";
 
@@ -59,6 +59,13 @@ export function migrateClientStorage(): void {
     if (from < 2) {
       // 0.5.3: an open Changed project could crash Projects and stay saved as expanded.
       localStorage.removeItem("orbitry.expanded");
+    }
+    if (from < 3) {
+      // 0.9.0: the details panel is session-only and must not restore stale content.
+      localStorage.removeItem("orbitry.panelOpen");
+      localStorage.removeItem("orbitry.selectedPart");
+      localStorage.removeItem("orbitry.selectedScript");
+      localStorage.removeItem("orbitry.alertsOpen");
     }
     if (from !== STORAGE_VERSION) {
       localStorage.setItem(VERSION_KEY, String(STORAGE_VERSION));

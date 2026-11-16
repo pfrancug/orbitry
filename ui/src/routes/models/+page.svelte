@@ -269,8 +269,8 @@
   }
   .models-summary strong {
     display: block;
-    font-size: 1.45rem;
-    font-weight: 700;
+    font-size: 20px;
+    font-weight: 600;
     letter-spacing: -0.02em;
     line-height: 1.15;
   }

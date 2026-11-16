@@ -377,7 +377,7 @@
     align-items: center;
     gap: 0.55rem;
     margin: 0;
-    font-size: 0.88rem;
+    font-size: 12px;
     cursor: pointer;
     user-select: none;
   }
@@ -446,7 +446,7 @@
   .command-preview {
     margin: 8px 0;
     padding: 10px 12px;
-    border-radius: 10px;
+    border-radius: var(--radius-lg);
     background: rgba(255, 255, 255, 0.04);
     display: flex;
     flex-direction: column;
@@ -468,7 +468,7 @@
   .preview-command {
     margin: 0;
     padding: 8px 10px;
-    border-radius: 8px;
+    border-radius: var(--radius);
     background: rgba(0, 0, 0, 0.28);
     overflow-x: auto;
     overscroll-behavior: contain;

@@ -1,16 +1,28 @@
 <script lang="ts">
   import type { AppWarning } from "$lib/types";
   import { dedupeWarnings, groupWarnings } from "$lib/format";
+  import { t } from "$lib/i18n.svelte";
+  import { selectPart } from "$lib/runs.svelte";
 
   let {
     warnings = [],
     compact = false,
     flat = false,
+    actionable = false,
+    onAction,
   }: {
     warnings?: AppWarning[];
     compact?: boolean;
     flat?: boolean;
+    actionable?: boolean;
+    onAction?: () => void;
   } = $props();
+
+  function openItem(warning: AppWarning) {
+    if (!warning.partId) return;
+    selectPart(warning.partId, undefined, true);
+    onAction?.();
+  }
 
   const items = $derived(flat ? dedupeWarnings(warnings ?? []) : []);
   const groups = $derived(flat ? [] : groupWarnings(warnings ?? []));
@@ -23,12 +35,19 @@
 
 {#if flat}
   {#if items.length}
-    <ul class="warning-list" class:compact>
+    <ul class="warning-list" class:compact class:flat>
       {#each items as warning (`${warning.code}:${warning.port ?? ""}:${warning.partId ?? ""}:${warning.message}`)}
         <li class="warning-item sev-{warning.severity}">
-          <strong>{warning.message}</strong>
-          {#if warning.hint && !compact}
-            <span class="hint">{warning.hint}</span>
+          <div class="warning-copy">
+            <strong>{warning.message}</strong>
+            {#if warning.hint && !compact}
+              <span class="hint">{warning.hint}</span>
+            {/if}
+          </div>
+          {#if actionable && warning.partId}
+            <button class="warning-action" type="button" onclick={() => openItem(warning)}>
+              {t("alerts.openDetails")}
+            </button>
           {/if}
         </li>
       {/each}
@@ -39,9 +58,16 @@
     {#each groups as group (group.code)}
       <li class="warning-item sev-{group.severity}" class:grouped={group.count > 1}>
         {#if group.count === 1}
-          <strong>{group.items[0].message}</strong>
-          {#if group.items[0].hint && !compact}
-            <span class="hint">{group.items[0].hint}</span>
+          <div class="warning-copy">
+            <strong>{group.items[0].message}</strong>
+            {#if group.items[0].hint && !compact}
+              <span class="hint">{group.items[0].hint}</span>
+            {/if}
+          </div>
+          {#if actionable && group.items[0].partId}
+            <button class="warning-action" type="button" onclick={() => openItem(group.items[0])}>
+              {t("alerts.openDetails")}
+            </button>
           {/if}
         {:else}
           <button

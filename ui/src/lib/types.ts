@@ -124,6 +124,7 @@ export type AppConfig = {
   defaultPatterns: { kind: ScriptKind; pattern: string }[];
   portOverrides?: PortOverride[];
   configBridge?: ConfigBridgeMode;
+  autoCheckUpdates?: boolean;
   bridgeStatus?: BridgeStatus;
 };
 
@@ -188,4 +189,23 @@ export type ProjectsResponse = {
   groups: RepoGroup[];
   warnings?: AppWarning[];
   scan?: ScanStatus;
+};
+
+export type VersionInfo = {
+  current: string;
+  latest?: string | null;
+  updateAvailable: boolean;
+  notesUrl?: string | null;
+  notes?: string | null;
+  checking: boolean;
+  installing: boolean;
+  error?: string | null;
+  autoCheck: boolean;
+  dev: boolean;
+};
+
+export type UpdateResponse = VersionInfo & {
+  started: boolean;
+  needsConfirm: boolean;
+  running: number;
 };

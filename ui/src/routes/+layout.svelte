@@ -6,8 +6,10 @@
   import ControlPanel from "$lib/components/ControlPanel.svelte";
   import Icon from "$lib/components/Icon.svelte";
   import ScanBanner from "$lib/components/ScanBanner.svelte";
+  import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import { bannerMessage, dash, refreshAll } from "$lib/dashboard.svelte";
+  import { refreshVersion } from "$lib/update.svelte";
   import { formatAgeMs } from "$lib/format";
   import { findPart } from "$lib/format";
   import { closePanel, refreshRuns, runState, setPanelOpen } from "$lib/runs.svelte";
@@ -56,14 +58,19 @@
       .finally(() => {
         dash.loading = false;
       });
+    void refreshVersion();
     const timer = setInterval(() => {
       refreshRuns().catch(() => {
         // Keep the last known process list if a poll fails.
       });
     }, 2000);
+    const versionTimer = setInterval(() => {
+      void refreshVersion();
+    }, 60000);
     window.addEventListener("keydown", onKey);
     return () => {
       clearInterval(timer);
+      clearInterval(versionTimer);
       window.removeEventListener("keydown", onKey);
     };
   });
@@ -137,6 +144,7 @@
     {/if}
 
     <ScanBanner />
+    <UpdateBanner />
     <AlertStrip />
 
     <div class="workspace">

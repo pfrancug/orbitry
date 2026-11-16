@@ -1,4 +1,4 @@
-import type { AppConfig, AppWarning, PortOverride, ProjectsResponse, Run, ScriptPattern } from "./types";
+import type { AppConfig, AppWarning, PortOverride, ProjectsResponse, Run, ScriptPattern, UpdateResponse, VersionInfo } from "./types";
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -33,6 +33,7 @@ export function saveConfig(config: {
   scriptPatterns: ScriptPattern[];
   portOverrides?: PortOverride[];
   configBridge?: import("./types").ConfigBridgeMode;
+  autoCheckUpdates?: boolean;
 }): Promise<AppConfig> {
   return request("/api/config", {
     method: "PUT",
@@ -92,4 +93,19 @@ export function stopAllRuns(): Promise<{ runs: Run[]; warnings?: AppWarning[] }>
 export function logsSocket(runId: string): WebSocket {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   return new WebSocket(`${protocol}://${location.host}/api/runs/${runId}/logs`);
+}
+
+export function fetchVersion(): Promise<VersionInfo> {
+  return request("/api/version");
+}
+
+export function checkForUpdates(): Promise<VersionInfo> {
+  return request("/api/update/check", { method: "POST" });
+}
+
+export function startUpdate(confirm = false): Promise<UpdateResponse> {
+  return request("/api/update", {
+    method: "POST",
+    body: JSON.stringify({ confirm }),
+  });
 }

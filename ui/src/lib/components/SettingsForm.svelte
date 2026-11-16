@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setConfigBridge } from "$lib/dashboard.svelte";
+  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge } from "$lib/dashboard.svelte";
+  import { checkForUpdate, update } from "$lib/update.svelte";
   import type { ConfigBridgeMode, ScriptKind, ScriptScope } from "$lib/types";
 
   let kind = $state<ScriptKind>("dev");
@@ -102,4 +103,45 @@
       {/each}
     </div>
   </section>
+
+  <section class="settings-block">
+    <p class="label">Updates</p>
+    <p class="hint">
+      You're on {update.current || "a development build"}.
+      {#if update.dev}
+        Development builds show the version but don't install updates.
+      {:else if update.updateAvailable}
+        {update.latest} is available.
+      {:else if update.latest}
+        You're up to date.
+      {/if}
+    </p>
+    <label class="check-row">
+      <input
+        type="checkbox"
+        checked={dash.config.autoCheckUpdates !== false}
+        disabled={dash.saving}
+        onchange={(event) => setAutoCheckUpdates(event.currentTarget.checked)}
+      />
+      Check for updates automatically
+    </label>
+    <div class="bridge-row">
+      <button type="button" disabled={update.checking || update.dev} onclick={() => checkForUpdate()}>
+        {update.checking ? "Checking…" : "Check now"}
+      </button>
+    </div>
+    {#if update.error}
+      <p class="hint">{update.error}</p>
+    {/if}
+  </section>
 {/if}
+
+<style>
+  .check-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0.65rem 0 0.85rem;
+    font-size: 0.88rem;
+  }
+</style>

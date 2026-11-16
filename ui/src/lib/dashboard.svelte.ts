@@ -166,12 +166,14 @@ function withOverrides(next: {
   scriptPatterns: ScriptPattern[];
   portOverrides?: PortOverride[];
   configBridge?: ConfigBridgeMode;
+  autoCheckUpdates?: boolean;
 }) {
   return {
     roots: next.roots,
     scriptPatterns: next.scriptPatterns,
     portOverrides: next.portOverrides ?? dash.config?.portOverrides ?? [],
     configBridge: next.configBridge ?? dash.config?.configBridge ?? "auto",
+    autoCheckUpdates: next.autoCheckUpdates ?? dash.config?.autoCheckUpdates ?? true,
   };
 }
 
@@ -180,6 +182,7 @@ export async function persist(next: {
   scriptPatterns: ScriptPattern[];
   portOverrides?: PortOverride[];
   configBridge?: ConfigBridgeMode;
+  autoCheckUpdates?: boolean;
 }) {
   dash.saving = true;
   dash.error = null;
@@ -267,4 +270,13 @@ export async function setConfigBridge(mode: ConfigBridgeMode) {
 
 export function bannerMessage(): string | null {
   return dash.error || runState.error;
+}
+
+export async function setAutoCheckUpdates(enabled: boolean) {
+  if (!dash.config) return;
+  await persist({
+    roots: dash.config.roots,
+    scriptPatterns: dash.config.scriptPatterns,
+    autoCheckUpdates: enabled,
+  });
 }

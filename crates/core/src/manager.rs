@@ -12,9 +12,9 @@ use tokio::sync::{broadcast, Mutex};
 use crate::config::PortOverride;
 use crate::display_path;
 use crate::health::{check_health, HealthInfo, HealthStatus};
-use crate::logpump::{
-    apply_detach_flags, detach_creation_flags, detach_creation_flags_no_breakaway,
-};
+use crate::logpump::apply_detach_flags;
+#[cfg(windows)]
+use crate::logpump::{detach_creation_flags, detach_creation_flags_no_breakaway};
 use crate::logs::{
     append_line, atomic_write, cleanup_logs, ensure_logs_dir, file_cap_bytes, run_log_path,
     run_log_rotated_path, run_system_log_path, runs_path, write_log_limit, FinishedLog,

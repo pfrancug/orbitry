@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::config::{display_path, paths_equal};
 
+#[cfg(windows)]
 const RUN_VALUE: &str = "Orbitry";
 #[cfg(all(unix, not(target_os = "macos")))]
 const LINUX_DESKTOP: &str = "orbitry.desktop";

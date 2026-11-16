@@ -179,7 +179,7 @@ pub fn apply_detach_flags(cmd: &mut Command) {
     {
         use std::os::unix::process::CommandExt;
         unsafe {
-            _cmd.pre_exec(|| {
+            cmd.pre_exec(|| {
                 if libc::setsid() == -1 {
                     return Err(io::Error::last_os_error());
                 }
@@ -189,6 +189,7 @@ pub fn apply_detach_flags(cmd: &mut Command) {
     }
 }
 
+#[cfg(windows)]
 pub fn detach_creation_flags() -> u32 {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
@@ -196,22 +197,27 @@ pub fn detach_creation_flags() -> u32 {
     CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB
 }
 
+#[cfg(windows)]
 pub fn detach_creation_flags_no_breakaway() -> u32 {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
 }
 
-pub fn apply_detach_flags_tokio(_cmd: &mut tokio::process::Command) {
+pub fn apply_detach_flags_tokio(cmd: &mut tokio::process::Command) {
     #[cfg(unix)]
     {
         unsafe {
-            _cmd.pre_exec(|| {
+            cmd.pre_exec(|| {
                 if libc::setsid() == -1 {
                     return Err(io::Error::last_os_error());
                 }
                 Ok(())
             });
         }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = cmd;
     }
 }

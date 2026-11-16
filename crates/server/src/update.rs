@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 use crate::instance;
 use crate::shutdown::Shutdown;
 
-const GITHUB_LATEST: &str = "https://api.github.com/repos/pfrancug/orbitry/releases/latest";
+const GITHUB_RELEASES: &str = "https://api.github.com/repos/pfrancug/orbitry/releases?per_page=30";
 const USER_AGENT: &str = concat!("orbitry/", env!("CARGO_PKG_VERSION"));
 const CHECKSUMS_NAME: &str = "SHA256SUMS.txt";
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
@@ -415,6 +415,10 @@ struct GithubRelease {
     tag_name: String,
     html_url: String,
     body: Option<String>,
+    #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    prerelease: bool,
     assets: Vec<GithubAsset>,
 }
 
@@ -427,7 +431,7 @@ struct GithubAsset {
 async fn fetch_latest() -> Result<GithubRelease, String> {
     let client = api_client(API_TIMEOUT)?;
     let response = client
-        .get(GITHUB_LATEST)
+        .get(GITHUB_RELEASES)
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
         .send()
@@ -440,10 +444,35 @@ async fn fetch_latest() -> Result<GithubRelease, String> {
     if !status.is_success() {
         return Err(format!("GitHub returned {status} while checking for updates."));
     }
-    response
+    let releases: Vec<GithubRelease> = response
         .json()
         .await
-        .map_err(|err| format!("Could not read the GitHub release: {err}"))
+        .map_err(|err| format!("Could not read the GitHub release: {err}"))?;
+    let wanted = platform_asset();
+    let mut usable: Vec<GithubRelease> = releases
+        .into_iter()
+        .filter(|release| release_is_installable(release, wanted))
+        .collect();
+    if usable.is_empty() {
+        return Err("not-found".into());
+    }
+    usable.sort_by(|a, b| match (parse_semver(&a.tag_name), parse_semver(&b.tag_name)) {
+        (Some(left), Some(right)) => right.cmp(&left),
+        _ => b.tag_name.cmp(&a.tag_name),
+    });
+    Ok(usable.remove(0))
+}
+
+fn release_is_installable(release: &GithubRelease, asset: Option<&str>) -> bool {
+    if release.draft || release.prerelease {
+        return false;
+    }
+    let has_checksums = release
+        .assets
+        .iter()
+        .any(|item| item.name == CHECKSUMS_NAME);
+    let has_asset = asset.is_some_and(|name| release.assets.iter().any(|item| item.name == name));
+    has_checksums && has_asset
 }
 
 fn api_client(timeout: Duration) -> Result<reqwest::Client, String> {

@@ -1,4 +1,4 @@
-import type { AppConfig, AppWarning, MetricsSnapshot, PortOverride, ProjectsResponse, Run, ScriptPattern, ToolsInfo, UpdateResponse, VersionInfo } from "./types";
+import type { AppConfig, AppWarning, MetricsSnapshot, ModelsInventory, PortOverride, ProjectsResponse, Run, ScriptPattern, ToolsInfo, UpdateResponse, VersionInfo } from "./types";
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -127,4 +127,12 @@ export function fetchTools(): Promise<ToolsInfo> {
 
 export function fetchMetrics(): Promise<MetricsSnapshot> {
   return request("/api/metrics");
+}
+
+export function fetchModels(): Promise<ModelsInventory> {
+  return request("/api/models");
+}
+
+export function requestModelsScan(): Promise<ModelsInventory> {
+  return request("/api/models", { method: "POST" });
 }

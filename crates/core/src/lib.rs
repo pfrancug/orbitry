@@ -11,6 +11,7 @@ mod health;
 mod logpump;
 mod logs;
 mod metrics;
+mod models;
 mod manager;
 mod ports;
 mod ports_resolve;
@@ -40,6 +41,11 @@ pub use logpump::run_log_pump;
 pub use logs::{clamp_log_limit_mb, DEFAULT_LOG_LIMIT_MB, MAX_LOG_LIMIT_MB, MIN_LOG_LIMIT_MB};
 pub use manager::{ProcessManager, StartError, Subscription};
 pub use metrics::{MetricsHub, MetricsSnapshot};
+pub use models::{
+    empty_models_inventory, load_models_cache, models_cache_path, models_fingerprint, save_models_cache,
+    scan_models, CacheSource, CachedModel, ModelUsage, ModelsInventory, ModelsScanState, ModelsScanStatus,
+    MODELS_SCANNER_VERSION, OllamaInventory, OllamaModel, ProjectWeights, SourceTotal, WeightFile,
+};
 pub use ports::{
     apply_port_overrides, detect_expected_ports, detect_static_ports, listening_ports_for,
     Listener, ListeningSnapshot, PortInfo, PortSource,

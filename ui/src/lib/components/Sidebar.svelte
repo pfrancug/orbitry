@@ -16,6 +16,7 @@
   const items = [
     { href: "/", label: "Overview", icon: "overview", exact: true },
     { href: "/projects", label: "Projects", icon: "projects", exact: false },
+    { href: "/models", label: "Modele AI", icon: "models", exact: false },
     { href: "/logs", label: "Logs", icon: "logs", exact: false },
     { href: "/settings", label: "Settings", icon: "settings", exact: false },
   ];

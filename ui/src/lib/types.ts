@@ -279,3 +279,89 @@ export type UpdateResponse = VersionInfo & {
   needsConfirm: boolean;
   running: number;
 };
+
+export type ModelsScanState = "idle" | "scanning" | "fresh" | "cached";
+
+export type ModelsScanStatus = {
+  state: ModelsScanState;
+  scannedAt?: number | null;
+  startedAt?: number | null;
+  error?: string | null;
+  stale?: boolean;
+};
+
+export type ModelUsage = {
+  projectId: string;
+  projectName: string;
+  projectPath: string;
+  files?: string[];
+};
+
+export type OllamaModel = {
+  name: string;
+  id?: string | null;
+  sizeBytes: number;
+  modifiedAt?: number | null;
+  usedBy?: ModelUsage[];
+};
+
+export type OllamaInventory = {
+  installed: boolean;
+  version?: string | null;
+  installPath?: string | null;
+  serviceUrl: string;
+  serviceReachable: boolean;
+  modelsDir: string;
+  modelsDirBytes: number;
+  source: string;
+  models?: OllamaModel[];
+};
+
+export type CachedModel = {
+  name: string;
+  path: string;
+  sizeBytes: number;
+  usedBy?: ModelUsage[];
+};
+
+export type CacheSource = {
+  id: string;
+  label: string;
+  path: string;
+  present: boolean;
+  totalBytes: number;
+  models?: CachedModel[];
+};
+
+export type WeightFile = {
+  name: string;
+  path: string;
+  sizeBytes: number;
+  usedBy?: ModelUsage[];
+};
+
+export type ProjectWeights = {
+  projectId: string;
+  projectName: string;
+  projectPath: string;
+  totalBytes: number;
+  files?: WeightFile[];
+};
+
+export type SourceTotal = {
+  id: string;
+  label: string;
+  path?: string | null;
+  bytes: number;
+};
+
+export type ModelsInventory = {
+  scan: ModelsScanStatus;
+  ollama: OllamaInventory;
+  caches?: CacheSource[];
+  projectFiles?: ProjectWeights[];
+  totals?: SourceTotal[];
+  grandTotalBytes: number;
+  fingerprint?: string | null;
+  scannerVersion?: number;
+};

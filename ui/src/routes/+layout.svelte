@@ -11,6 +11,7 @@
   import UpdateOverlay from "$lib/components/UpdateOverlay.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import { bannerMessage, dash, refreshAll } from "$lib/dashboard.svelte";
+  import { refreshModels } from "$lib/models.svelte";
   import { refreshTools } from "$lib/tools.svelte";
   import { refreshVersion, update } from "$lib/update.svelte";
   import { formatAgeMs } from "$lib/format";
@@ -64,6 +65,7 @@
       });
     void refreshVersion();
     void refreshTools();
+    void refreshModels();
     void refreshMetrics();
     const timer = setInterval(() => {
       refreshRuns().catch(() => {

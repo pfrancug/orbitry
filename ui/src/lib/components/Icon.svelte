@@ -23,6 +23,11 @@
     <path d="M4 7h16v12H4z" />
     <path d="M8 7V5h8v2" />
     <path d="M4 12h16" />
+  {:else if name === "models"}
+    <circle cx="12" cy="6" r="2.4" />
+    <circle cx="6" cy="17" r="2.4" />
+    <circle cx="18" cy="17" r="2.4" />
+    <path d="M12 8.4v2.2M7.8 15.2l2.6-2.3M16.2 15.2l-2.6-2.3" />
   {:else if name === "logs"}
     <path d="M5 4h14v16H5z" />
     <path d="M8 8h8M8 12h8M8 16h5" />

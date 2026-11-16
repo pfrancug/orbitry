@@ -12,11 +12,12 @@ use axum::Router;
 use orbitry_core::{
     apply_port_overrides, attach_run_warnings, autostart_status, bridge_status, clamp_log_limit_mb,
     config_fingerprint, diff_groups, evaluate_warnings, export_cache, group_projects, load_config,
-    load_scan_cache, now_ms, run_app_autostart, save_config, save_scan_cache, scan, scan_cache_path,
-    set_autostart_enabled, AppAutostartReport, AutostartStatus, BridgeStatus, Config,
-    ConfigBridgeMode, ListeningSnapshot, MetricsHub, MetricsSnapshot, PortOverride, ProcessManager,
-    Project, RepoGroup, Run, RunStatus, SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus,
-    StartError, Subscription, Warning,
+    empty_models_inventory, load_models_cache, load_scan_cache, models_cache_path, now_ms,
+    run_app_autostart, save_config, save_models_cache, save_scan_cache, scan, scan_cache_path,
+    scan_models, set_autostart_enabled, AppAutostartReport, AutostartStatus, BridgeStatus, Config,
+    ConfigBridgeMode, ListeningSnapshot, MetricsHub, MetricsSnapshot, ModelsInventory,
+    ModelsScanState, PortOverride, ProcessManager, Project, RepoGroup, Run, RunStatus,
+    SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -48,6 +49,9 @@ struct AppState {
     startup_autostart: AtomicBool,
     app_autostart: StdMutex<AppAutostartReport>,
     autostart_warnings: StdMutex<Vec<Warning>>,
+    models: StdMutex<ModelsInventory>,
+    models_scanning: AtomicBool,
+    models_cache_path: PathBuf,
 }
 
 #[derive(Serialize)]
@@ -139,6 +143,7 @@ async fn serve(
         .set_port_overrides(config.port_overrides.clone())
         .await;
     let cache_path = scan_cache_path();
+    let models_cache_path = models_cache_path();
     let inventory = if let Some(cache) = load_scan_cache(&cache_path, &config) {
         Inventory {
             groups: cache.groups,
@@ -167,6 +172,9 @@ async fn serve(
         startup_autostart: AtomicBool::new(true),
         app_autostart: StdMutex::new(AppAutostartReport::default()),
         autostart_warnings: StdMutex::new(Vec::new()),
+        models: StdMutex::new(load_models_cache(&models_cache_path, &config).unwrap_or_else(empty_models_inventory)),
+        models_scanning: AtomicBool::new(false),
+        models_cache_path,
     });
 
     let router = Router::new()
@@ -186,6 +194,7 @@ async fn serve(
         .route("/api/update", post(post_update))
         .route("/api/tools", get(get_tools))
         .route("/api/metrics", get(get_metrics))
+        .route("/api/models", get(get_models).post(post_models_scan))
         .fallback(ui::serve_ui)
         .with_state(state.clone());
 
@@ -210,6 +219,7 @@ async fn serve(
     let _ = ready.send(Ok(port));
     println!("Orbitry is running at {}", instance::dashboard_url(port));
     start_scan(Arc::clone(&state));
+    start_models_scan(Arc::clone(&state));
     spawn_update_checker(Arc::clone(&state));
     spawn_live_refresh(Arc::clone(&state));
 
@@ -370,6 +380,9 @@ async fn put_config(
         tokio::spawn(async move {
             manager.set_log_limit_mb(limit).await;
         });
+    }
+    if config.roots != existing.roots {
+        start_models_scan(Arc::clone(&state));
     }
     if roots_or_patterns_changed || bridge_changed {
         start_scan(Arc::clone(&state));
@@ -872,6 +885,71 @@ struct ToolsInfo {
 async fn get_metrics(State(state): State<Arc<AppState>>) -> Json<MetricsSnapshot> {
     Json(state.metrics.snapshot())
 }
+
+fn models_snapshot(state: &AppState) -> ModelsInventory {
+    state
+        .models
+        .lock()
+        .map(|inventory| inventory.clone())
+        .unwrap_or_else(|_| empty_models_inventory())
+}
+
+async fn get_models(State(state): State<Arc<AppState>>) -> Json<ModelsInventory> {
+    Json(models_snapshot(&state))
+}
+
+async fn post_models_scan(State(state): State<Arc<AppState>>) -> Json<ModelsInventory> {
+    start_models_scan(state.clone());
+    Json(models_snapshot(&state))
+}
+
+fn start_models_scan(state: Arc<AppState>) {
+    if state.models_scanning.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Ok(mut inventory) = state.models.lock() {
+        inventory.scan.state = ModelsScanState::Scanning;
+        inventory.scan.started_at = Some(now_ms());
+        inventory.scan.error = None;
+        inventory.scan.stale = inventory.scan.scanned_at.is_some();
+    }
+    tokio::spawn(async move {
+        let config = load_config(&state.config_path).unwrap_or_default();
+        let groups = state
+            .inventory
+            .lock()
+            .map(|inventory| inventory.groups.clone())
+            .unwrap_or_default();
+        let cache_path = state.models_cache_path.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let inventory = scan_models(&config, &groups);
+            if let Err(err) = save_models_cache(&cache_path, &inventory) {
+                eprintln!("orbitry: models cache: {err}");
+            }
+            inventory
+        })
+        .await;
+        match result {
+            Ok(inventory) => {
+                if let Ok(mut slot) = state.models.lock() {
+                    *slot = inventory;
+                }
+            }
+            Err(err) => {
+                if let Ok(mut inventory) = state.models.lock() {
+                    inventory.scan.state = if inventory.scan.scanned_at.is_some() {
+                        ModelsScanState::Cached
+                    } else {
+                        ModelsScanState::Idle
+                    };
+                    inventory.scan.error = Some(format!("models scan: {err}"));
+                }
+            }
+        }
+        state.models_scanning.store(false, Ordering::SeqCst);
+    });
+}
+
 
 async fn get_tools() -> Json<ToolsInfo> {
     Json(ToolsInfo {

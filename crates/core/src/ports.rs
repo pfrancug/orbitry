@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::PortOverride;
+use crate::config::{canonical, paths_equal, PortOverride};
 use crate::ports_resolve::resolve_script_targets;
 use crate::scripts::DetectedScript;
 use crate::util::hide_console;
@@ -349,6 +349,27 @@ pub fn detect_static_ports(
     script_filter: Option<&str>,
     framework: Option<&str>,
 ) -> Vec<PortInfo> {
+    detect_ports(dir, scripts, script_filter, framework, false)
+}
+
+/// Ports a script is expected to bring up, including children started by a
+/// composite orchestrator (concurrently, npm-run-all, turbo, `npm -w`).
+pub fn detect_expected_ports(
+    dir: &Path,
+    scripts: &[DetectedScript],
+    script_filter: Option<&str>,
+    framework: Option<&str>,
+) -> Vec<PortInfo> {
+    detect_ports(dir, scripts, script_filter, framework, true)
+}
+
+fn detect_ports(
+    dir: &Path,
+    scripts: &[DetectedScript],
+    script_filter: Option<&str>,
+    framework: Option<&str>,
+    include_composite_children: bool,
+) -> Vec<PortInfo> {
     let filters: Vec<Option<String>> = if let Some(name) = script_filter {
         vec![Some(name.to_string())]
     } else if !scripts.is_empty() {
@@ -357,10 +378,21 @@ pub fn detect_static_ports(
         vec![None]
     };
 
+    let own_serves = package_can_bind(dir, scripts, script_filter);
     let mut ports = Vec::new();
     for filter in filters {
         let targets = resolve_script_targets(dir, filter.as_deref());
         for target in targets {
+            let foreign = !is_same_dir(&target.dir, dir);
+            if foreign && !include_composite_children {
+                continue;
+            }
+            if !foreign && !own_serves {
+                continue;
+            }
+            if foreign && !script_starts_server(&target.dir, target.script.as_deref()) {
+                continue;
+            }
             let mut found = Vec::new();
             let script_name = target.script.as_deref().or(filter.as_deref());
             collect_local_ports(&target.dir, script_name, &mut found);
@@ -382,7 +414,7 @@ pub fn detect_static_ports(
         }
     }
 
-    if ports.is_empty() {
+    if ports.is_empty() && own_serves && !include_composite_children {
         let allow_default = match script_filter {
             Some(name) => script_starts_server(dir, Some(name)),
             None => scripts.is_empty()
@@ -398,8 +430,34 @@ pub fn detect_static_ports(
         }
     }
 
-    merge_ports(&mut ports, crate::bridge::ports_for(dir, scripts));
+    if own_serves || include_composite_children {
+        merge_ports(&mut ports, crate::bridge::ports_for(dir, scripts));
+    }
     ports
+}
+
+fn is_same_dir(a: &Path, b: &Path) -> bool {
+    let a = canonical(a);
+    let b = canonical(b);
+    paths_equal(&a.to_string_lossy(), &b.to_string_lossy())
+}
+
+fn package_can_bind(dir: &Path, scripts: &[DetectedScript], script_filter: Option<&str>) -> bool {
+    if !dir.join("package.json").exists() {
+        return true;
+    }
+    if let Some(name) = script_filter {
+        return script_starts_server(dir, Some(name));
+    }
+    if !scripts.is_empty() {
+        return scripts
+            .iter()
+            .any(|script| script_starts_server(dir, Some(&script.name)));
+    }
+    match package_script_commands(dir, None) {
+        Some(commands) => commands.iter().any(|command| command_starts_server(command)),
+        None => false,
+    }
 }
 
 fn collect_local_ports(dir: &Path, script_filter: Option<&str>, ports: &mut Vec<PortInfo>) {
@@ -482,17 +540,14 @@ fn collect_env_ports(dir: &Path, ports: &mut Vec<PortInfo>) {
         ".env.development.local",
         ".env.dev",
     ];
-    for folder in dir.ancestors().take(5) {
-        for name in NAMES {
-            let path = folder.join(name);
-            if let Ok(text) = fs::read_to_string(&path) {
-                for port in ports_from_env(&text) {
-                    merge_ports(ports, PortInfo::new(port, PortSource::Env));
-                }
+    // Only this package's env files. A repo-root `.env` must not be treated as
+    // a bind port for every workspace app (libraries, frontends, extensions).
+    for name in NAMES {
+        let path = dir.join(name);
+        if let Ok(text) = fs::read_to_string(&path) {
+            for port in ports_from_env(&text) {
+                merge_ports(ports, PortInfo::new(port, PortSource::Env));
             }
-        }
-        if folder.join(".git").exists() {
-            break;
         }
     }
 }
@@ -795,9 +850,14 @@ fn extract_ports(text: &str, config_like: bool) -> Vec<u16> {
             search = after;
             continue;
         }
-        if let Some(port) = parse_port_token(rest.split(|c: char| !c.is_ascii_digit()).next().unwrap_or("")) {
-            if !config_like || is_app_port(port) {
-                ports.push(port);
+        // Only accept a number that immediately follows `port` / `port:`, not a
+        // later digit sequence in the same file (proxy URLs, other settings).
+        let immediate = rest.trim_start_matches(['\'', '"', '`']);
+        if immediate.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            if let Some(port) = parse_port_token(immediate.split(|c: char| !c.is_ascii_digit()).next().unwrap_or("")) {
+                if !config_like || is_app_port(port) {
+                    ports.push(port);
+                }
             }
         }
         search = after;

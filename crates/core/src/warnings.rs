@@ -48,6 +48,9 @@ struct PartView {
     id: String,
     name: String,
     project: String,
+    path: String,
+    parent: Option<String>,
+    role: PartRole,
     framework: Option<String>,
     ports: Vec<PortInfo>,
 }
@@ -101,6 +104,9 @@ fn part_views(groups: &[RepoGroup]) -> Vec<PartView> {
                 id: part.id.clone(),
                 name: display_part_name(group, part),
                 project: group.name.clone(),
+                path: part.path.clone(),
+                parent: part.parent.clone(),
+                role: part.role,
                 framework: part.framework.clone(),
                 ports: part.ports.clone(),
             });
@@ -274,6 +280,7 @@ fn actual_conflicts(runs: &[Run], parts: &[PartView]) -> Vec<Warning> {
 
     let mut warnings = Vec::new();
     for (port, claimants) in by_port {
+        let claimants = drop_ancestor_runs(claimants, parts);
         if claimants.len() < 2 {
             continue;
         }
@@ -415,6 +422,9 @@ fn foreign_occupancy(
 fn possible_conflicts(parts: &[PartView], runs: &[Run]) -> Vec<Warning> {
     let mut claims: BTreeMap<u16, Vec<Claim>> = BTreeMap::new();
     for part in parts {
+        if matches!(part.role, PartRole::Lib) {
+            continue;
+        }
         for port in &part.ports {
             claims.entry(port.port).or_default().push(Claim {
                 part_id: part.id.clone(),
@@ -436,7 +446,7 @@ fn possible_conflicts(parts: &[PartView], runs: &[Run]) -> Vec<Warning> {
         if claimants.len() < 2 {
             continue;
         }
-        let unique_parts: BTreeSet<&str> = claimants.iter().map(|item| item.part_id.as_str()).collect();
+        let unique_parts: BTreeSet<&str> = independent_part_ids(&claimants, parts);
         if unique_parts.len() < 2 {
             continue;
         }
@@ -497,7 +507,7 @@ fn possible_conflicts(parts: &[PartView], runs: &[Run]) -> Vec<Warning> {
         }
 
         let explicit: Vec<&Claim> = claimants.iter().filter(|item| is_source_explicit(item.source)).collect();
-        let unique_explicit: BTreeSet<&str> = explicit.iter().map(|item| item.part_id.as_str()).collect();
+        let unique_explicit: BTreeSet<&str> = independent_part_ids(explicit.iter().copied(), parts);
         if unique_explicit.len() >= 2 {
             let names = join_str(explicit.iter().map(|item| item.name.as_str()));
             let mut seen = HashSet::new();
@@ -530,6 +540,64 @@ struct Claim {
     framework: Option<String>,
     source: PortSource,
     running: bool,
+}
+
+fn independent_part_ids<'a, I>(claimants: I, parts: &[PartView]) -> BTreeSet<&'a str>
+where
+    I: IntoIterator<Item = &'a Claim>,
+{
+    let claimants: Vec<&Claim> = claimants.into_iter().collect();
+    claimants
+        .iter()
+        .filter(|item| {
+            !claimants.iter().any(|other| {
+                other.part_id != item.part_id
+                    && is_ancestor_of(&item.part_id, &other.part_id, parts)
+            })
+        })
+        .map(|item| item.part_id.as_str())
+        .collect()
+}
+
+fn drop_ancestor_runs<'a>(runs: Vec<&'a Run>, parts: &[PartView]) -> Vec<&'a Run> {
+    runs.iter()
+        .copied()
+        .filter(|run| {
+            !runs.iter().any(|other| {
+                other.part_id != run.part_id
+                    && is_ancestor_of(&run.part_id, &other.part_id, parts)
+            })
+        })
+        .collect()
+}
+
+fn is_ancestor_of(ancestor_id: &str, descendant_id: &str, parts: &[PartView]) -> bool {
+    let Some(ancestor) = parts.iter().find(|part| part.id == ancestor_id) else {
+        return false;
+    };
+    let Some(descendant) = parts.iter().find(|part| part.id == descendant_id) else {
+        return false;
+    };
+    if descendant.parent.as_deref() == Some(ancestor.id.as_str()) {
+        return true;
+    }
+    is_path_ancestor(&ancestor.path, &descendant.path)
+}
+
+fn is_path_ancestor(parent: &str, child: &str) -> bool {
+    let parent = crate::config::normalize_path_str(parent);
+    let child = crate::config::normalize_path_str(child);
+    if child.len() <= parent.len() {
+        return false;
+    }
+    if child.as_bytes().get(parent.len()) != Some(&b'\\') {
+        return false;
+    }
+    if cfg!(windows) {
+        child[..parent.len()].eq_ignore_ascii_case(&parent)
+    } else {
+        child.starts_with(&parent)
+    }
 }
 
 fn is_explicit(port: &PortInfo) -> bool {

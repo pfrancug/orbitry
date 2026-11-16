@@ -167,6 +167,59 @@ export function warningCountLabel(warnings: AppWarning[]): string | null {
   return parts[0] ?? null;
 }
 
+const CONFLICT_CODES = new Set(["port_conflict", "port_occupied_foreign"]);
+
+export type WarningGroup = {
+  code: string;
+  severity: AppWarning["severity"];
+  count: number;
+  items: AppWarning[];
+};
+
+export function groupWarnings(warnings: AppWarning[]): WarningGroup[] {
+  const order: string[] = [];
+  const map = new Map<string, AppWarning[]>();
+  for (const warning of warnings) {
+    const list = map.get(warning.code);
+    if (list) {
+      list.push(warning);
+    } else {
+      order.push(warning.code);
+      map.set(warning.code, [warning]);
+    }
+  }
+  return order.map((code) => {
+    const items = map.get(code) ?? [];
+    const severity = items.some((item) => item.severity === "error")
+      ? "error"
+      : items.some((item) => item.severity === "warning")
+        ? "warning"
+        : "info";
+    return { code, severity, count: items.length, items };
+  });
+}
+
+export function polishCount(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(n);
+  const mod10 = abs % 10;
+  const mod100 = abs % 100;
+  if (abs === 1) return `${n} ${one}`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} ${few}`;
+  return `${n} ${many}`;
+}
+
+export function warningSummaryLabel(warnings: AppWarning[]): string {
+  const issues = issueWarnings(warnings);
+  const infos = warnings.filter((warning) => warning.severity === "info");
+  const conflicts = issues.filter((warning) => CONFLICT_CODES.has(warning.code)).length;
+  const other = issues.length - conflicts;
+  const parts: string[] = [];
+  if (conflicts) parts.push(polishCount(conflicts, "konflikt", "konflikty", "konfliktów"));
+  if (other) parts.push(polishCount(other, "ostrzeżenie", "ostrzeżenia", "ostrzeżeń"));
+  if (infos.length) parts.push(polishCount(infos.length, "komunikat", "komunikaty", "komunikatów"));
+  return parts.join(" · ");
+}
+
 function dedupePorts(ports: PortInfo[]): PortInfo[] {
   const seen = new Set<number>();
   const out: PortInfo[] = [];

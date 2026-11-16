@@ -11,7 +11,7 @@ use tokio::sync::{broadcast, Mutex};
 use crate::display_path;
 use crate::health::{check_health, HealthInfo, HealthStatus};
 use crate::config::PortOverride;
-use crate::ports::{apply_port_overrides, detect_static_ports, ports_from_log, ListeningSnapshot};
+use crate::ports::{apply_port_overrides, detect_expected_ports, ports_from_log, ListeningSnapshot};
 use crate::process::{
     detect_package_manager, kill_process_tree, kill_process_tree_force, now_ms, run_command_label,
     script_command, LogLine, LogStream, Run, RunEvent, RunStatus,
@@ -112,7 +112,7 @@ impl ProcessManager {
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
 
-        let mut expected_ports = detect_static_ports(&cwd, &[], Some(&script), None);
+        let mut expected_ports = detect_expected_ports(&cwd, &[], Some(&script), None);
         apply_port_overrides(&mut expected_ports, &part_id, &overrides);
 
         let info = Run {

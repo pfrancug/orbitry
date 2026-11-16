@@ -771,39 +771,7 @@ fn ports_from_result(result: &BridgeResult, scripts: &[DetectedScript]) -> Vec<P
             );
         }
     }
-    for proxy in &result.proxy {
-        if let Some(port) = port_from_target(&proxy.target) {
-            if result.port == Some(port) {
-                continue;
-            }
-            let name = if proxy.path.is_empty() {
-                "proxy".to_string()
-            } else {
-                format!("proxy {}", proxy.path)
-            };
-            merge_ports(
-                &mut ports,
-                PortInfo::named(port, PortSource::Bridge, Some(name)),
-            );
-        }
-    }
+    // Proxy targets are where this app connects, not ports it binds.
+    let _ = &result.proxy;
     ports
-}
-
-fn port_from_target(target: &str) -> Option<u16> {
-    let trimmed = target.trim();
-    let after = trimmed
-        .split("://")
-        .nth(1)
-        .unwrap_or(trimmed)
-        .split('/')
-        .next()
-        .unwrap_or("");
-    let port = after.rsplit(':').next()?;
-    let parsed: u16 = port.parse().ok()?;
-    if (1..=65535).contains(&parsed) && after.contains(':') {
-        Some(parsed)
-    } else {
-        None
-    }
 }

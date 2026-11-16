@@ -204,7 +204,7 @@
     </div>
 
     {#if warnings.length}
-      <section class="panel-warnings">
+      <section class="panel-warnings scroll-region">
         <h3>Warnings</h3>
         <WarningList {warnings} />
       </section>

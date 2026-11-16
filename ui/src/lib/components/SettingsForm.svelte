@@ -90,6 +90,15 @@
     <div class="bridge-row">
       <span class="badge quiet">{dash.config.bridgeStatus?.label ?? (dash.config.configBridge === "off" ? "disabled" : "unknown")}</span>
     </div>
+    {#if dash.config.bridgeStatus?.nodeVersion}
+      <p class="hint">Node {dash.config.bridgeStatus.nodeVersion}{dash.config.bridgeStatus.nodePath ? ` · ${dash.config.bridgeStatus.nodePath}` : ""}</p>
+    {:else if dash.config.bridgeStatus?.state === "node-missing"}
+      <p class="hint">Node was not found on this machine. The bridge stays off until it is installed and on your PATH.</p>
+    {:else if dash.config.bridgeStatus?.state === "plugin-missing"}
+      <p class="hint">The config-bridge plugin is missing.</p>
+    {:else if dash.config.bridgeStatus?.error}
+      <p class="hint">{dash.config.bridgeStatus.error}</p>
+    {/if}
     <div class="segmented">
       {#each ["auto", "on", "off"] as mode (mode)}
         <button

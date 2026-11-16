@@ -5,12 +5,18 @@ export type PartRole = "root" | "fe" | "be" | "shared" | "lib";
 export type PortSource = "default" | "config" | "env" | "flag" | "bridge" | "log" | "process";
 export type ConfigBridgeMode = "auto" | "on" | "off";
 
+export type BridgeState = "available" | "node-missing" | "plugin-missing" | "disabled" | "error";
+
 export type BridgeStatus = {
   mode: ConfigBridgeMode;
   available: boolean;
   node: boolean;
   plugin: boolean;
   label: string;
+  state?: BridgeState | string;
+  nodeVersion?: string | null;
+  nodePath?: string | null;
+  error?: string | null;
 };
 export type HealthStatus = "unknown" | "ok" | "fail" | "skipped";
 

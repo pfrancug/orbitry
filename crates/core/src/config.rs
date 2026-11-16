@@ -63,10 +63,6 @@ impl ConfigBridgeMode {
     }
 }
 
-fn skip_auto_bridge(mode: &ConfigBridgeMode) -> bool {
-    mode.is_auto()
-}
-
 fn default_true() -> bool {
     true
 }
@@ -84,7 +80,7 @@ pub struct Config {
     pub script_patterns: Vec<ScriptPattern>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub port_overrides: Vec<PortOverride>,
-    #[serde(default, skip_serializing_if = "skip_auto_bridge")]
+    #[serde(default)]
     pub config_bridge: ConfigBridgeMode,
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub auto_check_updates: bool,

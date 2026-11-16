@@ -51,28 +51,54 @@ pub struct BridgeStatus {
     pub node: bool,
     pub plugin: bool,
     pub label: String,
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NodeInfo {
+    pub path: PathBuf,
+    pub version: Option<String>,
 }
 
 pub fn bridge_status(mode: ConfigBridgeMode) -> BridgeStatus {
-    let _ = ensure_plugin();
-    let node = find_node().is_some();
+    let plugin_error = match ensure_plugin() {
+        Some(_) => None,
+        None => Some("The config-bridge plugin could not be written.".to_string()),
+    };
+    let info = probe_node();
+    let node = info.is_some();
     let plugin = locate_plugin().is_some();
-    let available = node && plugin && !matches!(mode, ConfigBridgeMode::Off);
-    let label = if matches!(mode, ConfigBridgeMode::Off) {
-        "disabled".to_string()
+    let node_version = info.as_ref().and_then(|item| item.version.clone());
+    let node_path = info.as_ref().map(|item| display_path(&item.path));
+    let (state, label, error) = if matches!(mode, ConfigBridgeMode::Off) {
+        ("disabled", "disabled".to_string(), None)
+    } else if let Some(err) = plugin_error.clone().filter(|_| !plugin) {
+        ("error", format!("error: {err}"), Some(err))
     } else if !node {
-        "Node missing".to_string()
+        ("node-missing", "Node missing".to_string(), None)
     } else if !plugin {
-        "plugin missing".to_string()
+        ("plugin-missing", "plugin missing".to_string(), None)
+    } else if let Some(version) = &node_version {
+        ("available", format!("available · Node {version}"), None)
     } else {
-        "available".to_string()
+        ("available", "available".to_string(), None)
     };
     BridgeStatus {
         mode,
-        available,
+        available: node && plugin && !matches!(mode, ConfigBridgeMode::Off),
         node,
         plugin,
         label,
+        state: state.to_string(),
+        node_version,
+        node_path,
+        error,
     }
 }
 
@@ -141,7 +167,35 @@ fn push_ancestor_plugins(start: &Path, candidates: &mut Vec<PathBuf>) {
     }
 }
 
+static NODE_CACHE: Mutex<Option<(Instant, Option<NodeInfo>)>> = Mutex::new(None);
+const NODE_TTL: Duration = Duration::from_secs(60);
+
 pub fn find_node() -> Option<PathBuf> {
+    probe_node().map(|info| info.path)
+}
+
+pub fn probe_node() -> Option<NodeInfo> {
+    if let Ok(cache) = NODE_CACHE.lock() {
+        if let Some((at, info)) = cache.as_ref() {
+            if at.elapsed() < NODE_TTL {
+                return info.clone();
+            }
+        }
+    }
+    let info = look_up_node();
+    if let Ok(mut cache) = NODE_CACHE.lock() {
+        *cache = Some((Instant::now(), info.clone()));
+    }
+    info
+}
+
+fn look_up_node() -> Option<NodeInfo> {
+    let path = locate_node_binary()?;
+    let version = read_node_version(&path);
+    Some(NodeInfo { path, version })
+}
+
+fn locate_node_binary() -> Option<PathBuf> {
     let exe = if cfg!(windows) { "node.exe" } else { "node" };
     if let Some(path) = std::env::var_os("PATH") {
         for dir in std::env::split_paths(&path) {
@@ -151,15 +205,75 @@ pub fn find_node() -> Option<PathBuf> {
             }
         }
     }
+    if let Some(path) = which_on_path("node") {
+        return Some(path);
+    }
+    let mut extras = Vec::new();
     if cfg!(windows) {
         if let Some(program_files) = std::env::var_os("ProgramFiles") {
-            let candidate = PathBuf::from(program_files).join("nodejs").join(exe);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
+            extras.push(PathBuf::from(program_files).join("nodejs").join(exe));
+        }
+        if let Some(symlink) = std::env::var_os("NVM_SYMLINK") {
+            extras.push(PathBuf::from(symlink).join(exe));
+        }
+        if let Some(home) = std::env::var_os("NVM_HOME") {
+            extras.push(PathBuf::from(home).join(exe));
+        }
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            extras.push(PathBuf::from(local).join("Programs").join("nodejs").join(exe));
         }
     }
-    None
+    extras.into_iter().find(|path| path.is_file())
+}
+
+fn which_on_path(name: &str) -> Option<PathBuf> {
+    let (bin, arg) = if cfg!(windows) {
+        ("where.exe", name)
+    } else {
+        ("which", name)
+    };
+    let mut command = Command::new(bin);
+    command.arg(arg).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = command.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let first = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())?
+        .to_string();
+    let path = PathBuf::from(first);
+    path.is_file().then_some(path)
+}
+
+fn read_node_version(path: &Path) -> Option<String> {
+    let mut command = Command::new(path);
+    command
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = command.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

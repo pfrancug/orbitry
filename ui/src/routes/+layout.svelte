@@ -6,6 +6,7 @@
   import ControlPanel from "$lib/components/ControlPanel.svelte";
   import Icon from "$lib/components/Icon.svelte";
   import ScanBanner from "$lib/components/ScanBanner.svelte";
+  import AutostartToast from "$lib/components/AutostartToast.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import UpdateOverlay from "$lib/components/UpdateOverlay.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
@@ -151,7 +152,10 @@
     {/if}
 
     <ScanBanner />
-    <UpdateBanner />
+    <div class="toast-stack">
+      <UpdateBanner />
+      <AutostartToast />
+    </div>
     {#if update.installing || update.phase === "error" || update.phase === "restarting" || update.phase === "downloading" || update.phase === "verifying"}
       <UpdateOverlay />
     {/if}
@@ -166,3 +170,24 @@
     </div>
   </div>
 </div>
+
+<style>
+  .toast-stack {
+    position: fixed;
+    right: 1.1rem;
+    bottom: 1.1rem;
+    z-index: 60;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 0.65rem;
+    pointer-events: none;
+    width: min(26rem, calc(100vw - 2rem));
+  }
+  @media (max-width: 720px) {
+    .toast-stack {
+      left: 1rem;
+      right: 1rem;
+      width: auto;
+    }
+  }
+</style>

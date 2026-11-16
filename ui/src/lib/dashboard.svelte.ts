@@ -1,6 +1,6 @@
 import { fetchConfig, fetchProjects, pickFolder, requestScan, saveConfig } from "./api";
 import { refreshRuns, restoreSelection, runState } from "./runs.svelte";
-import type { AppConfig, AppWarning, ConfigBridgeMode, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanStatus, ScriptPattern } from "./types";
+import type { AppAutostartReport, AppConfig, AppWarning, ConfigBridgeMode, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanStatus, ScriptPattern } from "./types";
 
 const PROJECTS_CACHE_KEY = "orbitry.projects-cache";
 
@@ -63,6 +63,8 @@ export const dash = $state({
   loading: !localProjects,
   saving: false,
   refreshing: false,
+  appAutostart: null as AppAutostartReport | null,
+  appAutostartDismissedAt: null as number | null,
 });
 
 let scanPoll: ReturnType<typeof setInterval> | null = null;
@@ -71,6 +73,7 @@ export function applyProjectSnapshot(payload: ProjectsResponse) {
   dash.groups = payload.groups ?? [];
   dash.warnings = payload.warnings ?? [];
   dash.scan = payload.scan ?? null;
+  applyAppAutostartReport(payload.appAutostart);
   if (payload.scan?.error) {
     dash.error = payload.scan.error;
   }
@@ -218,6 +221,7 @@ function withOverrides(next: {
   configBridge?: ConfigBridgeMode;
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
+  autostartApps?: string[];
 }) {
   return {
     roots: next.roots,
@@ -226,6 +230,7 @@ function withOverrides(next: {
     configBridge: next.configBridge ?? dash.config?.configBridge ?? "auto",
     autoCheckUpdates: next.autoCheckUpdates ?? dash.config?.autoCheckUpdates ?? true,
     logLimitMb: next.logLimitMb ?? dash.config?.logLimitMb ?? 10,
+    autostartApps: next.autostartApps ?? dash.config?.autostartApps ?? [],
   };
 }
 
@@ -236,6 +241,7 @@ export async function persist(next: {
   configBridge?: ConfigBridgeMode;
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
+  autostartApps?: string[];
 }) {
   dash.saving = true;
   dash.error = null;
@@ -383,6 +389,69 @@ export async function setStartWithSystem(enabled: boolean) {
       }),
       startWithSystem: enabled,
     };
+    dash.config = await saveConfig(payload);
+  } catch (err: unknown) {
+    if (previous) dash.config = previous;
+    dash.error = err instanceof Error ? err.message : "Could not save settings.";
+  } finally {
+    dash.saving = false;
+  }
+}
+
+export function applyAppAutostartReport(report?: AppAutostartReport | null) {
+  if (!report) return;
+  dash.appAutostart = report;
+}
+
+export function dismissAppAutostartToast() {
+  dash.appAutostartDismissedAt = dash.appAutostart?.completedAt ?? Date.now();
+}
+
+export function pathsEqual(a: string, b: string): boolean {
+  const norm = (value: string) =>
+    value
+      .replace(/^\\\\\?\\/, "")
+      .replace(/\//g, "\\")
+      .replace(/[\\/]+$/, "")
+      .toLowerCase();
+  return norm(a) === norm(b);
+}
+
+export function systemAutostartEnabled(): boolean {
+  return dash.config?.autostart?.enabled === true;
+}
+
+export function appAutostartEnabled(partId: string): boolean {
+  return (dash.config?.autostartApps ?? []).some((id) => pathsEqual(id, partId));
+}
+
+const APP_AUTOSTART_DISABLED =
+  "Aby aplikacje startowały automatycznie, włącz „Uruchamiaj Orbitry razem z systemem” w Ustawieniach.";
+
+export function appAutostartTitle(): string {
+  return systemAutostartEnabled()
+    ? "Uruchamiaj przy starcie Orbitry"
+    : APP_AUTOSTART_DISABLED;
+}
+
+export async function setAppAutostart(partId: string, enabled: boolean) {
+  if (!dash.config) return;
+  dash.saving = true;
+  dash.error = null;
+  const previous = dash.config;
+  const current = dash.config.autostartApps ?? [];
+  const next = enabled
+    ? current.some((id) => pathsEqual(id, partId))
+      ? current
+      : [...current, partId]
+    : current.filter((id) => !pathsEqual(id, partId));
+  dash.config = { ...dash.config, autostartApps: next };
+  try {
+    const payload = withOverrides({
+      roots: dash.config.roots,
+      scriptPatterns: dash.config.scriptPatterns,
+      autostartApps: next,
+    });
     dash.config = await saveConfig(payload);
   } catch (err: unknown) {
     if (previous) dash.config = previous;

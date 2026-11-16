@@ -1,5 +1,5 @@
 import { fetchRuns, startRun, stopAllRuns, stopRun } from "./api";
-import { startBlockReason } from "./dashboard.svelte";
+import { applyAppAutostartReport, startBlockReason } from "./dashboard.svelte";
 import { groupNameFor } from "./format";
 import { rememberRecent } from "./recent";
 import type { AppWarning, ProjectPart, RepoGroup, Run } from "./types";
@@ -41,9 +41,10 @@ export function upsertRun(run: Run) {
 }
 
 export async function refreshRuns() {
-  const { runs, warnings } = await fetchRuns();
+  const { runs, warnings, appAutostart } = await fetchRuns();
   runState.runs = runs;
   runState.warnings = warnings ?? [];
+  applyAppAutostartReport(appAutostart);
 }
 
 export function runningFor(partId: string, script?: string | null): Run | undefined {

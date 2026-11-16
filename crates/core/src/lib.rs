@@ -1,5 +1,6 @@
 //! Orbitry core - scanner, process manager, port detection, and project metadata.
 
+mod app_autostart;
 mod artifacts;
 mod autostart;
 mod bridge;
@@ -20,6 +21,9 @@ mod scripts;
 mod util;
 mod warnings;
 
+pub use app_autostart::{
+    run_app_autostart, AppAutostartEvent, AppAutostartOutcome, AppAutostartReport, AppAutostartState,
+};
 pub use artifacts::BuildInfo;
 pub use autostart::{
     autostart_status, refresh_autostart_path, set_autostart_enabled, AutostartStatus,

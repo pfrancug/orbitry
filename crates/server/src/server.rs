@@ -12,10 +12,11 @@ use axum::Router;
 use orbitry_core::{
     apply_port_overrides, attach_run_warnings, autostart_status, bridge_status, clamp_log_limit_mb,
     config_fingerprint, diff_groups, evaluate_warnings, export_cache, group_projects, load_config,
-    load_scan_cache, now_ms, save_config, save_scan_cache, scan, scan_cache_path, set_autostart_enabled,
-    AutostartStatus, BridgeStatus, Config, ConfigBridgeMode, ListeningSnapshot, MetricsHub,
-    MetricsSnapshot, PortOverride, ProcessManager, Project, RepoGroup, Run, RunStatus,
-    SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
+    load_scan_cache, now_ms, run_app_autostart, save_config, save_scan_cache, scan, scan_cache_path,
+    set_autostart_enabled, AppAutostartReport, AutostartStatus, BridgeStatus, Config,
+    ConfigBridgeMode, ListeningSnapshot, MetricsHub, MetricsSnapshot, PortOverride, ProcessManager,
+    Project, RepoGroup, Run, RunStatus, SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus,
+    StartError, Subscription, Warning,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -44,14 +45,19 @@ struct AppState {
     shutdown: Shutdown,
     port: u16,
     metrics: MetricsHub,
+    startup_autostart: AtomicBool,
+    app_autostart: StdMutex<AppAutostartReport>,
+    autostart_warnings: StdMutex<Vec<Warning>>,
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ProjectsResponse {
     groups: Vec<RepoGroup>,
     projects: Vec<Project>,
     warnings: Vec<Warning>,
     scan: ScanStatus,
+    app_autostart: AppAutostartReport,
 }
 
 #[derive(Serialize)]
@@ -71,9 +77,11 @@ struct DefaultPattern {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct RunsResponse {
     runs: Vec<Run>,
     warnings: Vec<Warning>,
+    app_autostart: AppAutostartReport,
 }
 
 #[derive(Deserialize)]
@@ -156,6 +164,9 @@ async fn serve(
         shutdown: shutdown.clone(),
         port,
         metrics,
+        startup_autostart: AtomicBool::new(true),
+        app_autostart: StdMutex::new(AppAutostartReport::default()),
+        autostart_warnings: StdMutex::new(Vec::new()),
     });
 
     let router = Router::new()
@@ -305,6 +316,9 @@ struct ConfigBody {
     /// Applies to the OS autostart entry immediately. Omitted means leave it unchanged.
     #[serde(default)]
     start_with_system: Option<bool>,
+    /// Replaces the per-app autostart list when present. Omitted keeps the saved list.
+    #[serde(default)]
+    autostart_apps: Option<Vec<String>>,
 }
 
 async fn put_config(
@@ -324,7 +338,11 @@ async fn put_config(
             .log_limit_mb
             .map(clamp_log_limit_mb)
             .unwrap_or(existing.log_limit_mb),
+        autostart_apps: body
+            .autostart_apps
+            .unwrap_or_else(|| existing.autostart_apps.clone()),
     };
+    config.normalize_autostart_apps();
     config.roots = config
         .roots
         .into_iter()
@@ -432,7 +450,11 @@ async fn post_stop_all(State(state): State<Arc<AppState>>) -> Json<RunsResponse>
     state.manager.stop_all().await;
     let runs = state.manager.list().await;
     let (runs, warnings) = annotate_runs(&state, runs).await;
-    Json(RunsResponse { runs, warnings })
+    Json(RunsResponse {
+        runs,
+        warnings,
+        app_autostart: app_autostart_report(&state),
+    })
 }
 
 async fn get_runs(State(state): State<Arc<AppState>>) -> Json<RunsResponse> {
@@ -572,6 +594,9 @@ fn start_scan(state: Arc<AppState>) {
         let result = run_scan(&state).await;
         state.scanning.store(false, Ordering::SeqCst);
         refresh_live_state(&state).await;
+        if result.is_ok() {
+            maybe_run_app_autostart(&state).await;
+        }
         if let Err(err) = result {
             if let Ok(mut inventory) = state.inventory.lock() {
                 inventory.scan.error = Some(err);
@@ -634,18 +659,21 @@ async fn run_scan(state: &AppState) -> Result<(), String> {
 }
 
 async fn snapshot_response(state: &AppState) -> ProjectsResponse {
+    let app_autostart = app_autostart_report(state);
     match state.inventory.lock() {
         Ok(inventory) => ProjectsResponse {
             groups: inventory.groups.clone(),
             projects: inventory.projects.clone(),
             warnings: inventory.warnings.clone(),
             scan: inventory.scan.clone(),
+            app_autostart,
         },
         Err(_) => ProjectsResponse {
             groups: Vec::new(),
             projects: Vec::new(),
             warnings: Vec::new(),
             scan: ScanStatus::empty_scanning(),
+            app_autostart,
         },
     }
 }
@@ -658,7 +686,11 @@ async fn cached_runs_response(state: &AppState) -> Json<RunsResponse> {
         .map(|inventory| inventory.warnings.clone())
         .unwrap_or_default();
     attach_run_warnings(&mut runs, &warnings);
-    Json(RunsResponse { runs, warnings })
+    Json(RunsResponse {
+        runs,
+        warnings,
+        app_autostart: app_autostart_report(state),
+    })
 }
 
 fn apply_overrides_to_inventory(state: &AppState, overrides: &[PortOverride]) {
@@ -699,10 +731,80 @@ async fn refresh_live_state(state: &AppState) {
         .map(|inventory| inventory.groups.clone())
         .unwrap_or_default();
     let runs = state.manager.list_cached().await;
-    let warnings = collect_warnings(&groups, &runs).await;
+    let mut warnings = collect_warnings(&groups, &runs).await;
+    if let Ok(extra) = state.autostart_warnings.lock() {
+        for warning in extra.iter() {
+            let already = warnings.iter().any(|existing| {
+                existing.code == warning.code
+                    && existing.port == warning.port
+                    && existing.part_id == warning.part_id
+                    && existing.message == warning.message
+            });
+            if !already {
+                warnings.push(warning.clone());
+            }
+        }
+    }
     if let Ok(mut inventory) = state.inventory.lock() {
         inventory.warnings = warnings;
     }
+}
+
+fn app_autostart_report(state: &AppState) -> AppAutostartReport {
+    state
+        .app_autostart
+        .lock()
+        .map(|report| report.clone())
+        .unwrap_or_default()
+}
+
+async fn maybe_run_app_autostart(state: &AppState) {
+    if !state.startup_autostart.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    if !autostart_status().enabled {
+        eprintln!(
+            "orbitry: autostart: app autostart skipped (Orbitry is not set to start with the system)"
+        );
+        return;
+    }
+    let config = match load_config(&state.config_path) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("orbitry: autostart: {err}");
+            return;
+        }
+    };
+    if config.autostart_apps.is_empty() {
+        return;
+    }
+    let (fresh, groups) = match state.inventory.lock() {
+        Ok(inventory) => (
+            inventory.scan.state == ScanState::Fresh,
+            inventory.groups.clone(),
+        ),
+        Err(_) => {
+            eprintln!("orbitry: autostart: inventory lock failed");
+            return;
+        }
+    };
+    if !fresh {
+        eprintln!("orbitry: autostart: skipped (scan is not fresh)");
+        return;
+    }
+    if let Ok(mut report) = state.app_autostart.lock() {
+        *report = AppAutostartReport::running();
+    }
+    let shutdown = state.shutdown.clone();
+    let (report, warnings) =
+        run_app_autostart(&state.manager, &groups, &config, || shutdown.is_requested()).await;
+    if let Ok(mut slot) = state.app_autostart.lock() {
+        *slot = report;
+    }
+    if let Ok(mut slot) = state.autostart_warnings.lock() {
+        *slot = warnings;
+    }
+    refresh_live_state(state).await;
 }
 
 fn config_response(config: Config) -> ConfigResponse {

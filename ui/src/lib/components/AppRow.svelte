@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { dash, partMarker, startBlockReason } from "$lib/dashboard.svelte";
+  import { appAutostartEnabled, appAutostartTitle, dash, partMarker, setAppAutostart, startBlockReason, systemAutostartEnabled } from "$lib/dashboard.svelte";
   import { displayPorts, isJsLike, partTitle, roleLabel, warningsForPart } from "$lib/format";
   import { isPending, runningFor, runState, togglePart, toggleScript } from "$lib/runs.svelte";
   import type { ProjectPart } from "$lib/types";
@@ -20,6 +20,9 @@
   );
   const warnings = $derived(warningsForPart(part.id, runState.runs, [...(runState.warnings ?? []), ...(dash.warnings ?? [])]));
   const expected = $derived(!live);
+  const systemOn = $derived(systemAutostartEnabled());
+  const autoOn = $derived(appAutostartEnabled(part.id));
+  const autoTitle = $derived(appAutostartTitle());
 </script>
 
 <div class="app-row" class:selected class:live={Boolean(live)} class:removed={flag === "removed"}>
@@ -53,6 +56,20 @@
   </button>
 
   <div class="app-actions">
+    <label class="app-autostart" class:off={!systemOn} title={autoTitle}>
+      <input
+        type="checkbox"
+        checked={autoOn}
+        disabled={!systemOn || dash.saving}
+        aria-label="Uruchamiaj przy starcie Orbitry"
+        onclick={(event) => event.stopPropagation()}
+        onchange={(event) => {
+          event.stopPropagation();
+          setAppAutostart(part.id, event.currentTarget.checked);
+        }}
+      />
+      Autostart
+    </label>
     {#if !(part.scripts ?? []).length}
       <span class="muted">no scripts</span>
     {:else}
@@ -88,3 +105,28 @@
     {/if}
   </div>
 </div>
+
+<style>
+  .app-autostart {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    margin-right: 0.15rem;
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .app-autostart input {
+    margin: 0;
+    accent-color: var(--accent);
+  }
+  .app-autostart.off {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+</style>

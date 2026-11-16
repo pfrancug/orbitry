@@ -90,6 +90,10 @@ pub struct Config {
     pub auto_check_updates: bool,
     #[serde(default = "default_log_limit_mb")]
     pub log_limit_mb: u32,
+    /// Stable app ids (canonical display paths) to start when Orbitry starts.
+    /// Kept even if a later scan temporarily misses the app.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub autostart_apps: Vec<String>,
 }
 
 impl Default for Config {
@@ -101,6 +105,7 @@ impl Default for Config {
             config_bridge: ConfigBridgeMode::Auto,
             auto_check_updates: true,
             log_limit_mb: default_log_limit_mb(),
+            autostart_apps: Vec::new(),
         }
     }
 }
@@ -116,6 +121,20 @@ impl Config {
             self.roots.push(root);
         }
         self
+    }
+
+    pub fn normalize_autostart_apps(&mut self) {
+        let mut unique: Vec<String> = Vec::new();
+        for id in self.autostart_apps.drain(..) {
+            let id = id.trim().to_string();
+            if id.is_empty() {
+                continue;
+            }
+            if !unique.iter().any(|existing| paths_equal(existing, &id)) {
+                unique.push(id);
+            }
+        }
+        self.autostart_apps = unique;
     }
 }
 

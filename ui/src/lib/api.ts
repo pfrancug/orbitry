@@ -36,6 +36,7 @@ export function saveConfig(config: {
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
   startWithSystem?: boolean;
+  autostartApps?: string[];
 }): Promise<AppConfig> {
   return request("/api/config", {
     method: "PUT",
@@ -70,7 +71,11 @@ export function openPath(kind: "terminal" | "vscode", path: string): Promise<voi
   });
 }
 
-export function fetchRuns(): Promise<{ runs: Run[]; warnings?: AppWarning[] }> {
+export function fetchRuns(): Promise<{
+  runs: Run[];
+  warnings?: AppWarning[];
+  appAutostart?: import("./types").AppAutostartReport;
+}> {
   return request("/api/runs");
 }
 

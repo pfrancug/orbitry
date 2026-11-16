@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { dash, startBlockReason } from "$lib/dashboard.svelte";
+  import { appAutostartEnabled, appAutostartTitle, dash, setAppAutostart, startBlockReason, systemAutostartEnabled } from "$lib/dashboard.svelte";
   import { openPath } from "$lib/api";
   import {
     displayPorts,
@@ -34,6 +34,10 @@
   import { runMetrics } from "$lib/metrics.svelte";
 
   let { part }: { part: ProjectPart | null } = $props();
+
+  const systemOn = $derived(systemAutostartEnabled());
+  const autoOn = $derived(part ? appAutostartEnabled(part.id) : false);
+  const autoTitle = $derived(appAutostartTitle());
 
   const scriptName = $derived.by(() => {
     if (!part) return null;
@@ -157,6 +161,17 @@
       </button>
     </div>
 
+    <label class="panel-autostart" class:off={!systemOn} title={autoTitle}>
+      <input
+        type="checkbox"
+        checked={autoOn}
+        disabled={!systemOn || dash.saving || !part}
+        aria-label="Uruchamiaj przy starcie Orbitry"
+        onchange={(event) => part && setAppAutostart(part.id, event.currentTarget.checked)}
+      />
+      Uruchamiaj przy starcie Orbitry
+    </label>
+
     <div class="panel-controls">
       {#if !(part.scripts ?? []).length}
         <p class="hint">No dev or preview scripts on this app.</p>
@@ -237,3 +252,23 @@
     <LogViewer runId={current?.id ?? null} />
   {/if}
 </aside>
+
+<style>
+  .panel-autostart {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0 16px 10px;
+    font-size: 0.88rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .panel-autostart input {
+    margin: 0;
+    accent-color: var(--accent);
+  }
+  .panel-autostart.off {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+</style>

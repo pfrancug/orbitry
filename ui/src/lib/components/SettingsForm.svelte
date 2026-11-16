@@ -145,6 +145,7 @@
     </label>
     <p class="hint">
       Po zalogowaniu Orbitry wystartuje w zasobniku, bez otwierania przeglądarki.
+      Gdy to włączysz, wybrane aplikacje można uruchamiać automatycznie przy starcie Orbitry.
     </p>
     {#if dash.config.autostart?.stale}
       <p class="hint">

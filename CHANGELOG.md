@@ -5,6 +5,12 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-11-16
+
+### Added
+
+- Per-app autostart. Each app has a "Uruchamiaj przy starcie Orbitry" toggle, stored in the Orbitry config by the app's stable id. The control is disabled, with a tooltip, while "Uruchamiaj Orbitry razem z systemem" is off (the real OS autostart state). When that system setting is on, selected apps start after Orbitry itself starts — from login or a manual launch — once the first fresh scan of the process completes, not from a cached inventory. Later rescans do not start them again. Apps that are already running, including those re-adopted from the run registry, are skipped. An app starts only when every assigned or expected port is free on both IPv4 and IPv6; if a port is taken, that app is left stopped and a warning names the occupying process. Starts are staggered slightly. Outcomes are logged, and an overlay toast summarizes the result.
+
 ## [0.3.1] - 2026-11-16
 
 ### Added

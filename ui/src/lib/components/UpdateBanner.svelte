@@ -35,14 +35,10 @@
 
 <style>
   .update-toast {
-    position: fixed;
-    right: 1.1rem;
-    bottom: 1.1rem;
-    z-index: 60;
     display: flex;
     align-items: flex-start;
     gap: 0.85rem;
-    max-width: min(26rem, calc(100vw - 2rem));
+    width: 100%;
     padding: 0.8rem 0.9rem;
     border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
     border-radius: 14px;
@@ -80,11 +76,4 @@
     cursor: pointer;
   }
   .icon-dismiss:hover { color: var(--text); }
-  @media (max-width: 720px) {
-    .update-toast {
-      left: 1rem;
-      right: 1rem;
-      max-width: none;
-    }
-  }
 </style>

@@ -138,8 +138,31 @@ export type AppConfig = {
   configBridge?: ConfigBridgeMode;
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
+  autostartApps?: string[];
   bridgeStatus?: BridgeStatus;
   autostart?: AutostartStatus;
+};
+
+export type AppAutostartOutcome = "started" | "skipped" | "blocked" | "failed";
+export type AppAutostartState = "idle" | "running" | "done";
+
+export type AppAutostartEvent = {
+  partId: string;
+  partName: string;
+  script?: string | null;
+  outcome: AppAutostartOutcome;
+  reason?: string | null;
+  port?: number | null;
+  process?: string | null;
+};
+
+export type AppAutostartReport = {
+  state: AppAutostartState;
+  started?: AppAutostartEvent[];
+  skipped?: AppAutostartEvent[];
+  blocked?: AppAutostartEvent[];
+  failed?: AppAutostartEvent[];
+  completedAt?: number | null;
 };
 
 export type RunStatus = "running" | "exited" | "failed";
@@ -205,6 +228,7 @@ export type ProjectsResponse = {
   groups: RepoGroup[];
   warnings?: AppWarning[];
   scan?: ScanStatus;
+  appAutostart?: AppAutostartReport;
 };
 
 export type UpdatePhase = "idle" | "downloading" | "verifying" | "installing" | "restarting" | "error";

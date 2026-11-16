@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, setDesktopNotifications, setStartWithSystem } from "$lib/dashboard.svelte";
-  import { formatCheckedAt } from "$lib/format";
+  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, addIgnoredProject, removeIgnoredProject, setDesktopNotifications, setStartWithSystem } from "$lib/dashboard.svelte";
+  import { formatCheckedAt, shortPath } from "$lib/format";
   import { i18n, setLocale, t, type Locale } from "$lib/i18n.svelte";
   import { checkForUpdate, installUpdate, update } from "$lib/update.svelte";
   import type { ConfigBridgeMode, ScriptKind, ScriptScope } from "$lib/types";
@@ -10,6 +10,7 @@
   let kind = $state<ScriptKind>("dev");
   let scope = $state<ScriptScope>("shared");
   let pattern = $state("");
+  let ignoreDraft = $state("");
 
   async function submit(event: Event) {
     event.preventDefault();
@@ -17,6 +18,23 @@
     if (!value) return;
     await addPattern({ kind, scope, pattern: value });
     pattern = "";
+  }
+
+  const ignored = $derived(dash.config?.ignoredProjects ?? []);
+  const ignorable = $derived(
+    (dash.groups ?? []).filter((group) => !ignored.some((id) => id === group.id || id === group.path || id === group.name)),
+  );
+
+  function ignoredLabel(id: string): string {
+    const group = (dash.groups ?? []).find((item) => item.id === id || item.path === id || item.name === id);
+    return group?.name ?? shortPath(id);
+  }
+
+  async function submitIgnore(event: Event) {
+    event.preventDefault();
+    if (!ignoreDraft) return;
+    await addIgnoredProject(ignoreDraft);
+    ignoreDraft = ignorable[0]?.id ?? "";
   }
 </script>
 
@@ -180,6 +198,44 @@
       {t("settings.notifications")}
     </label>
     <p class="hint">{t("settings.notificationsHint")}</p>
+  </section>
+
+  <section class="settings-card">
+    <h2 class="settings-heading">{t("settings.ignore")}</h2>
+    <p class="settings-hint">{t("settings.ignoreHint")}</p>
+    <form class="root-form" onsubmit={submitIgnore}>
+      <label class="sr-only" for="ignore-project">{t("settings.ignoreSelect")}</label>
+      <select
+        id="ignore-project"
+        bind:value={ignoreDraft}
+        disabled={dash.saving || ignorable.length === 0}
+      >
+        <option value="">{t("settings.ignoreSelect")}</option>
+        {#each ignorable as group (group.id)}
+          <option value={group.id}>{group.name}</option>
+        {/each}
+      </select>
+      <button type="submit" disabled={dash.saving || !ignoreDraft}>{t("settings.ignoreAdd")}</button>
+    </form>
+    <div class="root-list">
+      {#each ignored as id (id)}
+        <button
+          class="root-chip"
+          type="button"
+          onclick={() => removeIgnoredProject(id)}
+          title={t("settings.ignoreRemove")}
+        >
+          <span title={id}>{ignoredLabel(id)}</span>
+          {#if !(dash.groups ?? []).some((group) => group.id === id || group.path === id)}
+            <em class="muted">{t("settings.ignoreMissing")}</em>
+          {/if}
+          <i aria-hidden="true">×</i>
+        </button>
+      {/each}
+      {#if ignored.length === 0}
+        <p class="hint">{t("settings.ignoreEmpty")}</p>
+      {/if}
+    </div>
   </section>
 
   <section class="settings-card">

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { slide } from "svelte/transition";
   import { isJsLike, shortPath, warningsForPart } from "$lib/format";
-  import { composeFor, dash, groupMarker as markerForGroup, removedPartsFor } from "$lib/dashboard.svelte";
+  import { composeFor, dash, groupMarker as markerForGroup, removedPartsFor, visibleWarnings } from "$lib/dashboard.svelte";
   import { t } from "$lib/i18n.svelte";
   import { runState } from "$lib/runs.svelte";
   import type { RepoGroup as RepoGroupType } from "$lib/types";
@@ -38,19 +38,13 @@
   const groupMarker = $derived(markerForGroup(group.id));
   const removedParts = $derived(removedPartsFor(group.id));
   const warnings = $derived(
-    (group.parts ?? []).flatMap((part) =>
-      warningsForPart(part.id, runState.runs, [...(runState.warnings ?? []), ...(dash.warnings ?? [])]),
+    visibleWarnings(
+      (group.parts ?? []).flatMap((part) =>
+        warningsForPart(part.id, runState.runs, [...(runState.warnings ?? []), ...(dash.warnings ?? [])]),
+      ),
     ),
   );
   const compose = $derived(composeFor(group.id));
-
-  function appsLabel(count: number): string {
-    if (count === 1) return t("projects.app.one");
-    if (count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 12 || count % 100 > 14)) {
-      return t("projects.app.few", { count });
-    }
-    return t("projects.app.many", { count });
-  }
 </script>
 
 <section class="project" class:open class:live={running.length > 0} class:removed={groupMarker === "removed"}>
@@ -84,9 +78,8 @@
       {#if versions[0]}
         <span class="badge quiet">v{versions[0]}</span>
       {/if}
-      <span class="count">{appsLabel((group.parts ?? []).length)}</span>
       {#if needsInstall && !open}
-        <span class="warn-inline">deps</span>
+        <span class="deps-flag" title={t("deps.projectHint")}>{t("deps.status")}</span>
       {/if}
     </div>
   </button>
@@ -98,6 +91,7 @@
       {/each}
       {#each removedParts as item (item.partId)}
         <div class="app-row removed">
+          <span class="app-autostart"></span>
           <span class="role"></span>
           <div class="app-main">
             <div class="app-id">
@@ -109,6 +103,7 @@
           </div>
           <span class="port-cell"></span>
           <div class="app-actions"></div>
+          <div class="app-status"></div>
         </div>
       {/each}
     </div>

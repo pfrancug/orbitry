@@ -84,6 +84,22 @@
     expanded = next;
   }
 
+
+  function usagePaths(usages: ModelUsage[] | undefined): string[] {
+    const paths: string[] = [];
+    for (const usage of usages ?? []) {
+      const files = (usage.files ?? []).map((file) => file.trim()).filter(Boolean);
+      if (files.length) {
+        for (const file of files) {
+          if (!paths.includes(file)) paths.push(file);
+        }
+      } else if (usage.projectPath && !paths.includes(usage.projectPath)) {
+        paths.push(usage.projectPath);
+      }
+    }
+    return paths;
+  }
+
   function countLabel(count: number, one: string, many: string): string {
     return count === 1 ? t(one) : t(many, { count });
   }
@@ -166,9 +182,9 @@
               <span class="num tabular">{fmtBytes(row.sizeBytes)}</span>
               <span class="muted loc" title={row.path ?? ""}>{row.location}</span>
               <span class="used">
-                {#if row.usedBy?.length}
-                  {#each row.usedBy as usage (`${row.key}:${usage.projectId}`)}
-                    <span class="chip quiet" title={usage.projectPath}>{usage.projectName}</span>
+                {#if usagePaths(row.usedBy).length}
+                  {#each usagePaths(row.usedBy) as path (path)}
+                    <span class="path-chip" title={path}>{path}</span>
                   {/each}
                 {:else}
                   <span class="muted">{t("models.usedByNone")}</span>
@@ -255,7 +271,21 @@
   }
   .num { text-align: right; white-space: nowrap; }
   .loc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .used { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+  .used { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; min-width: 0; }
+  .path-chip {
+    display: block;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  }
   .model-details {
     margin: 0;
     padding: 0 12px 12px 12px;

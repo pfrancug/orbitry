@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { dash } from "$lib/dashboard.svelte";
+  import { dash, visibleWarnings } from "$lib/dashboard.svelte";
   import { t } from "$lib/i18n.svelte";
   import { dedupeWarnings, warningSummaryLabel } from "$lib/format";
   import { runState } from "$lib/runs.svelte";
@@ -12,7 +12,7 @@
   let open = $state(false);
   let root: HTMLDivElement | undefined;
 
-  const warnings = $derived(dedupeWarnings([...(runState.warnings ?? []), ...(dash.warnings ?? [])]));
+  const warnings = $derived(visibleWarnings(dedupeWarnings([...(runState.warnings ?? []), ...(dash.warnings ?? [])])));
   const danger = $derived(warnings.some((item) => item.severity === "error"));
 
   function loadOpen() {

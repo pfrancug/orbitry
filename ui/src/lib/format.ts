@@ -121,19 +121,74 @@ export function portsFor(part: ProjectPart, runs: Run[]): PortInfo[] {
 }
 
 
-export function displayPorts(part: ProjectPart | null | undefined, runs: Run[], runningOnly = false): PortInfo[] {
-  const live = part ? runs.find((run) => run.status === "running" && run.partId === part.id) : undefined;
-  if (live) {
-    const process = (live.ports ?? []).filter((item) => item.source === "process");
-    return dedupePorts(process);
-  }
-  if (runningOnly) return [];
-  return dedupePorts(part?.ports ?? []);
+function withPortNames(ports: PortInfo[], known?: PortInfo[] | null): PortInfo[] {
+  if (!known?.length) return ports;
+  return ports.map((item) => {
+    if (item.name?.trim()) return item;
+    const named = known.find((port) => port.port === item.port && Boolean(port.name?.trim()));
+    return named ? { ...item, name: named.name } : item;
+  });
 }
 
-export function displayRunPorts(run: Run | null | undefined): PortInfo[] {
+export function pathsEqual(a: string, b: string): boolean {
+  const normalize = (value: string) =>
+    value.replaceAll("/", "\\").replace(/^\\\\\?\\/, "").replace(/\\+$/, "").toLowerCase();
+  return normalize(a) === normalize(b);
+}
+
+/** Visible label for a port: its name, the script/role it belongs to, or its source. Never empty. */
+export function portLabel(item: PortInfo, part?: ProjectPart | null, script?: string | null): string {
+  const named = item.name?.trim();
+  if (named) return named;
+  const scriptName = script?.trim();
+  if (scriptName) {
+    const lower = scriptName.toLowerCase();
+    if (lower === "dev" || lower.startsWith("dev:") || lower.startsWith("dev-") || lower.startsWith("dev_")) {
+      return "dev";
+    }
+    if (lower.startsWith("preview")) return "preview";
+    if (lower === "start" || lower.startsWith("start:") || lower.startsWith("start-")) return "start";
+    if (lower.includes("api")) return "api";
+    return scriptName;
+  }
+  if (part?.role === "be") return "api";
+  if (part?.role === "fe") return "dev";
+  switch (item.source) {
+    case "default":
+      return "default";
+    case "config":
+      return "config";
+    case "env":
+      return "env";
+    case "flag":
+      return "flag";
+    case "bridge":
+      return "config";
+    case "log":
+      return "log";
+    case "process":
+      return "process";
+    default:
+      return item.source || "port";
+  }
+}
+
+export function displayPorts(part: ProjectPart | null | undefined, runs: Run[], runningOnly = false): PortInfo[] {
+  const live = part ? runs.find((run) => run.status === "running" && run.partId === part.id) : undefined;
+  const known = [...(part?.ports ?? []), ...(live?.expectedPorts ?? []), ...(live?.ports ?? [])];
+  if (live) {
+    const process = (live.ports ?? []).filter((item) => item.source === "process");
+    return withPortNames(dedupePorts(process), known);
+  }
+  if (runningOnly) return [];
+  return withPortNames(dedupePorts(part?.ports ?? []), known);
+}
+
+export function displayRunPorts(run: Run | null | undefined, part?: ProjectPart | null): PortInfo[] {
   if (!run?.ports?.length) return [];
-  return dedupePorts((run.ports ?? []).filter((item) => item.source === "process"));
+  const process = (run.ports ?? []).filter((item) => item.source === "process");
+  const known = [...(part?.ports ?? []), ...(run.expectedPorts ?? []), ...(run.ports ?? [])];
+  return withPortNames(dedupePorts(process), known);
 }
 
 export function dedupeWarnings(warnings: AppWarning[]): AppWarning[] {

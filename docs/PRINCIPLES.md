@@ -25,6 +25,11 @@ These are standing rules for the project. Follow them in every change. They repl
 - **Polish and English** for the whole dashboard. New UI strings need both locales. The default follows the browser locale and is stored as `orbitry.locale`.
 - **Failed optional fetches never break pages.** A missing optional API, a partial payload, or invalid `localStorage` must degrade in place, not crash the layout.
 - **One mark.** The tray icon, executable icon, favicon, and sidebar logo come from a single flat SVG (`crates/server/assets/orbitry.svg`). Regenerate the raster sizes with `python scripts/generate-icons.py`.
+- **Ignore list.** Projects added to the Settings ignore list stay visible, but they produce no notices or warnings: not in the alert strip, the warnings popover, scan-change notices, or desktop notifications.
+- **Labeled ports.** Every port shown in the dashboard has a visible label for what it is (a name such as dev, preview, or api, or the port's source). A number alone is not enough.
+- **Absolute resource scales.** Overview CPU and RAM meters use a fixed scale from zero to maximum (CPU 0–100%, RAM 0–total), not a range auto-fitted to recent samples.
+- **Calm app rows.** In an expanded project, each app is two lines. The autostart control sits on the left in the same place on every row. Run scripts stay in the row. Build actions belong in the side panel as an advanced section. Do not show an "app" / "apps" count. Missing dependencies are a labeled status with an explanation, not a cryptic badge.
+
 
 ## Compatibility and releases
 

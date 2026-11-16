@@ -102,6 +102,10 @@ pub struct Config {
     /// Desktop notifications for app crashes and red health. Off by default.
     #[serde(default, skip_serializing_if = "is_false")]
     pub desktop_notifications: bool,
+    /// Project ids (canonical group ids / display paths) that should produce
+    /// no notices or warnings in the dashboard or as desktop notifications.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ignored_projects: Vec<String>,
 }
 
 impl Default for Config {
@@ -115,6 +119,7 @@ impl Default for Config {
             log_limit_mb: default_log_limit_mb(),
             autostart_apps: Vec::new(),
             desktop_notifications: false,
+            ignored_projects: Vec::new(),
         }
     }
 }
@@ -133,18 +138,32 @@ impl Config {
     }
 
     pub fn normalize_autostart_apps(&mut self) {
-        let mut unique: Vec<String> = Vec::new();
-        for id in self.autostart_apps.drain(..) {
-            let id = id.trim().to_string();
-            if id.is_empty() {
-                continue;
-            }
-            if !unique.iter().any(|existing| paths_equal(existing, &id)) {
-                unique.push(id);
-            }
-        }
-        self.autostart_apps = unique;
+        normalize_id_list(&mut self.autostart_apps);
     }
+
+    pub fn normalize_ignored_projects(&mut self) {
+        normalize_id_list(&mut self.ignored_projects);
+    }
+
+    pub fn ignores_project(&self, group_id: &str, path: &str, name: &str) -> bool {
+        self.ignored_projects.iter().any(|id| {
+            paths_equal(id, group_id) || paths_equal(id, path) || id == name
+        })
+    }
+}
+
+fn normalize_id_list(ids: &mut Vec<String>) {
+    let mut unique: Vec<String> = Vec::new();
+    for id in ids.drain(..) {
+        let id = id.trim().to_string();
+        if id.is_empty() {
+            continue;
+        }
+        if !unique.iter().any(|existing| paths_equal(existing, &id)) {
+            unique.push(id);
+        }
+    }
+    *ids = unique;
 }
 
 pub fn config_path() -> PathBuf {

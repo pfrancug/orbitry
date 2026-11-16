@@ -217,7 +217,7 @@ const en: Record<string, string> = {
   "settings.lang.pl": "Polish",
   "settings.folders": "Project folders",
   "settings.foldersHint": "Folders Orbitry should scan for apps.",
-  "settings.folderPh": "C:\\Projects\\private",
+  "settings.folderPh": "C:\\path\\to\\projects",
   "settings.folderLabel": "Project root folder",
   "settings.browse": "Browse",
   "settings.addFolder": "Add folder",
@@ -373,6 +373,21 @@ const en: Record<string, string> = {
   "toast.update.available": "{latest} is available. You're on {current}.",
   "toast.update.latest": "You're on the latest version ({version}).",
   "toast.update.checkFailed": "Could not check for updates.",
+
+  "settings.ignore": "Ignored projects",
+  "settings.ignoreHint": "Ignored projects stay in the list, but Orbitry will not show notices or warnings about them — not in the alert strip, the warnings popover, scan-change notices, or desktop notifications.",
+  "settings.ignoreAdd": "Ignore project",
+  "settings.ignoreSelect": "Choose a project",
+  "settings.ignoreRemove": "Stop ignoring",
+  "settings.ignoreEmpty": "No projects are ignored.",
+  "settings.ignoreMissing": "This project is no longer in the scan.",
+  "script.commandLabel": "Command",
+  "script.cwdLabel": "Working directory",
+  "script.sourceLabel": "Source",
+  "panel.build": "Build",
+  "deps.status": "Dependencies missing",
+  "deps.statusHint": "This app has no installed dependencies. Run {command} to install them.",
+  "deps.projectHint": "One or more apps are missing installed dependencies.",
 };
 
 const pl: Record<string, string> = {
@@ -547,7 +562,7 @@ const pl: Record<string, string> = {
   "settings.lang.pl": "polski",
   "settings.folders": "Foldery projektów",
   "settings.foldersHint": "Foldery, w których Orbitry ma szukać aplikacji.",
-  "settings.folderPh": "C:\\Projects\\private",
+  "settings.folderPh": "C:\\path\\to\\projects",
   "settings.folderLabel": "Folder główny projektów",
   "settings.browse": "Przeglądaj",
   "settings.addFolder": "Dodaj folder",
@@ -703,6 +718,21 @@ const pl: Record<string, string> = {
   "toast.update.available": "Dostępna {latest}. Masz {current}.",
   "toast.update.latest": "Masz najnowszą wersję ({version}).",
   "toast.update.checkFailed": "Nie udało się sprawdzić aktualizacji.",
+
+  "settings.ignore": "Ignorowane projekty",
+  "settings.ignoreHint": "Ignorowane projekty zostają na liście, ale Orbitry nie pokaże o nich komunikatów ani ostrzeżeń — ani na pasku alertów, ani w popoverze z ostrzeżeniami, ani w podsumowaniu zmian ze skanowania, ani w powiadomieniach systemowych.",
+  "settings.ignoreAdd": "Ignoruj projekt",
+  "settings.ignoreSelect": "Wybierz projekt",
+  "settings.ignoreRemove": "Przestań ignorować",
+  "settings.ignoreEmpty": "Żaden projekt nie jest ignorowany.",
+  "settings.ignoreMissing": "Tego projektu nie ma już w skanowaniu.",
+  "script.commandLabel": "Polecenie",
+  "script.cwdLabel": "Katalog roboczy",
+  "script.sourceLabel": "Źródło",
+  "panel.build": "Budowanie",
+  "deps.status": "Brak zależności",
+  "deps.statusHint": "Ta aplikacja nie ma zainstalowanych zależności. Uruchom {command}, aby je doinstalować.",
+  "deps.projectHint": "W co najmniej jednej aplikacji brakuje zainstalowanych zależności.",
 };
 
 export const messages = { en, pl };

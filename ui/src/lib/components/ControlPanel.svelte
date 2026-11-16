@@ -222,8 +222,18 @@
         </label>
         {#if selectedScript}
           <div class="command-preview">
-            <div><strong>{t("script.willRun")}</strong> <code>{commandPreview}</code></div>
-            <div class="muted">{t("script.in")} <code title={cwdPreview}>{shortPath(cwdPreview)}</code> · {sourceHint}</div>
+            <div class="preview-field">
+              <span class="preview-label">{t("script.commandLabel")}</span>
+              <pre class="preview-command"><code>{commandPreview}</code></pre>
+            </div>
+            <div class="preview-field">
+              <span class="preview-label">{t("script.cwdLabel")}</span>
+              <code class="preview-cwd" title={cwdPreview}>{cwdPreview}</code>
+            </div>
+            <div class="preview-field">
+              <span class="preview-label">{t("script.sourceLabel")}</span>
+              <span class="preview-source">{sourceHint}</span>
+            </div>
           </div>
         {/if}
         {#if startWarned && !startBlocked}
@@ -261,27 +271,13 @@
           {/if}
         </div>
       {/if}
-      <div class="panel-actions secondary-actions">
-        {#each builds as script (scriptEachKey(script, "build"))}
-          {@const run = runningFor(part.id, script.name)}
-          {@const building = isPending(part.id, script.name) || Boolean(run)}
-          <button
-            class="btn"
-            type="button"
-            disabled={building}
-            title={script.command}
-            onclick={() => (run ? stopScript(part.id, script.name) : startScript(part.id, script.name, dash.groups))}
-          >
-            {#if run}
-              {t("build.running")}
-            {:else if builds.length > 1}
-              {t("build.runNamed", { name: buildButtonName(script) })}
-            {:else}
-              {t("build.run")}
-            {/if}
-          </button>
-        {/each}
-        {#if missingDeps}
+    </section>
+
+    {#if missingDeps}
+      <section class="panel-section">
+        <h3>{t("deps.status")}</h3>
+        <p class="hint">{t("deps.statusHint", { command: installCommand(part) })}</p>
+        <div class="panel-actions">
           <button
             class="btn"
             type="button"
@@ -291,15 +287,42 @@
           >
             {runningFor(part.id, "install") || isPending(part.id, "install") ? t("deps.installing") : t("deps.install")}
           </button>
-        {/if}
-      </div>
-    </section>
+        </div>
+      </section>
+    {/if}
+
+    {#if builds.length}
+      <section class="panel-section">
+        <h3>{t("panel.build")}</h3>
+        <div class="panel-actions">
+          {#each builds as script (scriptEachKey(script, "build"))}
+            {@const run = runningFor(part.id, script.name)}
+            {@const building = isPending(part.id, script.name) || Boolean(run)}
+            <button
+              class="btn"
+              type="button"
+              disabled={building}
+              title={script.command}
+              onclick={() => (run ? stopScript(part.id, script.name) : startScript(part.id, script.name, dash.groups))}
+            >
+              {#if run}
+                {t("build.running")}
+              {:else if builds.length > 1}
+                {t("build.runNamed", { name: buildButtonName(script) })}
+              {:else}
+                {t("build.run")}
+              {/if}
+            </button>
+          {/each}
+        </div>
+      </section>
+    {/if}
 
     <section class="panel-section">
       <h3>{t("panel.status")}</h3>
       <div class="panel-status">
         <span class="log-status status-{current?.status ?? 'idle'}">{statusLabel(current)}</span>
-        <PortChips {ports} health={health ?? null} {expected} />
+        <PortChips {ports} health={health ?? null} {expected} {part} script={scriptName} />
         <span class="health health-{health?.status ?? 'unknown'}" title={health?.url ?? ""}>
           {healthLabel(health)}
         </span>
@@ -363,16 +386,46 @@
   }
   .command-preview {
     margin: 8px 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .preview-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .preview-label {
+    font-size: 10px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .preview-command {
+    margin: 0;
     padding: 8px 10px;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.04);
-    font-size: 11.5px;
-    line-height: 1.45;
+    background: rgba(0, 0, 0, 0.28);
+    overflow-x: auto;
+    overscroll-behavior: contain;
+    white-space: pre-wrap;
     word-break: break-word;
   }
-  .command-preview code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  .preview-command code,
+  .preview-cwd {
+    font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+    font-size: 12px;
   }
+  .preview-cwd {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+  .preview-source { font-size: 12px; color: var(--text); }
   .secondary-actions {
     margin-top: 8px;
   }

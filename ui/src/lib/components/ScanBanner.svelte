@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { changesVisible, dash, dismissChanges } from "$lib/dashboard.svelte";
-  import { changeLabel, changeSummary, normalizeScanDiff } from "$lib/format";
+  import { changesVisible, dash, dismissChanges, visibleScanDiff } from "$lib/dashboard.svelte";
+  import { changeLabel, changeSummary } from "$lib/format";
   import { t } from "$lib/i18n.svelte";
   import Icon from "./Icon.svelte";
 
-  const diff = $derived(normalizeScanDiff(dash.scan?.diff));
+  const diff = $derived(visibleScanDiff(dash.scan?.diff));
   const visible = $derived(changesVisible());
 </script>
 

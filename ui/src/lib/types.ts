@@ -148,6 +148,7 @@ export type AppConfig = {
   logLimitMb?: number;
   autostartApps?: string[];
   desktopNotifications?: boolean;
+  ignoredProjects?: string[];
   bridgeStatus?: BridgeStatus;
   autostart?: AutostartStatus;
 };

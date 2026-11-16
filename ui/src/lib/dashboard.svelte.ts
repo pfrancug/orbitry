@@ -1,8 +1,8 @@
 import { fetchConfig, fetchProjects, pickFolder, requestScan, saveConfig } from "./api";
 import { refreshRuns, restoreSelection, runState } from "./runs.svelte";
-import { findPart, normalizeScanDiff } from "./format";
+import { findPart, normalizeScanDiff, pathsEqual } from "./format";
 import { t } from "./i18n.svelte";
-import type { AppAutostartReport, AppConfig, AppWarning, ComposeProject, ConfigBridgeMode, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanStatus, ScriptPattern } from "./types";
+import type { AppAutostartReport, AppConfig, AppWarning, ComposeProject, ConfigBridgeMode, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanDiff, ScanStatus, ScriptPattern } from "./types";
 
 const PROJECTS_CACHE_KEY = "orbitry.projects-cache";
 
@@ -91,10 +91,79 @@ export function isDiffEmpty(diff: { added?: ScanChange[]; removed?: ScanChange[]
   return normalized.added.length + normalized.removed.length + normalized.changed.length === 0;
 }
 
+export function groupForPart(partId: string | null | undefined): RepoGroup | null {
+  if (!partId) return null;
+  return dash.groups.find((group) => (group.parts ?? []).some((part) => part.id === partId)) ?? null;
+}
+
+export function isIgnoredProject(ref: string | null | undefined): boolean {
+  if (!ref) return false;
+  const ignored = dash.config?.ignoredProjects ?? [];
+  if (!ignored.length) return false;
+  if (ignored.some((id) => pathsEqual(id, ref) || id === ref)) return true;
+  const group =
+    dash.groups.find((item) => pathsEqual(item.id, ref) || pathsEqual(item.path, ref) || item.name === ref) ??
+    groupForPart(ref);
+  if (!group) return false;
+  return ignored.some((id) => pathsEqual(id, group.id) || pathsEqual(id, group.path) || id === group.name);
+}
+
+export function isIgnoredPart(partId: string | null | undefined): boolean {
+  const group = groupForPart(partId);
+  return group ? isIgnoredProject(group.id) : isIgnoredProject(partId);
+}
+
+export function isIgnoredChange(item: ScanChange): boolean {
+  return isIgnoredProject(item.projectId) || isIgnoredProject(item.project);
+}
+
+export function isIgnoredWarning(warning: AppWarning): boolean {
+  if (warning.project && isIgnoredProject(warning.project)) return true;
+  if (warning.partId && isIgnoredPart(warning.partId)) return true;
+  return false;
+}
+
+export function visibleWarnings(warnings: AppWarning[] | null | undefined): AppWarning[] {
+  return (warnings ?? []).filter((item) => !isIgnoredWarning(item));
+}
+
+export function visibleScanDiff(diff?: Partial<ScanDiff> | null): ScanDiff {
+  const normalized = normalizeScanDiff(diff);
+  return {
+    added: normalized.added.filter((item) => !isIgnoredChange(item)),
+    removed: normalized.removed.filter((item) => !isIgnoredChange(item)),
+    changed: normalized.changed.filter((item) => !isIgnoredChange(item)),
+  };
+}
+
 export function changesVisible(): boolean {
   const scan = dash.scan;
-  if (!scan || scan.state !== "fresh" || isDiffEmpty(scan.diff) || scan.scannedAt == null) return false;
+  if (!scan || scan.state !== "fresh" || isDiffEmpty(visibleScanDiff(scan.diff)) || scan.scannedAt == null) {
+    return false;
+  }
   return dash.dismissedScannedAt !== scan.scannedAt;
+}
+
+export async function addIgnoredProject(projectId: string) {
+  if (!dash.config) return;
+  const id = projectId.trim();
+  if (!id) return;
+  const current = dash.config.ignoredProjects ?? [];
+  if (current.some((item) => pathsEqual(item, id))) return;
+  await persist({
+    roots: dash.config.roots,
+    scriptPatterns: dash.config.scriptPatterns,
+    ignoredProjects: [...current, id],
+  });
+}
+
+export async function removeIgnoredProject(projectId: string) {
+  if (!dash.config) return;
+  await persist({
+    roots: dash.config.roots,
+    scriptPatterns: dash.config.scriptPatterns,
+    ignoredProjects: (dash.config.ignoredProjects ?? []).filter((item) => !pathsEqual(item, projectId)),
+  });
 }
 
 export function dismissChanges() {
@@ -141,7 +210,7 @@ export function startWarnReason(partId?: string, script?: string): string | null
 }
 
 export function groupMarker(projectId: string): "new" | "changed" | "removed" | null {
-  if (!changesVisible()) return null;
+  if (!changesVisible() || isIgnoredProject(projectId)) return null;
   const diff = normalizeScanDiff(dash.scan?.diff);
   if (diff.removed.some((item) => item.kind === "project" && item.projectId === projectId)) return "removed";
   if (diff.added.some((item) => item.kind === "project" && item.projectId === projectId)) return "new";
@@ -156,7 +225,7 @@ export function groupMarker(projectId: string): "new" | "changed" | "removed" | 
 }
 
 export function partMarker(partId: string, projectId?: string): "new" | "changed" | "removed" | null {
-  if (!changesVisible()) return null;
+  if (!changesVisible() || isIgnoredPart(partId) || isIgnoredProject(projectId)) return null;
   const diff = normalizeScanDiff(dash.scan?.diff);
   if (isRemovedEntry(partId, undefined, projectId)) return "removed";
   if (diff.added.some((item) => item.partId === partId || (item.kind === "project" && item.projectId === projectId))) {
@@ -242,6 +311,7 @@ function withOverrides(next: {
   logLimitMb?: number;
   autostartApps?: string[];
   desktopNotifications?: boolean;
+  ignoredProjects?: string[];
 }) {
   return {
     roots: next.roots,
@@ -252,6 +322,7 @@ function withOverrides(next: {
     logLimitMb: next.logLimitMb ?? dash.config?.logLimitMb ?? 10,
     autostartApps: next.autostartApps ?? dash.config?.autostartApps ?? [],
     desktopNotifications: next.desktopNotifications ?? dash.config?.desktopNotifications ?? false,
+    ignoredProjects: next.ignoredProjects ?? dash.config?.ignoredProjects ?? [],
   };
 }
 
@@ -264,6 +335,7 @@ export async function persist(next: {
   logLimitMb?: number;
   autostartApps?: string[];
   desktopNotifications?: boolean;
+  ignoredProjects?: string[];
 }) {
   dash.saving = true;
   dash.error = null;
@@ -445,16 +517,6 @@ export function applyAppAutostartReport(report?: AppAutostartReport | null) {
 
 export function dismissAppAutostartToast() {
   dash.appAutostartDismissedAt = dash.appAutostart?.completedAt ?? Date.now();
-}
-
-export function pathsEqual(a: string, b: string): boolean {
-  const norm = (value: string) =>
-    value
-      .replace(/^\\\\\?\\/, "")
-      .replace(/\//g, "\\")
-      .replace(/[\\/]+$/, "")
-      .toLowerCase();
-  return norm(a) === norm(b);
 }
 
 export function systemAutostartEnabled(): boolean {

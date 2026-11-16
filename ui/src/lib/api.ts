@@ -45,6 +45,7 @@ export function saveConfig(config: {
   startWithSystem?: boolean;
   autostartApps?: string[];
   desktopNotifications?: boolean;
+  ignoredProjects?: string[];
 }): Promise<AppConfig> {
   return request("/api/config", {
     method: "PUT",

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { dash, startBlockReason } from "$lib/dashboard.svelte";
+  import { dash, startBlockReason, visibleWarnings } from "$lib/dashboard.svelte";
   import { i18n, t } from "$lib/i18n.svelte";
   import {
     displayRunPorts,
@@ -56,7 +56,7 @@
     new Set(running.flatMap((run) => displayRunPorts(run).map((item) => item.port))).size,
   );
   const healthy = $derived(running.filter((run) => run.health?.status === "ok").length);
-  const allWarnings = $derived([...(runState.warnings ?? []), ...(dash.warnings ?? [])]);
+  const allWarnings = $derived(visibleWarnings([...(runState.warnings ?? []), ...(dash.warnings ?? [])]));
   const issues = $derived(issueWarnings(allWarnings));
   const unhealthy = $derived(
     runState.runs.filter((run) => run.status === "failed").length +
@@ -267,7 +267,8 @@
         </thead>
         <tbody>
           {#each running as run (run.id)}
-            {@const ports = displayRunPorts(run)}
+            {@const part = findPart(run.partId, dash.groups) ?? null}
+            {@const ports = displayRunPorts(run, part)}
             {@const port = ports[0]}
             {@const pending = isPending(run.partId, run.script)}
             {@const warnings = warningsForRun(run, allWarnings)}
@@ -287,7 +288,7 @@
                 </span>
               </td>
               <td>
-                <PortChips {ports} health={run.health} />
+                <PortChips {ports} health={run.health} {part} script={run.script} />
               </td>
               <td class="tabular">{formatUptime(run.startedAt, now)}</td>
               <td><ResourceChip usage={runMetrics(run.id)} /></td>

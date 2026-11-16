@@ -31,7 +31,7 @@
     <div class="meter-bar" class:hot style="width: {bar}%; background: {hot ? 'var(--danger)' : color}"></div>
   </div>
   <div class="meter-spark">
-    <Sparkline {color} {values} height={40} />
+    <Sparkline {color} {values} height={64} min={0} max={100} />
   </div>
   {#if sub}
     <span class="meter-sub">{sub}</span>
@@ -39,7 +39,7 @@
 </div>
 
 <style>
-  .meter { min-width: 0; }
+  .meter { min-width: 0; padding: 0.15rem 0 0.25rem; }
   .meter-head {
     display: flex;
     align-items: baseline;
@@ -48,19 +48,19 @@
   }
   .meter-label {
     color: var(--muted);
-    font-size: 0.72rem;
+    font-size: 0.78rem;
     font-weight: 700;
     letter-spacing: 0.02em;
     text-transform: uppercase;
   }
   .meter-value {
-    font-size: 0.85rem;
+    font-size: 1.15rem;
     font-variant-numeric: tabular-nums;
     font-weight: 800;
   }
   .meter-track {
-    height: 4px;
-    margin-top: 0.35rem;
+    height: 8px;
+    margin-top: 0.5rem;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.06);
     overflow: hidden;
@@ -69,7 +69,7 @@
     height: 100%;
     border-radius: 999px;
   }
-  .meter-spark { margin-top: 0.2rem; }
+  .meter-spark { margin-top: 0.45rem; }
   .meter-sub {
     display: block;
     margin-top: 0.15rem;

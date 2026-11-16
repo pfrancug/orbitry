@@ -11,7 +11,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use orbitry_core::{
     apply_port_overrides, attach_run_warnings, autostart_status, bridge_status, clamp_log_limit_mb,
-    config_fingerprint, diff_groups, evaluate_warnings, export_cache, group_projects, load_config,
+    config_fingerprint, diff_groups, evaluate_warnings, export_cache, group_projects, load_config, paths_equal,
     empty_models_inventory, load_models_cache, load_scan_cache, models_cache_path, now_ms,
     refresh_compose, run_app_autostart, run_compose_action, compose_logs, save_config,
     save_models_cache, save_scan_cache, scan, scan_cache_path, scan_models_with_sink,
@@ -349,6 +349,9 @@ struct ConfigBody {
     autostart_apps: Option<Vec<String>>,
     #[serde(default)]
     desktop_notifications: Option<bool>,
+    /// Replaces the ignored-project list when present. Omitted keeps the saved list.
+    #[serde(default)]
+    ignored_projects: Option<Vec<String>>,
 }
 
 async fn put_config(
@@ -374,8 +377,12 @@ async fn put_config(
         desktop_notifications: body
             .desktop_notifications
             .unwrap_or(existing.desktop_notifications),
+        ignored_projects: body
+            .ignored_projects
+            .unwrap_or_else(|| existing.ignored_projects.clone()),
     };
     config.normalize_autostart_apps();
+    config.normalize_ignored_projects();
     config.roots = config
         .roots
         .into_iter()
@@ -1204,19 +1211,38 @@ struct DockerLogs {
     text: String,
 }
 
+fn project_is_ignored(config: &Config, groups: &[RepoGroup], part_id: &str) -> bool {
+    groups
+        .iter()
+        .find(|group| {
+            group
+                .parts
+                .iter()
+                .any(|part| paths_equal(&part.id, part_id))
+        })
+        .is_some_and(|group| config.ignores_project(&group.id, &group.path, &group.name))
+}
+
 async fn maybe_send_notifications(state: &AppState) {
-    let enabled = load_config(&state.config_path)
-        .map(|config| config.desktop_notifications)
-        .unwrap_or(false);
-    if !enabled {
+    let config = load_config(&state.config_path).unwrap_or_default();
+    if !config.desktop_notifications {
         return;
     }
+    let groups = state
+        .inventory
+        .lock()
+        .ok()
+        .map(|inventory| inventory.groups.clone())
+        .unwrap_or_default();
     let runs = state.manager.list_cached().await;
     let mut seen = match state.notify_seen.lock() {
         Ok(guard) => guard,
         Err(_) => return,
     };
     for run in &runs {
+        if project_is_ignored(&config, &groups, &run.part_id) {
+            continue;
+        }
         if run.status == RunStatus::Failed && seen.failed_runs.insert(run.id.clone()) {
             crate::notify::show(
                 "Orbitry",

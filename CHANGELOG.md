@@ -5,6 +5,21 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-11-16
+
+### Added
+
+- An ignore list in Settings. You can add a project from the current project list, and remove it later. Ignored projects stay in Projects, but they produce no notices or warnings in the alert strip, the warnings popover, scan-change notices, or desktop notifications. Existing config files stay valid; the list defaults to empty.
+- Standing principles for the ignore list, labeled ports, absolute resource scales, and calmer app rows.
+
+### Changed
+
+- Overview CPU and RAM meters use a fixed scale from zero to maximum (CPU 0–100%, RAM 0–total memory), instead of auto-scaling to recent samples. The meters are larger.
+- Every visible port has a label for what it is, such as dev, preview, api, or the port's source, not only a number.
+- Project app rows are two lines, with the autostart control in a fixed position on the left. Run scripts stay in the row. Build actions moved to an advanced Build section in the side panel. The "app" / "apps" count on the project row is gone. Missing dependencies are a labeled status with an explanation and an install action, not a short orange badge.
+- The side panel's command preview is split into labeled fields: Command in a monospace block, Working directory on its own line, and Source underneath.
+- On the AI Models page, "Used by" is one chip per full path where the model is used. Long paths are truncated, with the full path in a tooltip.
+
 ## [0.6.0] - 2026-11-16
 
 ### Added

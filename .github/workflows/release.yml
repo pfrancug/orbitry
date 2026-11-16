@@ -59,7 +59,8 @@ jobs:
             exit 1
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          python3 - << PY
+          export VERSION
+          python3 - << 'PY'
           from pathlib import Path
           path = Path("Cargo.toml")
           text = path.read_text()
@@ -111,7 +112,8 @@ jobs:
           if [[ "${{ runner.os }}" != "Windows" ]]; then
             chmod +x "dist/${{ matrix.asset }}"
           fi
-          python3 - << PY
+          export VERSION
+          python3 - << 'PY'
           import hashlib
           from pathlib import Path
           asset = Path("dist/${{ matrix.asset }}")

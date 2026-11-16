@@ -86,7 +86,7 @@ export function formatPorts(ports: PortInfo[] | undefined): string {
 export function preferredPort(ports: PortInfo[] | undefined): number | null {
   if (!ports?.length) return null;
   const rank = (source: PortInfo["source"]) =>
-    source === "process" ? 5 : source === "log" ? 4 : source === "flag" ? 3 : source === "env" ? 2 : source === "config" ? 1 : 0;
+    source === "process" ? 6 : source === "log" ? 5 : source === "bridge" ? 4 : source === "flag" ? 3 : source === "env" ? 2 : source === "config" ? 1 : 0;
   const sorted = [...ports].sort((a, b) => rank(b.source) - rank(a.source) || a.port - b.port);
   return sorted[0]?.port ?? null;
 }
@@ -100,7 +100,7 @@ export function isLivePort(port: PortInfo): boolean {
 }
 
 export function isExpectedSource(source: PortInfo["source"] | undefined): boolean {
-  return source === "default" || source === "config" || source === "env" || source === "flag";
+  return source === "default" || source === "config" || source === "env" || source === "flag" || source === "bridge";
 }
 
 export function portsFor(part: ProjectPart, runs: Run[]): PortInfo[] {

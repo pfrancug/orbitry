@@ -2,7 +2,16 @@ export type ScriptKind = "dev" | "preview";
 export type ScriptScope = "fe" | "be" | "shared";
 export type ProjectKind = "javascript" | "rust" | "python" | "go" | "docker" | "mixed";
 export type PartRole = "root" | "fe" | "be" | "shared" | "lib";
-export type PortSource = "default" | "config" | "env" | "flag" | "log" | "process";
+export type PortSource = "default" | "config" | "env" | "flag" | "bridge" | "log" | "process";
+export type ConfigBridgeMode = "auto" | "on" | "off";
+
+export type BridgeStatus = {
+  mode: ConfigBridgeMode;
+  available: boolean;
+  node: boolean;
+  plugin: boolean;
+  label: string;
+};
 export type HealthStatus = "unknown" | "ok" | "fail" | "skipped";
 
 export type DetectedScript = {
@@ -114,6 +123,8 @@ export type AppConfig = {
   scriptPatterns: ScriptPattern[];
   defaultPatterns: { kind: ScriptKind; pattern: string }[];
   portOverrides?: PortOverride[];
+  configBridge?: ConfigBridgeMode;
+  bridgeStatus?: BridgeStatus;
 };
 
 export type RunStatus = "running" | "exited" | "failed";

@@ -87,15 +87,15 @@ The Vite dev server is http://127.0.0.1:4281 and proxies `/api` to the Rust serv
 - [x] Health probes the address the port actually binds (`::1`, `127.0.0.1`, or a wildcard via `127.0.0.1`); links use `http://localhost:<port>`
 - [x] Anomaly warnings from the Rust core: IPv6-only binds, all-interface binds, expected vs actual port, missing ports after startup, health failures
 - [x] Global port conflicts when two apps share a port, when a foreign process occupies an expected port, and possible conflicts when a framework default (Vite 5173, Next/Express 3000, Rust 8080, Astro 4321, ...) is also used by another project
-- [ ] If the config-bridge plugin is present, use it for resolved ports/settings from `vite.config.ts`, `next.config.js`, and similar
+- [x] If the config-bridge plugin is present, use it for resolved ports/settings from `vite.config.ts`, `next.config.js`, and similar
 - [x] If the plugin is missing, fall back to regex + framework defaults + live PID/log detection
 - [x] Manual per-port overrides in the dashboard (name, health URL, or ignore), stored in Orbitry config
 
 ### 8. Optional Node config-bridge plugin
 
-- [ ] Small, optional package under `plugins/config-bridge` — Orbitry runs without it
-- [ ] Evaluates code-based configs and returns resolved ports and settings to the Rust core as JSON
-- [ ] The core never depends on Node being installed
+- [x] Small, optional package under `plugins/config-bridge` — Orbitry runs without it
+- [x] Evaluates code-based configs and returns resolved ports and settings to the Rust core as JSON
+- [x] The core never depends on Node being installed
 
 ### 9. Health
 

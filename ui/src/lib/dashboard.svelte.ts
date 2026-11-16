@@ -1,6 +1,6 @@
 import { fetchConfig, fetchProjects, pickFolder, requestScan, saveConfig } from "./api";
 import { refreshRuns, restoreSelection, runState } from "./runs.svelte";
-import type { AppConfig, AppWarning, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanStatus, ScriptPattern } from "./types";
+import type { AppConfig, AppWarning, ConfigBridgeMode, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanStatus, ScriptPattern } from "./types";
 
 export const dash = $state({
   groups: [] as RepoGroup[],
@@ -161,15 +161,26 @@ export async function refreshAll(force = false) {
   }
 }
 
-function withOverrides(next: { roots: string[]; scriptPatterns: ScriptPattern[]; portOverrides?: PortOverride[] }) {
+function withOverrides(next: {
+  roots: string[];
+  scriptPatterns: ScriptPattern[];
+  portOverrides?: PortOverride[];
+  configBridge?: ConfigBridgeMode;
+}) {
   return {
     roots: next.roots,
     scriptPatterns: next.scriptPatterns,
     portOverrides: next.portOverrides ?? dash.config?.portOverrides ?? [],
+    configBridge: next.configBridge ?? dash.config?.configBridge ?? "auto",
   };
 }
 
-export async function persist(next: { roots: string[]; scriptPatterns: ScriptPattern[]; portOverrides?: PortOverride[] }) {
+export async function persist(next: {
+  roots: string[];
+  scriptPatterns: ScriptPattern[];
+  portOverrides?: PortOverride[];
+  configBridge?: ConfigBridgeMode;
+}) {
   dash.saving = true;
   dash.error = null;
   try {
@@ -242,6 +253,15 @@ export async function savePortOverrides(portOverrides: PortOverride[]) {
     roots: dash.config.roots,
     scriptPatterns: dash.config.scriptPatterns,
     portOverrides,
+  });
+}
+
+export async function setConfigBridge(mode: ConfigBridgeMode) {
+  if (!dash.config) return;
+  await persist({
+    roots: dash.config.roots,
+    scriptPatterns: dash.config.scriptPatterns,
+    configBridge: mode,
   });
 }
 

@@ -21,8 +21,9 @@
   function titleOf(item: PortInfo, status: string): string {
     const label = item.name ? `${item.name} :${item.port}` : `:${item.port}`;
     const binds = item.binds?.length ? ` · ${item.binds.join(", ")}` : "";
-    if (status === "expected") return `${label} (expected)${binds}`;
-    return `${label}${binds}`;
+    const source = item.source === "bridge" ? " · config bridge" : item.source && item.source !== "process" ? ` · ${item.source}` : "";
+    if (status === "expected") return `${label} (expected)${source}${binds}`;
+    return `${label}${source}${binds}`;
   }
 </script>
 
@@ -35,7 +36,7 @@
       {#if status === "expected"}
         <span class="port-chip expected" title={titleOf(item, status)}>
           {#if item.name}<em>{item.name}</em>{/if}
-          :{item.port}
+          :{item.port}{#if item.source === "bridge"}<i class="bridge-mark" title="From config bridge">cfg</i>{/if}
         </span>
       {:else}
         <a
@@ -47,7 +48,7 @@
         >
           <span class="status-dot" class:on={status === "ok"} class:fail={status === "fail"}></span>
           {#if item.name}<em>{item.name}</em>{/if}
-          :{item.port}
+          :{item.port}{#if item.source === "bridge"}<i class="bridge-mark" title="From config bridge">cfg</i>{/if}
         </a>
       {/if}
     {/each}

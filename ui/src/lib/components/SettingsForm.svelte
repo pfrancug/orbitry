@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot } from "$lib/dashboard.svelte";
-  import type { ScriptKind, ScriptScope } from "$lib/types";
+  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setConfigBridge } from "$lib/dashboard.svelte";
+  import type { ConfigBridgeMode, ScriptKind, ScriptScope } from "$lib/types";
 
   let kind = $state<ScriptKind>("dev");
   let scope = $state<ScriptScope>("shared");
@@ -80,6 +80,26 @@
           </button>
         {/each}
       {/if}
+    </div>
+  </section>
+
+  <section class="settings-block">
+    <p class="label">Config bridge</p>
+    <p class="hint">When a project has a Vite or Next config, Orbitry can read the real port from it. This is optional and needs Node.</p>
+    <div class="bridge-row">
+      <span class="badge quiet">{dash.config.bridgeStatus?.label ?? (dash.config.configBridge === "off" ? "disabled" : "unknown")}</span>
+    </div>
+    <div class="segmented">
+      {#each ["auto", "on", "off"] as mode (mode)}
+        <button
+          type="button"
+          class:active={(dash.config.configBridge ?? "auto") === mode}
+          disabled={dash.saving}
+          onclick={() => setConfigBridge(mode as ConfigBridgeMode)}
+        >
+          {mode === "auto" ? "Auto" : mode === "on" ? "On" : "Off"}
+        </button>
+      {/each}
     </div>
   </section>
 {/if}

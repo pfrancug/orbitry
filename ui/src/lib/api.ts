@@ -32,6 +32,7 @@ export function saveConfig(config: {
   roots: string[];
   scriptPatterns: ScriptPattern[];
   portOverrides?: PortOverride[];
+  configBridge?: import("./types").ConfigBridgeMode;
 }): Promise<AppConfig> {
   return request("/api/config", {
     method: "PUT",

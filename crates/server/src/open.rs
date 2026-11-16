@@ -124,6 +124,7 @@ fn windows_vscode_exe() -> Option<PathBuf> {
         .or_else(|| look_on_path(&["code.cmd", "code-insiders.cmd", "codium.cmd", "code"]))
 }
 
+#[cfg(windows)]
 fn open_vscode_windows(path: &Path) -> Result<(), String> {
     let dir = display_path(path);
     let exe = windows_vscode_exe().ok_or_else(|| "VS Code was not found on this machine".to_string())?;

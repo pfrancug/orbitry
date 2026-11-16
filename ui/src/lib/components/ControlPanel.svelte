@@ -16,6 +16,7 @@
     timeAgo,
     warningsForPart,
     warningsForRun,
+    scriptEachKey,
   } from "$lib/format";
   import { i18n, t } from "$lib/i18n.svelte";
   import {
@@ -213,7 +214,7 @@
               if (value) selectPart(part.id, value, true);
             }}
           >
-            {#each startables as script (`${script.kind}:${script.name}`)}
+            {#each startables as script (scriptEachKey(script))}
               <option value={script.name}>{scriptLabel(script)}</option>
             {/each}
           </select>
@@ -260,7 +261,7 @@
         </div>
       {/if}
       <div class="panel-actions secondary-actions">
-        {#each builds as script (`build:${script.name}`)}
+        {#each builds as script (scriptEachKey(script, "build"))}
           {@const run = runningFor(part.id, script.name)}
           {@const building = isPending(part.id, script.name) || Boolean(run)}
           <button

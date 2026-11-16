@@ -314,6 +314,19 @@ export function scriptLabel(script: DetectedScript): string {
   return script.label?.trim() || script.name;
 }
 
+/** Stable unique key for script lists. Package and workspace scripts can share a name and kind. */
+export function scriptEachKey(script: DetectedScript, prefix = ""): string {
+  return JSON.stringify([
+    prefix,
+    script.source ?? "",
+    script.scope ?? "",
+    script.kind,
+    script.name,
+    script.command ?? "",
+    script.cwd ?? "",
+  ]);
+}
+
 export function installCommand(part: ProjectPart | null | undefined): string {
   return `${part?.packageManager || "npm"} install`;
 }

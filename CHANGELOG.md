@@ -5,6 +5,12 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2026-11-16
+
+### Fixed
+
+- Expanding a project tagged Changed could freeze the Projects page. After that, the page could stay broken even after restarting Orbitry, because the open row was saved in localStorage. The crash came from two scripts on the same app sharing a list key (a package script and a workspace script with the same name). Those lists now use unique keys. A client storage migration resets saved expanded rows so an already-stuck session opens cleanly.
+
 ## [0.5.2] - 2026-11-16
 
 ### Fixed

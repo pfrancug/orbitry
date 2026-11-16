@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appAutostartEnabled, appAutostartTitle, dash, partMarker, setAppAutostart, startBlockReason, startWarnReason, systemAutostartEnabled } from "$lib/dashboard.svelte";
-  import { buildScripts, displayPorts, installCommand, isJsLike, partTitle, roleLabel, runScripts, scriptLabel, warningsForPart } from "$lib/format";
+  import { buildScripts, displayPorts, installCommand, isJsLike, partTitle, roleLabel, runScripts, scriptEachKey, scriptLabel, warningsForPart } from "$lib/format";
   import { i18n, t } from "$lib/i18n.svelte";
   import { isPending, runningFor, runState, startInstall, startScript, togglePart, toggleScript } from "$lib/runs.svelte";
   import type { ProjectPart } from "$lib/types";
@@ -82,7 +82,7 @@
     {#if !startScripts.length && !builds.length}
       <span class="muted">{t("script.noScripts")}</span>
     {:else}
-      {#each startScripts as script (`${script.kind}:${script.name}`)}
+      {#each startScripts as script (scriptEachKey(script))}
         {@const run = runningFor(part.id, script.name)}
         {@const pending = isPending(part.id, script.name)}
         {@const blocked = !run ? startBlockReason(part.id, script.name) : null}
@@ -109,7 +109,7 @@
           {script.name}
         </button>
       {/each}
-      {#each builds as script (`build:${script.name}`)}
+      {#each builds as script (scriptEachKey(script, "build"))}
         {@const run = runningFor(part.id, script.name)}
         {@const pending = isPending(part.id, script.name)}
         <button

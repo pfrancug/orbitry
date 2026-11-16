@@ -1,6 +1,6 @@
 /** Versioned, backward-compatible helpers for Orbitry's localStorage keys. */
 
-export const STORAGE_VERSION = 1;
+export const STORAGE_VERSION = 2;
 const VERSION_KEY = "orbitry.storageVersion";
 const PREFIX = "orbitry.";
 
@@ -55,6 +55,10 @@ export function migrateClientStorage(): void {
           localStorage.removeItem(key);
         }
       }
+    }
+    if (from < 2) {
+      // 0.5.3: an open Changed project could crash Projects and stay saved as expanded.
+      localStorage.removeItem("orbitry.expanded");
     }
     if (from !== STORAGE_VERSION) {
       localStorage.setItem(VERSION_KEY, String(STORAGE_VERSION));

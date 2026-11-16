@@ -37,7 +37,7 @@ jobs:
             target: x86_64-apple-darwin
             asset: orbitry-macos-x64
             bin: orbitry
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             asset: orbitry-linux-x64
             bin: orbitry
@@ -134,7 +134,7 @@ jobs:
   publish:
     name: Publish release
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4

@@ -11,7 +11,7 @@ permissions:
 jobs:
   check:
     name: Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -38,7 +38,6 @@ jobs:
       - name: Build UI
         working-directory: ui
         run: npm ci && npm run build
-
 
       - name: UI smoke
         run: |

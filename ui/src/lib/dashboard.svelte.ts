@@ -2,16 +2,65 @@ import { fetchConfig, fetchProjects, pickFolder, requestScan, saveConfig } from 
 import { refreshRuns, restoreSelection, runState } from "./runs.svelte";
 import type { AppConfig, AppWarning, ConfigBridgeMode, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanStatus, ScriptPattern } from "./types";
 
+const PROJECTS_CACHE_KEY = "orbitry.projects-cache";
+
+function readLocalProjects(): { groups: RepoGroup[]; warnings: AppWarning[]; scan: ScanStatus | null } | null {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    const raw = localStorage.getItem(PROJECTS_CACHE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as { groups?: RepoGroup[]; warnings?: AppWarning[]; scan?: ScanStatus | null };
+    if (!Array.isArray(data.groups) || data.groups.length === 0) return null;
+    return {
+      groups: data.groups,
+      warnings: data.warnings ?? [],
+      scan: data.scan ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalProjects(payload: ProjectsResponse) {
+  try {
+    if (typeof localStorage === "undefined") return;
+    if (!payload.groups?.length) return;
+    localStorage.setItem(
+      PROJECTS_CACHE_KEY,
+      JSON.stringify({
+        groups: payload.groups,
+        warnings: payload.warnings ?? [],
+        scan: payload.scan ?? null,
+      }),
+    );
+  } catch {
+    // Private mode can block storage.
+  }
+}
+
+function asVerifying(scan: ScanStatus | null): ScanStatus {
+  return {
+    state: "cached",
+    stale: true,
+    scannedAt: scan?.scannedAt ?? null,
+    startedAt: scan?.startedAt ?? null,
+    diff: null,
+    error: null,
+  };
+}
+
+const localProjects = readLocalProjects();
+
 export const dash = $state({
-  groups: [] as RepoGroup[],
-  warnings: [] as AppWarning[],
-  scan: null as ScanStatus | null,
+  groups: (localProjects?.groups ?? []) as RepoGroup[],
+  warnings: (localProjects?.warnings ?? []) as AppWarning[],
+  scan: (localProjects ? asVerifying(localProjects.scan) : null) as ScanStatus | null,
   dismissedScannedAt: null as number | null,
   config: null as AppConfig | null,
   query: "",
   rootDraft: "",
   error: null as string | null,
-  loading: true,
+  loading: !localProjects,
   saving: false,
   refreshing: false,
 });
@@ -25,6 +74,7 @@ export function applyProjectSnapshot(payload: ProjectsResponse) {
   if (payload.scan?.error) {
     dash.error = payload.scan.error;
   }
+  writeLocalProjects(payload);
   restoreSelection(dash.groups.flatMap((group) => group.parts ?? []));
   watchScan();
 }
@@ -186,10 +236,16 @@ export async function persist(next: {
 }) {
   dash.saving = true;
   dash.error = null;
+  const payload = withOverrides(next);
+  const previous = dash.config;
+  if (dash.config) {
+    dash.config = { ...dash.config, ...payload };
+  }
   try {
-    dash.config = await saveConfig(withOverrides(next));
+    dash.config = await saveConfig(payload);
     applyProjectSnapshot(await fetchProjects());
   } catch (err: unknown) {
+    if (previous) dash.config = previous;
     dash.error = err instanceof Error ? err.message : "Could not save settings.";
   } finally {
     dash.saving = false;

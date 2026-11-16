@@ -124,6 +124,12 @@ export type ScriptPattern = {
   pattern: string;
 };
 
+export type AutostartStatus = {
+  enabled: boolean;
+  command?: string | null;
+  stale: boolean;
+};
+
 export type AppConfig = {
   roots: string[];
   scriptPatterns: ScriptPattern[];
@@ -133,6 +139,7 @@ export type AppConfig = {
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
   bridgeStatus?: BridgeStatus;
+  autostart?: AutostartStatus;
 };
 
 export type RunStatus = "running" | "exited" | "failed";

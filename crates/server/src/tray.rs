@@ -7,7 +7,7 @@ use crate::shutdown::{start_exit_watchdog, Shutdown};
 use crate::update::{is_dev_build, UpdateService, VersionInfo};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::platform::run_return::EventLoopExtRunReturn;
-use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
 const TRAY_RGBA: &[u8] = include_bytes!("../assets/tray-32.rgba");
@@ -21,11 +21,14 @@ pub fn run(port: u16, shutdown: Shutdown, update: UpdateService) -> Result<(), S
 
     let menu = Menu::new();
     let open_item = MenuItem::new("Otwórz", true, None);
+    let autostart_enabled = orbitry_core::autostart_status().enabled;
+    let autostart_item = CheckMenuItem::new("Uruchamiaj z systemem", true, autostart_enabled, None);
     let check_item = MenuItem::new("Sprawdź aktualizacje", true, None);
     let update_item = MenuItem::new("Aktualizuj", false, None);
     let quit_item = MenuItem::new("Wyjdź", true, None);
     menu.append_items(&[
         &open_item,
+        &autostart_item,
         &PredefinedMenuItem::separator(),
         &check_item,
         &update_item,
@@ -35,6 +38,7 @@ pub fn run(port: u16, shutdown: Shutdown, update: UpdateService) -> Result<(), S
     .map_err(|err| format!("tray menu: {err}"))?;
 
     let open_id = open_item.id().clone();
+    let autostart_id = autostart_item.id().clone();
     let check_id = check_item.id().clone();
     let update_id = update_item.id().clone();
     let quit_id = quit_item.id().clone();
@@ -52,6 +56,7 @@ pub fn run(port: u16, shutdown: Shutdown, update: UpdateService) -> Result<(), S
     let url = instance::dashboard_url(port);
     let mut last_label = String::new();
     let mut last_enabled = false;
+    let mut last_autostart = autostart_enabled;
     let mut last_tooltip = tooltip(&update.snapshot(true));
 
     event_loop.run_return(move |_event, _, control_flow| {
@@ -71,10 +76,32 @@ pub fn run(port: u16, shutdown: Shutdown, update: UpdateService) -> Result<(), S
             let _ = tray.set_tooltip(Some(&next_tooltip));
             last_tooltip = next_tooltip;
         }
+        let next_autostart = orbitry_core::autostart_status().enabled;
+        if next_autostart != last_autostart {
+            autostart_item.set_checked(next_autostart);
+            last_autostart = next_autostart;
+        }
 
         if let Ok(event) = menu_rx.try_recv() {
             if event.id == open_id {
                 open_dashboard(&url);
+            } else if event.id == autostart_id {
+                let enabled = autostart_item.is_checked();
+                match orbitry_core::set_autostart_enabled(enabled) {
+                    Ok(status) => {
+                        autostart_item.set_checked(status.enabled);
+                        last_autostart = status.enabled;
+                    }
+                    Err(err) => {
+                        autostart_item.set_checked(!enabled);
+                        last_autostart = !enabled;
+                        show_message(
+                            "Orbitry",
+                            &format!("Nie udało się zmienić autostartu: {err}"),
+                            true,
+                        );
+                    }
+                }
             } else if event.id == check_id {
                 start_manual_check(update.clone());
             } else if event.id == update_id {

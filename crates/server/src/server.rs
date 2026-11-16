@@ -10,12 +10,12 @@ use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use axum::Router;
 use orbitry_core::{
-    apply_port_overrides, attach_run_warnings, bridge_status, clamp_log_limit_mb, config_fingerprint,
-    diff_groups, evaluate_warnings, export_cache, group_projects, load_config, load_scan_cache,
-    now_ms, save_config, save_scan_cache, scan, scan_cache_path, BridgeStatus, Config,
-    ConfigBridgeMode, ListeningSnapshot, MetricsHub, MetricsSnapshot, PortOverride, ProcessManager,
-    Project, RepoGroup, Run, RunStatus, SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus,
-    StartError, Subscription, Warning,
+    apply_port_overrides, attach_run_warnings, autostart_status, bridge_status, clamp_log_limit_mb,
+    config_fingerprint, diff_groups, evaluate_warnings, export_cache, group_projects, load_config,
+    load_scan_cache, now_ms, save_config, save_scan_cache, scan, scan_cache_path, set_autostart_enabled,
+    AutostartStatus, BridgeStatus, Config, ConfigBridgeMode, ListeningSnapshot, MetricsHub,
+    MetricsSnapshot, PortOverride, ProcessManager, Project, RepoGroup, Run, RunStatus,
+    SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -61,6 +61,7 @@ struct ConfigResponse {
     config: Config,
     default_patterns: Vec<DefaultPattern>,
     bridge_status: BridgeStatus,
+    autostart: AutostartStatus,
 }
 
 #[derive(Serialize)]
@@ -301,6 +302,9 @@ struct ConfigBody {
     auto_check_updates: Option<bool>,
     #[serde(default)]
     log_limit_mb: Option<u32>,
+    /// Applies to the OS autostart entry immediately. Omitted means leave it unchanged.
+    #[serde(default)]
+    start_with_system: Option<bool>,
 }
 
 async fn put_config(
@@ -351,6 +355,12 @@ async fn put_config(
     }
     if roots_or_patterns_changed || bridge_changed {
         start_scan(Arc::clone(&state));
+    }
+    if let Some(enabled) = body.start_with_system {
+        tokio::task::spawn_blocking(move || set_autostart_enabled(enabled))
+            .await
+            .map_err(|err| internal(format!("autostart task: {err}")))?
+            .map_err(internal)?;
     }
 
     Ok(Json(config_response(config)))
@@ -702,6 +712,7 @@ fn config_response(config: Config) -> ConfigResponse {
             .into_iter()
             .map(|(kind, pattern)| DefaultPattern { kind, pattern })
             .collect(),
+        autostart: autostart_status(),
         config,
     }
 }

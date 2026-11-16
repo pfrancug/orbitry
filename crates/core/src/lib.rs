@@ -1,6 +1,7 @@
 //! Orbitry core - scanner, process manager, port detection, and project metadata.
 
 mod artifacts;
+mod autostart;
 mod bridge;
 mod config;
 mod git;
@@ -20,6 +21,9 @@ mod util;
 mod warnings;
 
 pub use artifacts::BuildInfo;
+pub use autostart::{
+    autostart_status, refresh_autostart_path, set_autostart_enabled, AutostartStatus,
+};
 pub use bridge::{bridge_status, export_cache, BridgeCacheEntry, BridgeStatus};
 pub use config::{
     canonical, config_path, default_kind_patterns, display_path, instance_path, load_config,

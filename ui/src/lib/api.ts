@@ -35,6 +35,7 @@ export function saveConfig(config: {
   configBridge?: import("./types").ConfigBridgeMode;
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
+  startWithSystem?: boolean;
 }): Promise<AppConfig> {
   return request("/api/config", {
     method: "PUT",

@@ -50,6 +50,10 @@ struct Args {
     /// Wait for a previous Orbitry process to exit, then take over. Used by the updater.
     #[arg(long, hide = true)]
     replace_wait: Option<u32>,
+
+    /// Start silently in the tray (used by OS login autostart). Does not open the browser.
+    #[arg(long, hide = true)]
+    autostart: bool,
 }
 
 fn main() {
@@ -77,6 +81,7 @@ fn run(args: Args) -> Result<(), String> {
     }
 
     crate::update::cleanup_stale_exe();
+    let _ = orbitry_core::refresh_autostart_path();
 
     let path = config_path();
     let mut config = load_config(&path)?;
@@ -95,7 +100,9 @@ fn run(args: Args) -> Result<(), String> {
     } {
         Some(lock) => lock,
         None => {
-            open_dashboard(&instance::running_url(args.port));
+            if !args.autostart {
+                open_dashboard(&instance::running_url(args.port));
+            }
             return Ok(());
         }
     };
@@ -118,7 +125,9 @@ fn run(args: Args) -> Result<(), String> {
         Some(Ok(port)) => port,
         Some(Err(err)) if err == "already-bound" => {
             drop(lock);
-            open_dashboard(&instance::running_url(args.port));
+            if !args.autostart {
+                open_dashboard(&instance::running_url(args.port));
+            }
             let _ = server_thread.join();
             return Ok(());
         }
@@ -126,7 +135,7 @@ fn run(args: Args) -> Result<(), String> {
         None => return Err("server thread exited before becoming ready".into()),
     };
 
-    if args.open && !args.no_open {
+    if args.open && !args.no_open && !args.autostart {
         open_dashboard(&instance::dashboard_url(bound_port));
     }
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb } from "$lib/dashboard.svelte";
+  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, setStartWithSystem } from "$lib/dashboard.svelte";
   import { formatCheckedAt } from "$lib/format";
   import { checkForUpdate, installUpdate, update } from "$lib/update.svelte";
   import type { ConfigBridgeMode, ScriptKind, ScriptScope } from "$lib/types";
@@ -134,6 +134,26 @@
   </section>
 
   <section class="settings-block">
+    <label class="check-row autostart-row">
+      <input
+        type="checkbox"
+        checked={dash.config.autostart?.enabled === true}
+        disabled={dash.saving}
+        onchange={(event) => setStartWithSystem(event.currentTarget.checked)}
+      />
+      Uruchamiaj Orbitry razem z systemem
+    </label>
+    <p class="hint">
+      Po zalogowaniu Orbitry wystartuje w zasobniku, bez otwierania przeglądarki.
+    </p>
+    {#if dash.config.autostart?.stale}
+      <p class="hint">
+        Zarejestrowana ścieżka do Orbitry jest nieaktualna i zostanie zaktualizowana.
+      </p>
+    {/if}
+  </section>
+
+  <section class="settings-block">
     <p class="label">Updates</p>
     <p class="hint">
       You're on {update.current || "a development build"}.
@@ -194,6 +214,7 @@
     margin: 0.65rem 0 0.85rem;
     font-size: 0.88rem;
   }
+  .autostart-row { margin: 0 0 0.45rem; }
   .log-limit-row { margin-top: 0.55rem; }
   .log-limit-row select { min-width: 8rem; }
   .update-check-row {

@@ -361,3 +361,33 @@ export async function setLogLimitMb(limitMb: number) {
     dash.saving = false;
   }
 }
+
+export async function setStartWithSystem(enabled: boolean) {
+  if (!dash.config) return;
+  dash.saving = true;
+  dash.error = null;
+  const previous = dash.config;
+  dash.config = {
+    ...dash.config,
+    autostart: {
+      enabled,
+      command: dash.config.autostart?.command,
+      stale: false,
+    },
+  };
+  try {
+    const payload = {
+      ...withOverrides({
+        roots: dash.config.roots,
+        scriptPatterns: dash.config.scriptPatterns,
+      }),
+      startWithSystem: enabled,
+    };
+    dash.config = await saveConfig(payload);
+  } catch (err: unknown) {
+    if (previous) dash.config = previous;
+    dash.error = err instanceof Error ? err.message : "Could not save settings.";
+  } finally {
+    dash.saving = false;
+  }
+}

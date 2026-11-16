@@ -5,6 +5,12 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-16
+
+### Added
+
+- A Settings toggle, "Uruchamiaj Orbitry razem z systemem", off by default. When it is on, Orbitry starts in the tray at login and does not open the browser (`--autostart`). The real state is read from the operating system, not only from the app config: a Current Version Run key on Windows, a Launch Agent on macOS, and an autostart `.desktop` file on Linux. The registered executable path is updated if the app moves or is updated. The same option is available as a checkbox in the tray menu.
+
 ## [0.2.0] - 2026-11-16
 
 ### Added

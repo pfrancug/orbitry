@@ -1,5 +1,5 @@
 import { checkForUpdates, fetchUpdateStatus, fetchVersion, startUpdate } from "./api";
-import { t } from "./i18n";
+import { t } from "./i18n.svelte";
 import type { UpdatePhase, VersionInfo } from "./types";
 
 const ACTIVE_PHASES = new Set(["downloading", "verifying", "installing", "restarting", "error"]);

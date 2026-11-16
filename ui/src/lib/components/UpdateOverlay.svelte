@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { i18n, t } from "$lib/i18n";
+  import { i18n, t } from "$lib/i18n.svelte";
   import { update, updateInProgress } from "$lib/update.svelte";
 
   const startingVersion = update.current;

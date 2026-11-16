@@ -13,19 +13,28 @@ export function formatAgeMs(ms: number | null | undefined): string {
   return new Date(ms).toLocaleDateString();
 }
 
+export function normalizeScanDiff(diff?: Partial<ScanDiff> | null): ScanDiff {
+  return {
+    added: Array.isArray(diff?.added) ? diff.added : [],
+    removed: Array.isArray(diff?.removed) ? diff.removed : [],
+    changed: Array.isArray(diff?.changed) ? diff.changed : [],
+  };
+}
+
 export function changeLabel(item: ScanChange): string {
   if (item.kind === "script") return `${item.part ?? item.project} · ${item.script}`;
   if (item.kind === "part") return item.part ? `${item.project} / ${item.part}` : item.project;
   return item.project;
 }
 
-export function changeSummary(diff: ScanDiff): string {
+export function changeSummary(diff?: Partial<ScanDiff> | null): string {
+  const normalized = normalizeScanDiff(diff);
   const parts: string[] = [];
-  if (diff.added.length) parts.push(`${diff.added.length} new`);
-  if (diff.changed.length) parts.push(`${diff.changed.length} changed`);
-  if (diff.removed.length) parts.push(`${diff.removed.length} removed`);
-  const names = [...diff.added, ...diff.changed, ...diff.removed].slice(0, 5).map(changeLabel);
-  const extra = diff.added.length + diff.changed.length + diff.removed.length - names.length;
+  if (normalized.added.length) parts.push(`${normalized.added.length} new`);
+  if (normalized.changed.length) parts.push(`${normalized.changed.length} changed`);
+  if (normalized.removed.length) parts.push(`${normalized.removed.length} removed`);
+  const names = [...normalized.added, ...normalized.changed, ...normalized.removed].slice(0, 5).map(changeLabel);
+  const extra = normalized.added.length + normalized.changed.length + normalized.removed.length - names.length;
   const list = names.join(", ") + (extra > 0 ? ` +${extra}` : "");
   return `${parts.join(", ")}${list ? ` — ${list}` : ""}`;
 }

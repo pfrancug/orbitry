@@ -1,3 +1,5 @@
+import { migrateClientStorage } from "./storage";
+
 export type Locale = "en" | "pl";
 
 const STORAGE_KEY = "orbitry.locale";
@@ -19,6 +21,7 @@ export function detectLocale(): Locale {
 }
 
 export function initLocale() {
+  migrateClientStorage();
   i18n.locale = detectLocale();
 }
 

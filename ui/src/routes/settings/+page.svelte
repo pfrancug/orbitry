@@ -1,6 +1,6 @@
 <script lang="ts">
   import SettingsForm from "$lib/components/SettingsForm.svelte";
-  import { i18n, t } from "$lib/i18n";
+  import { i18n, t } from "$lib/i18n.svelte";
   const locale = $derived(i18n.locale);
 </script>
 

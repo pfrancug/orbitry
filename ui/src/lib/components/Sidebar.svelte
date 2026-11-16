@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { runState } from "$lib/runs.svelte";
-  import { i18n, t } from "$lib/i18n";
+  import { i18n, t } from "$lib/i18n.svelte";
   import Icon from "./Icon.svelte";
 
   let {

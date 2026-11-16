@@ -1,7 +1,7 @@
 <script lang="ts">
   import { appAutostartEnabled, appAutostartTitle, dash, partMarker, setAppAutostart, startBlockReason, startWarnReason, systemAutostartEnabled } from "$lib/dashboard.svelte";
   import { buildScripts, displayPorts, installCommand, isJsLike, partTitle, roleLabel, runScripts, scriptLabel, warningsForPart } from "$lib/format";
-  import { i18n, t } from "$lib/i18n";
+  import { i18n, t } from "$lib/i18n.svelte";
   import { isPending, runningFor, runState, startInstall, startScript, togglePart, toggleScript } from "$lib/runs.svelte";
   import type { ProjectPart } from "$lib/types";
   import PortChips from "./PortChips.svelte";

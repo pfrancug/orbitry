@@ -13,7 +13,8 @@
   import { bannerMessage, dash, refreshAll } from "$lib/dashboard.svelte";
   import { refreshModels } from "$lib/models.svelte";
   import { refreshTools } from "$lib/tools.svelte";
-  import { initLocale } from "$lib/i18n";
+  import { initLocale } from "$lib/i18n.svelte";
+  import { migrateClientStorage } from "$lib/storage";
   import { refreshVersion, startUpdatePolling, update, updateInProgress } from "$lib/update.svelte";
   import { formatAgeMs } from "$lib/format";
   import { findPart } from "$lib/format";
@@ -64,6 +65,7 @@
       .finally(() => {
         dash.loading = false;
       });
+    migrateClientStorage();
     initLocale();
     void refreshVersion();
     startUpdatePolling();

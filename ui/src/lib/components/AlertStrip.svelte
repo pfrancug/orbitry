@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { dash } from "$lib/dashboard.svelte";
-  import { t } from "$lib/i18n";
+  import { t } from "$lib/i18n.svelte";
   import { dedupeWarnings, warningSummaryLabel } from "$lib/format";
   import { runState } from "$lib/runs.svelte";
   import Icon from "./Icon.svelte";

@@ -1,7 +1,7 @@
 import { fetchConfig, fetchProjects, pickFolder, requestScan, saveConfig } from "./api";
 import { refreshRuns, restoreSelection, runState } from "./runs.svelte";
-import { findPart } from "./format";
-import { t } from "./i18n";
+import { findPart, normalizeScanDiff } from "./format";
+import { t } from "./i18n.svelte";
 import type { AppAutostartReport, AppConfig, AppWarning, ConfigBridgeMode, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanStatus, ScriptPattern } from "./types";
 
 const PROJECTS_CACHE_KEY = "orbitry.projects-cache";
@@ -84,9 +84,9 @@ export function applyProjectSnapshot(payload: ProjectsResponse) {
   watchScan();
 }
 
-export function isDiffEmpty(diff: { added: ScanChange[]; removed: ScanChange[]; changed: ScanChange[] } | null | undefined): boolean {
-  if (!diff) return true;
-  return diff.added.length + diff.removed.length + diff.changed.length === 0;
+export function isDiffEmpty(diff: { added?: ScanChange[]; removed?: ScanChange[]; changed?: ScanChange[] } | null | undefined): boolean {
+  const normalized = normalizeScanDiff(diff);
+  return normalized.added.length + normalized.removed.length + normalized.changed.length === 0;
 }
 
 export function changesVisible(): boolean {
@@ -140,8 +140,7 @@ export function startWarnReason(partId?: string, script?: string): string | null
 
 export function groupMarker(projectId: string): "new" | "changed" | "removed" | null {
   if (!changesVisible()) return null;
-  const diff = dash.scan?.diff;
-  if (!diff) return null;
+  const diff = normalizeScanDiff(dash.scan?.diff);
   if (diff.removed.some((item) => item.kind === "project" && item.projectId === projectId)) return "removed";
   if (diff.added.some((item) => item.kind === "project" && item.projectId === projectId)) return "new";
   if (
@@ -156,8 +155,7 @@ export function groupMarker(projectId: string): "new" | "changed" | "removed" | 
 
 export function partMarker(partId: string, projectId?: string): "new" | "changed" | "removed" | null {
   if (!changesVisible()) return null;
-  const diff = dash.scan?.diff;
-  if (!diff) return null;
+  const diff = normalizeScanDiff(dash.scan?.diff);
   if (isRemovedEntry(partId, undefined, projectId)) return "removed";
   if (diff.added.some((item) => item.partId === partId || (item.kind === "project" && item.projectId === projectId))) {
     return "new";

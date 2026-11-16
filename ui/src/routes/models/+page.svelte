@@ -3,7 +3,7 @@
   import Icon from "$lib/components/Icon.svelte";
   import { formatCheckedAt, fmtBytes, shortPath } from "$lib/format";
   import { models, modelsScanning, refreshModels, rescanModels } from "$lib/models.svelte";
-  import { i18n, t } from "$lib/i18n";
+  import { i18n, t } from "$lib/i18n.svelte";
   const locale = $derived(i18n.locale);
   import type { CacheSource, ModelUsage, OllamaInventory } from "$lib/types";
 

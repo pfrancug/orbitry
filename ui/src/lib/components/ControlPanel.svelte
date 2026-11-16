@@ -17,7 +17,7 @@
     warningsForPart,
     warningsForRun,
   } from "$lib/format";
-  import { i18n, t } from "$lib/i18n";
+  import { i18n, t } from "$lib/i18n.svelte";
   import {
     closePanel,
     isPending,

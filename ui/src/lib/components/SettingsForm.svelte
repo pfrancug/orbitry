@@ -1,7 +1,7 @@
 <script lang="ts">
   import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, setStartWithSystem } from "$lib/dashboard.svelte";
   import { formatCheckedAt } from "$lib/format";
-  import { i18n, setLocale, t, type Locale } from "$lib/i18n";
+  import { i18n, setLocale, t, type Locale } from "$lib/i18n.svelte";
   import { checkForUpdate, installUpdate, update } from "$lib/update.svelte";
   import type { ConfigBridgeMode, ScriptKind, ScriptScope } from "$lib/types";
 

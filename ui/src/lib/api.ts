@@ -9,11 +9,18 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
       ...init?.headers,
     },
   });
+  const detail = await response.text();
   if (!response.ok) {
-    const detail = await response.text();
     throw new Error(detail || `${response.status} ${response.statusText}`);
   }
-  return response.json() as Promise<T>;
+  if (!detail) {
+    return undefined as T;
+  }
+  try {
+    return JSON.parse(detail) as T;
+  } catch {
+    throw new Error(`Invalid JSON from ${input}`);
+  }
 }
 
 export function fetchProjects(): Promise<ProjectsResponse> {

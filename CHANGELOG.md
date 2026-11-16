@@ -5,6 +5,12 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-11-16
+
+### Fixed
+
+- The dashboard showed "500 Internal Error" on every page in 0.5.1. The language store used a Svelte rune (`$state`) in a plain `i18n.ts` file, so the compiler left a literal `$state(...)` call in the production bundle. The browser then threw `ReferenceError: $state is not defined` while loading the root layout. Clearing localStorage did not help. The store now lives in `i18n.svelte.ts` so the rune is compiled. A new error page shows the real message and a button to reset Orbitry's browser cache without touching the on-disk config. Client storage is migrated in a versioned way and invalid values are dropped. API JSON is parsed defensively. A scan diff that omits empty `added` or `removed` arrays no longer throws while rendering the layout.
+
 ## [0.5.1] - 2026-11-16
 
 ### Added

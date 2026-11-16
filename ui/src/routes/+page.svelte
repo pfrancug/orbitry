@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { dash, startBlockReason } from "$lib/dashboard.svelte";
-  import { i18n, t } from "$lib/i18n";
+  import { i18n, t } from "$lib/i18n.svelte";
   import {
     displayRunPorts,
     findPart,

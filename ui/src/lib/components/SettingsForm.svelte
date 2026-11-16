@@ -1,6 +1,6 @@
 <script lang="ts">
   import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, addIgnoredProject, removeIgnoredProject, setDesktopNotifications, setStartWithSystem } from "$lib/dashboard.svelte";
-  import { formatCheckedAt, shortPath } from "$lib/format";
+  import { formatCheckedAt, pathsEqual, shortPath } from "$lib/format";
   import { i18n, setLocale, t, type Locale } from "$lib/i18n.svelte";
   import { checkForUpdate, installUpdate, update } from "$lib/update.svelte";
   import type { ConfigBridgeMode, ScriptKind, ScriptScope } from "$lib/types";
@@ -22,12 +22,20 @@
 
   const ignored = $derived(dash.config?.ignoredProjects ?? []);
   const ignorable = $derived(
-    (dash.groups ?? []).filter((group) => !ignored.some((id) => id === group.id || id === group.path || id === group.name)),
+    (dash.groups ?? []).filter(
+      (group) => !ignored.some((id) => pathsEqual(id, group.id) || pathsEqual(id, group.path) || id === group.name),
+    ),
   );
 
   function ignoredLabel(id: string): string {
-    const group = (dash.groups ?? []).find((item) => item.id === id || item.path === id || item.name === id);
+    const group = (dash.groups ?? []).find(
+      (item) => pathsEqual(item.id, id) || pathsEqual(item.path, id) || item.name === id,
+    );
     return group?.name ?? shortPath(id);
+  }
+
+  function isKnownIgnored(id: string): boolean {
+    return (dash.groups ?? []).some((group) => pathsEqual(group.id, id) || pathsEqual(group.path, id));
   }
 
   async function submitIgnore(event: Event) {
@@ -215,18 +223,19 @@
           <option value={group.id}>{group.name}</option>
         {/each}
       </select>
-      <button type="submit" disabled={dash.saving || !ignoreDraft}>{t("settings.ignoreAdd")}</button>
+      <button type="submit" data-ignore-add disabled={dash.saving || !ignoreDraft}>{t("settings.ignoreAdd")}</button>
     </form>
-    <div class="root-list">
+    <div class="root-list" data-ignore-list>
       {#each ignored as id (id)}
         <button
           class="root-chip"
           type="button"
+          data-ignore-chip={id}
           onclick={() => removeIgnoredProject(id)}
           title={t("settings.ignoreRemove")}
         >
           <span title={id}>{ignoredLabel(id)}</span>
-          {#if !(dash.groups ?? []).some((group) => group.id === id || group.path === id)}
+          {#if !isKnownIgnored(id)}
             <em class="muted">{t("settings.ignoreMissing")}</em>
           {/if}
           <i aria-hidden="true">×</i>

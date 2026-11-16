@@ -335,7 +335,20 @@ function patchConfig(next: AppConfig | Record<string, unknown>) {
 }
 
 function cloneConfig(): AppConfig | null {
-  return dash.config ? structuredClone(dash.config) : null;
+  // $state proxies cannot be cloned as-is; a snapshot is a plain object.
+  return dash.config ? $state.snapshot(dash.config) : null;
+}
+
+function applySavedConfig(
+  payload: { ignoredProjects?: string[] },
+  saved: AppConfig,
+): AppConfig {
+  // The API omits an empty ignoredProjects list. Keep the list we just saved
+  // so a successful clear is not treated as "field missing, leave as-is".
+  if (!Object.prototype.hasOwnProperty.call(saved, "ignoredProjects") || saved.ignoredProjects == null) {
+    return { ...saved, ignoredProjects: payload.ignoredProjects ?? [] };
+  }
+  return saved;
 }
 
 function shouldRefreshProjects(next: { roots: string[]; scriptPatterns: ScriptPattern[] }): boolean {
@@ -362,10 +375,15 @@ export async function persist(next: {
   dash.error = null;
   const refreshProjects = shouldRefreshProjects(next);
   const payload = withOverrides(next);
-  const previous = cloneConfig();
+  let previous: AppConfig | null = null;
+  try {
+    previous = cloneConfig();
+  } catch {
+    previous = null;
+  }
   if (dash.config) patchConfig(payload);
   try {
-    patchConfig(await saveConfig(payload));
+    patchConfig(applySavedConfig(payload, await saveConfig(payload)));
     if (refreshProjects) applyProjectSnapshot(await fetchProjects());
   } catch (err: unknown) {
     if (previous) patchConfig(previous);

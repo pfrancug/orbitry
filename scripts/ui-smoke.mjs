@@ -53,6 +53,46 @@ for (let i = 0; i < 24; i += 1) {
   });
 }
 
+
+const configState = {
+  roots: ["/path/to/projects"],
+  scriptPatterns: [],
+  defaultPatterns: [{ kind: "dev", pattern: "dev" }],
+  portOverrides: [],
+  configBridge: "off",
+  autoCheckUpdates: false,
+  logLimitMb: 10,
+  autostartApps: [],
+  desktopNotifications: false,
+  ignoredProjects: [],
+  bridgeStatus: { state: "off", label: "Off" },
+  autostart: { enabled: false, stale: false },
+};
+
+function serializeConfig() {
+  const body = { ...configState };
+  if (!body.ignoredProjects.length) {
+    const { ignoredProjects, ...rest } = body;
+    return rest;
+  }
+  return body;
+}
+
+function applyConfigPut(body) {
+  if (Array.isArray(body.roots)) configState.roots = body.roots;
+  if (Array.isArray(body.scriptPatterns)) configState.scriptPatterns = body.scriptPatterns;
+  if (Object.prototype.hasOwnProperty.call(body, "ignoredProjects")) {
+    configState.ignoredProjects = Array.isArray(body.ignoredProjects) ? body.ignoredProjects : [];
+  }
+  if (body.configBridge != null) configState.configBridge = body.configBridge;
+  if (body.autoCheckUpdates != null) configState.autoCheckUpdates = body.autoCheckUpdates;
+  if (body.logLimitMb != null) configState.logLimitMb = body.logLimitMb;
+  if (body.desktopNotifications != null) configState.desktopNotifications = body.desktopNotifications;
+  if (Object.prototype.hasOwnProperty.call(body, "autostartApps")) {
+    configState.autostartApps = Array.isArray(body.autostartApps) ? body.autostartApps : [];
+  }
+}
+
 const mocks = {
   "GET /api/projects": {
     groups: [
@@ -110,19 +150,7 @@ const mocks = {
       },
     ],
   },
-  "GET /api/config": {
-    roots: ["/path/to/projects"],
-    scriptPatterns: [],
-    defaultPatterns: [{ kind: "dev", pattern: "dev" }],
-    portOverrides: [],
-    configBridge: "off",
-    autoCheckUpdates: false,
-    logLimitMb: 10,
-    autostartApps: [],
-    desktopNotifications: false,
-    bridgeStatus: { state: "off", label: "Off" },
-    autostart: { enabled: false, stale: false },
-  },
+  "GET /api/config": null,
   "GET /api/runs": { runs: [], warnings: [] },
   "GET /api/version": { current: "0.6.0", latest: "0.6.0", updateAvailable: false, dev: true },
   "GET /api/update/status": { current: "0.6.0", latest: "0.6.0", updateAvailable: false, dev: true },
@@ -193,8 +221,33 @@ function serveStatic(req, res) {
 function handler(req, res) {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const key = `${req.method} ${url.pathname}`;
+  if (url.pathname === "/api/config") {
+    if (req.method === "GET") {
+      json(res, serializeConfig());
+      return;
+    }
+    if (req.method === "PUT") {
+      const chunks = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("end", () => {
+        let body = {};
+        const raw = Buffer.concat(chunks).toString("utf8");
+        if (raw) {
+          try {
+            body = JSON.parse(raw);
+          } catch {
+            json(res, { error: "invalid json" }, 400);
+            return;
+          }
+        }
+        applyConfigPut(body);
+        json(res, serializeConfig());
+      });
+      return;
+    }
+  }
   if (url.pathname.startsWith("/api/")) {
-    if (mocks[key] !== undefined) {
+    if (mocks[key] !== undefined && mocks[key] !== null) {
       json(res, mocks[key]);
       return;
     }
@@ -324,6 +377,51 @@ async function runSmoke(base) {
       errors.push(
         `sidebar toggle icon jumped by dx=${Math.abs(beforeToggle.x - afterToggle.x).toFixed(2)} dy=${Math.abs(beforeToggle.y - afterToggle.y).toFixed(2)}`,
       );
+    }
+
+    await page.goto(`${base}/settings`, { waitUntil: "networkidle" });
+    await page.waitForSelector("#ignore-project", { timeout: 10_000 });
+    const ignoreValues = await page.locator("#ignore-project option").evaluateAll((opts) =>
+      opts.map((opt) => opt.value).filter(Boolean),
+    );
+    if (!ignoreValues.length) {
+      errors.push("settings ignore list has no projects to add");
+    } else {
+      await page.locator("#ignore-project").selectOption(ignoreValues[0]);
+      await page.locator("[data-ignore-add]").click();
+      try {
+        await page.waitForSelector("[data-ignore-chip]", { timeout: 10_000 });
+      } catch {
+        errors.push("adding a project to the ignore list did not show a chip");
+      }
+      const added = await page.locator("[data-ignore-chip]").count();
+      if (added !== 1) {
+        errors.push(`expected 1 ignore chip after add, got ${added}`);
+      }
+      if (added > 0) {
+        await page.locator("[data-ignore-chip]").first().click();
+        try {
+          await page.waitForFunction(() => document.querySelectorAll("[data-ignore-chip]").length === 0, {
+            timeout: 10_000,
+          });
+        } catch {
+          errors.push("removing a project from the ignore list did not clear the chip");
+        }
+      }
+      await page.goto(`${base}/settings`, { waitUntil: "networkidle" });
+      await page.waitForSelector("#ignore-project", { timeout: 10_000 });
+      const afterReload = await page.locator("[data-ignore-chip]").count();
+      if (afterReload !== 0) {
+        errors.push(`ignore removal did not persist after reload (chips=${afterReload})`);
+      }
+      const ignoredAfter = await page.evaluate(async () => {
+        const response = await fetch("/api/config");
+        const body = await response.json();
+        return body.ignoredProjects ?? [];
+      });
+      if (!Array.isArray(ignoredAfter) || ignoredAfter.length !== 0) {
+        errors.push(`GET /api/config ignoredProjects after remove+reload was ${JSON.stringify(ignoredAfter)}`);
+      }
     }
   } finally {
     await browser.close();

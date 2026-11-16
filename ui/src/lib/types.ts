@@ -131,6 +131,7 @@ export type AppConfig = {
   portOverrides?: PortOverride[];
   configBridge?: ConfigBridgeMode;
   autoCheckUpdates?: boolean;
+  logLimitMb?: number;
   bridgeStatus?: BridgeStatus;
 };
 
@@ -146,6 +147,8 @@ export type Run = {
   command: string;
   cwd: string;
   pid: number | null;
+  processStart?: number | null;
+  logPath?: string | null;
   status: RunStatus;
   exitCode: number | null;
   startedAt: number;
@@ -197,6 +200,8 @@ export type ProjectsResponse = {
   scan?: ScanStatus;
 };
 
+export type UpdatePhase = "idle" | "downloading" | "verifying" | "installing" | "restarting" | "error";
+
 export type VersionInfo = {
   current: string;
   latest?: string | null;
@@ -208,6 +213,34 @@ export type VersionInfo = {
   error?: string | null;
   autoCheck: boolean;
   dev: boolean;
+  phase?: UpdatePhase;
+  progress?: number | null;
+  message?: string | null;
+  rolledBack?: boolean;
+  checkedAt?: number | null;
+};
+
+export type SystemMetrics = {
+  cpuPct: number;
+  memUsed: number;
+  memTotal: number;
+};
+
+export type RunMetrics = {
+  cpuPct: number;
+  memBytes: number;
+  pidCount: number;
+};
+
+export type MetricsSnapshot = {
+  sampledAt: number;
+  system: SystemMetrics;
+  runs: Record<string, RunMetrics>;
+  history: { cpu: number[]; memPct: number[] };
+};
+
+export type ToolsInfo = {
+  vscodeInstalled: boolean;
 };
 
 export type UpdateResponse = VersionInfo & {

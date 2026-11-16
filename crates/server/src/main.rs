@@ -17,7 +17,7 @@ use orbitry_core::{config_path, load_config, save_config};
 use tokio::sync::mpsc;
 
 use crate::browser::{open_dashboard, show_error};
-use crate::shutdown::Shutdown;
+use crate::shutdown::{start_exit_watchdog, Shutdown};
 use crate::update::UpdateService;
 
 #[derive(Parser, Debug)]
@@ -53,6 +53,10 @@ struct Args {
 }
 
 fn main() {
+    let raw: Vec<String> = std::env::args().collect();
+    if raw.get(1).map(String::as_str) == Some("--internal-log-pump") {
+        std::process::exit(orbitry_core::run_log_pump(&raw[2..]));
+    }
     let args = Args::parse();
     if args.console {
         console_win::enable();
@@ -65,11 +69,14 @@ fn main() {
 }
 
 fn run(args: Args) -> Result<(), String> {
-    crate::update::cleanup_stale_exe();
-
     if let Some(pid) = args.replace_wait {
-        instance::wait_for_pid(pid, std::time::Duration::from_secs(60))?;
+        match crate::update::complete_replace(pid, args.port)? {
+            crate::update::ReplaceOutcome::LaunchedSuccessor => return Ok(()),
+            crate::update::ReplaceOutcome::Continue => {}
+        }
     }
+
+    crate::update::cleanup_stale_exe();
 
     let path = config_path();
     let mut config = load_config(&path)?;
@@ -132,7 +139,11 @@ fn run(args: Args) -> Result<(), String> {
         return Err(err);
     }
 
-    shutdown.request();
+    // Do not overwrite an in-flight update shutdown (apps must keep running).
+    if !shutdown.is_requested() {
+        shutdown.request_quit();
+    }
+    start_exit_watchdog(5);
     let _ = server_thread.join();
     drop(lock);
     Ok(())

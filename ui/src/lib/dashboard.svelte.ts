@@ -217,6 +217,7 @@ function withOverrides(next: {
   portOverrides?: PortOverride[];
   configBridge?: ConfigBridgeMode;
   autoCheckUpdates?: boolean;
+  logLimitMb?: number;
 }) {
   return {
     roots: next.roots,
@@ -224,6 +225,7 @@ function withOverrides(next: {
     portOverrides: next.portOverrides ?? dash.config?.portOverrides ?? [],
     configBridge: next.configBridge ?? dash.config?.configBridge ?? "auto",
     autoCheckUpdates: next.autoCheckUpdates ?? dash.config?.autoCheckUpdates ?? true,
+    logLimitMb: next.logLimitMb ?? dash.config?.logLimitMb ?? 10,
   };
 }
 
@@ -233,6 +235,7 @@ export async function persist(next: {
   portOverrides?: PortOverride[];
   configBridge?: ConfigBridgeMode;
   autoCheckUpdates?: boolean;
+  logLimitMb?: number;
 }) {
   dash.saving = true;
   dash.error = null;
@@ -335,4 +338,26 @@ export async function setAutoCheckUpdates(enabled: boolean) {
     scriptPatterns: dash.config.scriptPatterns,
     autoCheckUpdates: enabled,
   });
+}
+
+export async function setLogLimitMb(limitMb: number) {
+  if (!dash.config) return;
+  const value = Math.min(100, Math.max(2, Math.round(limitMb)));
+  dash.saving = true;
+  dash.error = null;
+  const previous = dash.config;
+  dash.config = { ...dash.config, logLimitMb: value };
+  try {
+    const payload = withOverrides({
+      roots: dash.config.roots,
+      scriptPatterns: dash.config.scriptPatterns,
+      logLimitMb: value,
+    });
+    dash.config = await saveConfig(payload);
+  } catch (err: unknown) {
+    if (previous) dash.config = previous;
+    dash.error = err instanceof Error ? err.message : "Could not save settings.";
+  } finally {
+    dash.saving = false;
+  }
 }

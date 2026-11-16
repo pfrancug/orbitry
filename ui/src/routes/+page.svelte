@@ -27,6 +27,10 @@
   import Icon from "$lib/components/Icon.svelte";
   import PortChips from "$lib/components/PortChips.svelte";
   import WarningBadge from "$lib/components/WarningBadge.svelte";
+  import ResourceMeter from "$lib/components/ResourceMeter.svelte";
+  import ResourceChip from "$lib/components/ResourceChip.svelte";
+  import { metrics, runMetrics } from "$lib/metrics.svelte";
+  import { fmtBytes, fmtPct } from "$lib/format";
 
   let now = $state(Date.now());
   let confirmStop = $state(false);
@@ -156,6 +160,28 @@
   </div>
 </div>
 
+{#if metrics.snapshot}
+  {@const system = metrics.snapshot.system}
+  {@const ramPct = system.memTotal ? (system.memUsed / system.memTotal) * 100 : null}
+  <section class="section resource-section">
+    <header class="section-head">
+      <h2>Zasoby</h2>
+      <span class="muted">system i uruchomione aplikacje</span>
+    </header>
+    <div class="resource-grid">
+      <ResourceMeter label="CPU" color="#818cf8" pct={system.cpuPct} value={fmtPct(system.cpuPct)} values={metrics.snapshot.history.cpu} />
+      <ResourceMeter
+        label="RAM"
+        color="#22d3ee"
+        pct={ramPct}
+        value={fmtPct(ramPct)}
+        sub="{fmtBytes(system.memUsed)} / {fmtBytes(system.memTotal)}"
+        values={metrics.snapshot.history.memPct}
+      />
+    </div>
+  </section>
+{/if}
+
 <section class="section">
   <header class="section-head">
     <h2>Running processes</h2>
@@ -199,6 +225,7 @@
             <th>Health</th>
             <th>Port</th>
             <th>Uptime</th>
+            <th>CPU / RAM</th>
             <th>PID</th>
             <th></th>
           </tr>
@@ -228,6 +255,7 @@
                 <PortChips {ports} health={run.health} />
               </td>
               <td class="tabular">{formatUptime(run.startedAt, now)}</td>
+              <td><ResourceChip usage={runMetrics(run.id)} /></td>
               <td class="tabular muted">{run.pid ?? "—"}</td>
               <td class="row-actions">
                 {#if port}

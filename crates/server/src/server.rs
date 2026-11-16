@@ -10,11 +10,12 @@ use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use axum::Router;
 use orbitry_core::{
-    apply_port_overrides, attach_run_warnings, bridge_status, config_fingerprint, diff_groups,
-    evaluate_warnings, export_cache, group_projects, load_config, load_scan_cache, now_ms,
-    save_config, save_scan_cache, scan, scan_cache_path, BridgeStatus, Config, ConfigBridgeMode,
-    ListeningSnapshot, PortOverride, ProcessManager, Project, RepoGroup, Run, RunStatus, SCANNER_VERSION,
-    ScanCache, ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
+    apply_port_overrides, attach_run_warnings, bridge_status, clamp_log_limit_mb, config_fingerprint,
+    diff_groups, evaluate_warnings, export_cache, group_projects, load_config, load_scan_cache,
+    now_ms, save_config, save_scan_cache, scan, scan_cache_path, BridgeStatus, Config,
+    ConfigBridgeMode, ListeningSnapshot, MetricsHub, MetricsSnapshot, PortOverride, ProcessManager,
+    Project, RepoGroup, Run, RunStatus, SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus,
+    StartError, Subscription, Warning,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -42,6 +43,7 @@ struct AppState {
     update: UpdateService,
     shutdown: Shutdown,
     port: u16,
+    metrics: MetricsHub,
 }
 
 #[derive(Serialize)]
@@ -120,6 +122,11 @@ async fn serve(
     let manager = ProcessManager::new();
     let config = load_config(&config_path).unwrap_or_default();
     manager
+        .set_log_limit_mb(config.log_limit_mb)
+        .await;
+    manager.restore().await;
+    let metrics = MetricsHub::start(manager.pid_index().clone());
+    manager
         .set_port_overrides(config.port_overrides.clone())
         .await;
     let cache_path = scan_cache_path();
@@ -147,6 +154,7 @@ async fn serve(
         update: update.clone(),
         shutdown: shutdown.clone(),
         port,
+        metrics,
     });
 
     let router = Router::new()
@@ -162,7 +170,10 @@ async fn serve(
         .route("/api/open", post(post_open))
         .route("/api/version", get(get_version))
         .route("/api/update/check", post(post_update_check))
+        .route("/api/update/status", get(get_update_status))
         .route("/api/update", post(post_update))
+        .route("/api/tools", get(get_tools))
+        .route("/api/metrics", get(get_metrics))
         .fallback(ui::serve_ui)
         .with_state(state.clone());
 
@@ -193,14 +204,21 @@ async fn serve(
 
 
     let shutdown_manager = Arc::clone(&manager);
+    let shutdown_flag = shutdown.clone();
     axum::serve(listener, router)
         .with_graceful_shutdown(async move {
             tokio::select! {
-                _ = shutdown.wait() => {}
-                _ = os_shutdown_signal() => {}
+                _ = shutdown_flag.wait() => {}
+                _ = os_shutdown_signal() => {
+                    shutdown_flag.request_quit();
+                }
             }
-            eprintln!("orbitry: shutting down, stopping child processes");
-            shutdown_manager.stop_all().await;
+            if shutdown_flag.stops_apps() {
+                eprintln!("orbitry: shutting down, stopping child processes");
+                shutdown_manager.stop_all().await;
+            } else {
+                eprintln!("orbitry: restarting for update, leaving managed apps running");
+            }
             instance::clear();
         })
         .await
@@ -281,6 +299,8 @@ struct ConfigBody {
     config_bridge: Option<ConfigBridgeMode>,
     #[serde(default)]
     auto_check_updates: Option<bool>,
+    #[serde(default)]
+    log_limit_mb: Option<u32>,
 }
 
 async fn put_config(
@@ -296,6 +316,10 @@ async fn put_config(
         auto_check_updates: body
             .auto_check_updates
             .unwrap_or(existing.auto_check_updates),
+        log_limit_mb: body
+            .log_limit_mb
+            .map(clamp_log_limit_mb)
+            .unwrap_or(existing.log_limit_mb),
     };
     config.roots = config
         .roots
@@ -317,6 +341,13 @@ async fn put_config(
             .set_port_overrides(config.port_overrides.clone())
             .await;
         apply_overrides_to_inventory(&state, &config.port_overrides);
+    }
+    if config.log_limit_mb != existing.log_limit_mb {
+        let manager = Arc::clone(&state.manager);
+        let limit = config.log_limit_mb;
+        tokio::spawn(async move {
+            manager.set_log_limit_mb(limit).await;
+        });
     }
     if roots_or_patterns_changed || bridge_changed {
         start_scan(Arc::clone(&state));
@@ -711,6 +742,28 @@ async fn get_version(
 ) -> Result<Json<VersionInfo>, (StatusCode, String)> {
     let auto_check = auto_check_flag(&state).await;
     Ok(Json(version_payload(&state, auto_check)))
+}
+
+async fn get_update_status(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<VersionInfo>, (StatusCode, String)> {
+    get_version(State(state)).await
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ToolsInfo {
+    vscode_installed: bool,
+}
+
+async fn get_metrics(State(state): State<Arc<AppState>>) -> Json<MetricsSnapshot> {
+    Json(state.metrics.snapshot())
+}
+
+async fn get_tools() -> Json<ToolsInfo> {
+    Json(ToolsInfo {
+        vscode_installed: crate::open::vscode_installed(),
+    })
 }
 
 async fn post_update_check(

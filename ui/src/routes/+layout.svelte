@@ -7,12 +7,15 @@
   import Icon from "$lib/components/Icon.svelte";
   import ScanBanner from "$lib/components/ScanBanner.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
+  import UpdateOverlay from "$lib/components/UpdateOverlay.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import { bannerMessage, dash, refreshAll } from "$lib/dashboard.svelte";
-  import { refreshVersion } from "$lib/update.svelte";
+  import { refreshTools } from "$lib/tools.svelte";
+  import { refreshVersion, update } from "$lib/update.svelte";
   import { formatAgeMs } from "$lib/format";
   import { findPart } from "$lib/format";
   import { closePanel, refreshRuns, runState, setPanelOpen } from "$lib/runs.svelte";
+  import { refreshMetrics } from "$lib/metrics.svelte";
 
   let { children } = $props();
   let sidebarCollapsed = $state(false);
@@ -59,10 +62,13 @@
         dash.loading = false;
       });
     void refreshVersion();
+    void refreshTools();
+    void refreshMetrics();
     const timer = setInterval(() => {
       refreshRuns().catch(() => {
         // Keep the last known process list if a poll fails.
       });
+      void refreshMetrics();
     }, 2000);
     const versionTimer = setInterval(() => {
       void refreshVersion();
@@ -117,6 +123,7 @@
           {/if}
         </div>
       {/if}
+      <AlertStrip />
       <button
         class="icon-btn ghost"
         type="button"
@@ -145,7 +152,9 @@
 
     <ScanBanner />
     <UpdateBanner />
-    <AlertStrip />
+    {#if update.installing || update.phase === "error" || update.phase === "restarting" || update.phase === "downloading" || update.phase === "verifying"}
+      <UpdateOverlay />
+    {/if}
 
     <div class="workspace">
       <main class="list-pane">

@@ -6,11 +6,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::instance;
 use crate::shutdown::Shutdown;
 
 const GITHUB_LATEST: &str = "https://api.github.com/repos/pfrancug/orbitry/releases/latest";
@@ -32,6 +34,26 @@ pub struct VersionInfo {
     pub error: Option<String>,
     pub auto_check: bool,
     pub dev: bool,
+    pub phase: UpdatePhase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    pub rolled_back: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checked_at: Option<i64>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UpdatePhase {
+    #[default]
+    Idle,
+    Downloading,
+    Verifying,
+    Installing,
+    Restarting,
+    Error,
 }
 
 impl VersionInfo {
@@ -47,8 +69,32 @@ impl VersionInfo {
             error: None,
             auto_check,
             dev: is_dev_build(),
+            phase: UpdatePhase::Idle,
+            progress: None,
+            message: None,
+            rolled_back: false,
+            checked_at: None,
         }
     }
+}
+
+pub fn phase_tooltip(info: &VersionInfo) -> Option<String> {
+    if !info.installing && info.phase == UpdatePhase::Idle {
+        return None;
+    }
+    let text = match info.phase {
+        UpdatePhase::Downloading => match info.progress {
+            Some(pct) => format!("Orbitry · pobieranie {pct}%"),
+            None => "Orbitry · pobieranie".into(),
+        },
+        UpdatePhase::Verifying => "Orbitry · weryfikacja SHA-256".into(),
+        UpdatePhase::Installing => "Orbitry · instalacja".into(),
+        UpdatePhase::Restarting => "Orbitry · restart".into(),
+        UpdatePhase::Error => "Orbitry · aktualizacja nie powiodła się".into(),
+        UpdatePhase::Idle if info.installing => "Orbitry · aktualizacja".into(),
+        UpdatePhase::Idle => return None,
+    };
+    Some(text)
 }
 
 #[derive(Clone)]
@@ -90,6 +136,21 @@ impl UpdateService {
         info
     }
 
+    fn set_phase(&self, phase: UpdatePhase, progress: Option<u8>, message: Option<&str>) {
+        let mut inner = self.lock();
+        inner.info.phase = phase.clone();
+        inner.info.progress = progress;
+        inner.info.message = message.map(str::to_string);
+        inner.info.installing = !matches!(phase, UpdatePhase::Idle | UpdatePhase::Error);
+        if phase == UpdatePhase::Error {
+            inner.info.installing = false;
+        }
+        log_update(&format!(
+            "phase={phase:?} progress={progress:?} {}",
+            message.unwrap_or("")
+        ));
+    }
+
     pub async fn check(&self) -> Result<VersionInfo, String> {
         if is_dev_build() {
             return Ok(self.snapshot(true));
@@ -105,6 +166,7 @@ impl UpdateService {
 
         let mut inner = self.lock();
         inner.info.checking = false;
+        inner.info.checked_at = Some(now_unix_ms());
         match result {
             Ok(release) => {
                 let latest = normalize_tag(&release.tag_name);
@@ -211,7 +273,9 @@ impl UpdateService {
                     }));
                 }
             }
+            self.set_phase(UpdatePhase::Downloading, Some(0), Some("Pobieranie nowej wersji…"));
             download_and_replace(
+                self,
                 asset_url.as_deref().unwrap(),
                 asset_name.as_deref().unwrap(),
                 checksums_url.as_deref().unwrap(),
@@ -223,13 +287,18 @@ impl UpdateService {
 
         match result {
             Ok(()) => {
-                shutdown.request();
+                self.set_phase(UpdatePhase::Restarting, None, Some("Uruchamianie nowej wersji…"));
+                shutdown.request_update();
+                start_exit_watchdog();
                 Ok(())
             }
             Err(err) => {
+                log_update(&format!("install failed: {err}"));
                 let mut inner = self.lock();
                 inner.info.installing = false;
+                inner.info.phase = UpdatePhase::Error;
                 inner.info.error = Some(err.clone());
+                inner.info.message = Some(err.clone());
                 Err(err)
             }
         }
@@ -254,6 +323,19 @@ pub fn cleanup_stale_exe() {
             let _ = fs::remove_file(&path);
         }
     }
+    if let Ok(exe) = current_exe() {
+        if let Some(dir) = exe.parent() {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|ext| ext.to_str()) == Some("download") {
+                        let _ = fs::remove_file(path);
+                    }
+                }
+            }
+        }
+    }
+    let _ = fs::remove_file(pending_path());
 }
 
 fn stale_exe_path() -> Option<PathBuf> {
@@ -373,13 +455,16 @@ fn api_client(timeout: Duration) -> Result<reqwest::Client, String> {
 }
 
 async fn download_and_replace(
+    service: &UpdateService,
     asset_url: &str,
     asset_name: &str,
     checksums_url: &str,
     port: u16,
 ) -> Result<(), String> {
     let client = api_client(DOWNLOAD_TIMEOUT)?;
-    let bytes = download(&client, asset_url).await?;
+    service.set_phase(UpdatePhase::Downloading, Some(0), Some("Pobieranie pakietu…"));
+    let bytes = download_with_progress(&client, asset_url, service).await?;
+    service.set_phase(UpdatePhase::Verifying, None, Some("Sprawdzanie SHA-256…"));
     let checksums = download_text(&client, checksums_url).await?;
     let expected = parse_checksum(&checksums, asset_name).ok_or_else(|| {
         format!("The checksums file does not list {asset_name}.")
@@ -395,11 +480,58 @@ async fn download_and_replace(
     let dir = exe.parent().unwrap_or_else(|| Path::new("."));
     let tmp = dir.join(format!("{asset_name}.download"));
     write_atomic(&tmp, &bytes)?;
+    log_update(&format!("wrote download to {}", tmp.display()));
 
-    let replaced = replace_exe(&exe, &tmp)?;
-    let _ = fs::remove_file(&tmp);
-    spawn_replacement(&replaced, port)?;
+    service.set_phase(UpdatePhase::Installing, None, Some("Przygotowanie instalacji…"));
+    let stale = stale_path_for(&exe);
+    write_pending(&PendingUpdate {
+        old_pid: std::process::id(),
+        target: exe.to_string_lossy().to_string(),
+        source: tmp.to_string_lossy().to_string(),
+        stale: stale.to_string_lossy().to_string(),
+        port,
+    })?;
+    spawn_replacement(&tmp, port)?;
+    log_update("spawned replacement helper");
     Ok(())
+}
+
+async fn download_with_progress(
+    client: &reqwest::Client,
+    url: &str,
+    service: &UpdateService,
+) -> Result<Vec<u8>, String> {
+    let mut response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|err| format!("download failed: {err}"))?;
+    if !response.status().is_success() {
+        return Err(format!("download failed: GitHub returned {}", response.status()));
+    }
+    let total = response.content_length();
+    let mut bytes = Vec::new();
+    let mut last_pct: u8 = 255;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|err| format!("download failed: {err}"))?
+    {
+        bytes.extend_from_slice(&chunk);
+        if let Some(total) = total.filter(|value| *value > 0) {
+            let pct = ((bytes.len() as u64).min(total) * 100 / total) as u8;
+            if pct != last_pct {
+                last_pct = pct;
+                service.set_phase(
+                    UpdatePhase::Downloading,
+                    Some(pct),
+                    Some("Pobieranie pakietu…"),
+                );
+            }
+        }
+    }
+    service.set_phase(UpdatePhase::Downloading, Some(100), Some("Pobieranie zakończone."));
+    Ok(bytes)
 }
 
 async fn download(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
@@ -469,6 +601,7 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 fn replace_exe(exe: &Path, new_file: &Path) -> Result<PathBuf, String> {
     let old = stale_path_for(exe);
     if old.exists() {
@@ -513,7 +646,8 @@ fn spawn_replacement(exe: &Path, port: u16) -> Result<(), String> {
         use std::os::windows::process::CommandExt;
         const DETACHED_PROCESS: u32 = 0x00000008;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
-        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
     }
     #[cfg(unix)]
     {
@@ -523,4 +657,210 @@ fn spawn_replacement(exe: &Path, port: u16) -> Result<(), String> {
     cmd.spawn()
         .map_err(|err| format!("could not start the new Orbitry process: {err}"))?;
     Ok(())
+}
+
+
+#[derive(Serialize, Deserialize)]
+struct PendingUpdate {
+    old_pid: u32,
+    target: String,
+    source: String,
+    stale: String,
+    port: u16,
+}
+
+pub enum ReplaceOutcome {
+    LaunchedSuccessor,
+    Continue,
+}
+
+/// Called by a freshly launched helper (`--replace-wait`). Waits for — and if
+/// needed stops — the previous Orbitry process, then either swaps the new
+/// binary into place or continues startup when the swap already happened.
+pub fn complete_replace(pid: u32, port: u16) -> Result<ReplaceOutcome, String> {
+    log_update(&format!("replace-wait for pid {pid} on port {port}"));
+    match instance::wait_for_pid_or_kill(pid, Duration::from_secs(20)) {
+        Ok(()) => log_update(&format!("process {pid} is gone")),
+        Err(err) => {
+            log_update(&format!("wait/kill failed: {err}"));
+            if let Some(pending) = load_pending() {
+                let _ = restore_and_relaunch(&pending, &err);
+            }
+            return Err(err);
+        }
+    }
+
+    let Some(pending) = load_pending() else {
+        log_update("no pending swap; continuing startup of this binary");
+        return Ok(ReplaceOutcome::Continue);
+    };
+
+    match swap_with_retry(&pending) {
+        Ok(()) => {
+            log_update("swap complete");
+            let _ = fs::remove_file(pending_path());
+            spawn_official(Path::new(&pending.target), pending.port)?;
+            log_update("launched official executable");
+            Ok(ReplaceOutcome::LaunchedSuccessor)
+        }
+        Err(err) => {
+            log_update(&format!("swap failed: {err}"));
+            let _ = restore_and_relaunch(&pending, &err);
+            Err(err)
+        }
+    }
+}
+
+fn pending_path() -> PathBuf {
+    orbitry_core::config_path().with_file_name("update-pending.json")
+}
+
+fn update_log_path() -> PathBuf {
+    orbitry_core::config_path().with_file_name("update.log")
+}
+
+fn log_update(message: &str) {
+    let path = update_log_path();
+    if let Some(dir) = path.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    let line = format!("{}  {message}\n", log_timestamp());
+    let mut file = match fs::OpenOptions::new().create(true).append(true).open(&path) {
+        Ok(file) => file,
+        Err(_) => return,
+    };
+    let _ = file.write_all(line.as_bytes());
+}
+
+fn log_timestamp() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|item| item.as_secs())
+        .unwrap_or(0);
+    secs.to_string()
+}
+
+fn write_pending(pending: &PendingUpdate) -> Result<(), String> {
+    let path = pending_path();
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|err| format!("create {}: {err}", dir.display()))?;
+    }
+    let data = serde_json::to_vec_pretty(pending).map_err(|err| format!("pending json: {err}"))?;
+    fs::write(&path, data).map_err(|err| format!("write {}: {err}", path.display()))?;
+    log_update(&format!("wrote pending swap to {}", path.display()));
+    Ok(())
+}
+
+fn load_pending() -> Option<PendingUpdate> {
+    let path = pending_path();
+    let data = fs::read(&path).ok()?;
+    serde_json::from_slice(&data).ok()
+}
+
+fn swap_with_retry(pending: &PendingUpdate) -> Result<(), String> {
+    let target = PathBuf::from(&pending.target);
+    let source = PathBuf::from(&pending.source);
+    let stale = PathBuf::from(&pending.stale);
+    retry(8, Duration::from_millis(400), || {
+        if stale.exists() {
+            let _ = fs::remove_file(&stale);
+        }
+        if target.exists() {
+            fs::rename(&target, &stale).map_err(|err| {
+                format!("could not move the running app aside ({}): {err}", target.display())
+            })?;
+        }
+        if let Err(err) = fs::copy(&source, &target) {
+            let _ = fs::rename(&stale, &target);
+            return Err(format!(
+                "could not write the new app ({}): {err}",
+                target.display()
+            ));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = fs::metadata(&target) {
+                let mut perms = metadata.permissions();
+                perms.set_mode(0o755);
+                let _ = fs::set_permissions(&target, perms);
+            }
+        }
+        Ok(())
+    })
+}
+
+fn restore_and_relaunch(pending: &PendingUpdate, reason: &str) -> Result<(), String> {
+    let target = PathBuf::from(&pending.target);
+    let stale = PathBuf::from(&pending.stale);
+    if !target.exists() && stale.exists() {
+        let _ = retry(5, Duration::from_millis(300), || {
+            fs::rename(&stale, &target).map_err(|err| format!("restore: {err}"))
+        });
+    }
+    log_update(&format!("rolled back after: {reason}"));
+    if target.exists() {
+        let _ = spawn_official(&target, pending.port);
+    }
+    crate::browser::show_error(&format!(
+        "The Orbitry update failed and the previous version was restored.\n\n{reason}"
+    ));
+    let _ = fs::remove_file(pending_path());
+    Ok(())
+}
+
+fn retry<T>(times: u32, delay: Duration, mut op: impl FnMut() -> Result<T, String>) -> Result<T, String> {
+    let mut last = "retry failed".to_string();
+    for attempt in 1..=times {
+        match op() {
+            Ok(value) => return Ok(value),
+            Err(err) => {
+                last = err;
+                log_update(&format!("attempt {attempt}/{times} failed: {last}"));
+                thread::sleep(delay);
+            }
+        }
+    }
+    Err(last)
+}
+
+fn spawn_official(exe: &Path, port: u16) -> Result<(), String> {
+    let mut cmd = Command::new(exe);
+    cmd.arg("--port")
+        .arg(port.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x00000008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    cmd.spawn()
+        .map_err(|err| format!("could not start Orbitry at {}: {err}", exe.display()))?;
+    Ok(())
+}
+
+fn start_exit_watchdog() {
+    thread::spawn(|| {
+        thread::sleep(Duration::from_secs(8));
+        log_update("exit watchdog: forcing process exit");
+        std::process::exit(0);
+    });
+}
+
+
+fn now_unix_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }

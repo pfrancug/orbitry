@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use crate::browser::open_dashboard;
 use crate::instance;
-use crate::shutdown::Shutdown;
+use crate::shutdown::{start_exit_watchdog, Shutdown};
 use crate::update::{is_dev_build, UpdateService, VersionInfo};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::platform::run_return::EventLoopExtRunReturn;
@@ -80,7 +80,8 @@ pub fn run(port: u16, shutdown: Shutdown, update: UpdateService) -> Result<(), S
             } else if event.id == update_id {
                 confirm_and_install(update.clone(), shutdown.clone(), port);
             } else if event.id == quit_id {
-                shutdown.request();
+                shutdown.request_quit();
+                start_exit_watchdog(5);
                 *control_flow = ControlFlow::Exit;
             }
         }
@@ -94,6 +95,11 @@ pub fn run(port: u16, shutdown: Shutdown, update: UpdateService) -> Result<(), S
             {
                 open_dashboard(&url);
             }
+        }
+
+        if shutdown.is_requested() {
+            start_exit_watchdog(5);
+            *control_flow = ControlFlow::Exit;
         }
     });
     Ok(())
@@ -112,6 +118,9 @@ fn update_item_state(info: &VersionInfo) -> (String, bool) {
 }
 
 fn tooltip(info: &VersionInfo) -> String {
+    if let Some(text) = crate::update::phase_tooltip(info) {
+        return text;
+    }
     if info.update_available {
         if let Some(latest) = &info.latest {
             return format!("Orbitry · dostępna {latest}");
@@ -173,7 +182,7 @@ fn confirm_and_install(update: UpdateService, shutdown: Shutdown, port: u16) {
     }
     let latest = info.latest.clone().unwrap_or_else(|| "nową wersję".into());
     let message = format!(
-        "Zainstalować Orbitry {latest}? Aplikacja uruchomi się ponownie. Jeśli jakieś projekty działają, zostaną zatrzymane."
+        "Zainstalować Orbitry {latest}? Orbitry uruchomi się ponownie. Uruchomione aplikacje pozostaną włączone."
     );
     if !confirm("Orbitry", &message) {
         return;

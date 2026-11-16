@@ -29,6 +29,9 @@
   import LogViewer from "./LogViewer.svelte";
   import WarningList from "./WarningList.svelte";
   import PortOverrides from "./PortOverrides.svelte";
+  import { tools } from "$lib/tools.svelte";
+  import ResourceChip from "./ResourceChip.svelte";
+  import { runMetrics } from "$lib/metrics.svelte";
 
   let { part }: { part: ProjectPart | null } = $props();
 
@@ -126,13 +129,31 @@
     </div>
 
     <div class="open-actions">
-      <button class="btn" type="button" disabled={opening !== null} onclick={() => openWith("terminal")}>
+      <button
+        class="btn"
+        type="button"
+        disabled={opening !== null}
+        title="Otwórz folder w terminalu"
+        onclick={() => openWith("terminal")}
+      >
         <Icon name="terminal" size={14} />
-        {opening === "terminal" ? "Opening..." : "Terminal"}
+        {opening === "terminal" ? "Otwieranie..." : "Terminal"}
       </button>
-      <button class="btn" type="button" disabled={opening !== null} onclick={() => openWith("vscode")}>
+      <button
+        class="btn"
+        type="button"
+        disabled={opening !== null || tools.vscodeInstalled === false}
+        title={tools.vscodeInstalled === false ? "VS Code nie jest zainstalowany" : "Otwórz w VS Code"}
+        onclick={() => openWith("vscode")}
+      >
         <Icon name="code" size={14} />
-        {opening === "vscode" ? "Opening..." : "VS Code"}
+        {#if opening === "vscode"}
+          Otwieranie...
+        {:else if tools.vscodeInstalled === false}
+          VS Code
+        {:else}
+          VS Code
+        {/if}
       </button>
     </div>
 
@@ -200,6 +221,7 @@
       {/if}
       {#if current?.status === "running"}
         <span class="muted">{formatUptime(current.startedAt)}</span>
+        <ResourceChip usage={runMetrics(current.id)} />
       {/if}
     </div>
 

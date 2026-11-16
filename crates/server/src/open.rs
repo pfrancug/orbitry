@@ -36,6 +36,31 @@ pub fn open_in_terminal(path: &Path) -> Result<(), String> {
     Err("opening a terminal is not supported on this platform".into())
 }
 
+pub fn vscode_installed() -> bool {
+    #[cfg(windows)]
+    {
+        return windows_vscode_exe().is_some();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if look_on_path(&["code", "code-insiders", "codium"]).is_some() {
+            return true;
+        }
+        const APPS: &[&str] = &[
+            "/Applications/Visual Studio Code.app",
+            "/Applications/Visual Studio Code - Insiders.app",
+            "/Applications/VSCodium.app",
+        ];
+        return APPS.iter().any(|path| Path::new(path).exists());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        return look_on_path(&["code", "code-insiders", "codium", "vscodium"]).is_some();
+    }
+    #[allow(unreachable_code)]
+    false
+}
+
 pub fn open_in_vscode(path: &Path) -> Result<(), String> {
     let path = require_dir(path)?;
     #[cfg(windows)]
@@ -90,15 +115,18 @@ fn open_terminal_windows(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-fn open_vscode_windows(path: &Path) -> Result<(), String> {
-    let dir = display_path(path);
-    let exe = look_on_path(&["Code.exe", "Code - Insiders.exe", "VSCodium.exe"])
+fn windows_vscode_exe() -> Option<PathBuf> {
+    look_on_path(&["Code.exe", "Code - Insiders.exe", "VSCodium.exe", "code.exe"])
         .or_else(|| windows_home_bin(r"Programs\Microsoft VS Code\Code.exe"))
         .or_else(|| windows_home_bin(r"Programs\Microsoft VS Code Insiders\Code - Insiders.exe"))
         .or_else(|| program_files(r"Microsoft VS Code\Code.exe"))
         .or_else(|| program_files(r"Microsoft VS Code Insiders\Code - Insiders.exe"))
-        .or_else(|| look_on_path(&["code.cmd", "code-insiders.cmd", "codium.cmd", "code"]));
-    let exe = exe.ok_or_else(|| "VS Code was not found on this machine".to_string())?;
+        .or_else(|| look_on_path(&["code.cmd", "code-insiders.cmd", "codium.cmd", "code"]))
+}
+
+fn open_vscode_windows(path: &Path) -> Result<(), String> {
+    let dir = display_path(path);
+    let exe = windows_vscode_exe().ok_or_else(|| "VS Code was not found on this machine".to_string())?;
     let hide_shim = exe
         .extension()
         .and_then(|ext| ext.to_str())

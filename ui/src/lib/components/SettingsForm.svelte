@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge } from "$lib/dashboard.svelte";
-  import { checkForUpdate, update } from "$lib/update.svelte";
+  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb } from "$lib/dashboard.svelte";
+  import { formatCheckedAt } from "$lib/format";
+  import { checkForUpdate, installUpdate, update } from "$lib/update.svelte";
   import type { ConfigBridgeMode, ScriptKind, ScriptScope } from "$lib/types";
 
   let kind = $state<ScriptKind>("dev");
@@ -114,6 +115,25 @@
   </section>
 
   <section class="settings-block">
+    <p class="label">Maks. rozmiar logów na aplikację</p>
+    <p class="hint">
+      Domyślnie 10 MB na aplikację (5 MB plus jedna kopia obrotowa). Zakres 2–100 MB.
+      Limit globalny rośnie wraz z tą wartością. Zmiana obowiązuje od razu, bez restartu.
+    </p>
+    <label class="log-limit-row">
+      <select
+        value={dash.config.logLimitMb ?? 10}
+        disabled={dash.saving}
+        onchange={(event) => setLogLimitMb(Number((event.currentTarget as HTMLSelectElement).value))}
+      >
+        {#each [2, 5, 10, 25, 50, 100] as size (size)}
+          <option value={size}>{size} MB</option>
+        {/each}
+      </select>
+    </label>
+  </section>
+
+  <section class="settings-block">
     <p class="label">Updates</p>
     <p class="hint">
       You're on {update.current || "a development build"}.
@@ -134,14 +154,35 @@
       />
       Check for updates automatically
     </label>
-    <div class="bridge-row">
+    <div class="bridge-row update-check-row">
       <button type="button" disabled={update.checking || update.dev} onclick={() => checkForUpdate()}>
-        {update.checking ? "Checking…" : "Check now"}
+        {update.checking ? "Sprawdzanie…" : "Check now"}
       </button>
+      <div class="update-inline">
+        {#if update.checking}
+          <span class="hint">Sprawdzanie aktualizacji…</span>
+        {:else if update.error}
+          <span class="hint error">{update.error}</span>
+        {:else if update.updateAvailable && update.latest}
+          <span class="hint">
+            Dostępna {update.latest}.
+            {#if update.notesUrl}
+              <a href={update.notesUrl} target="_blank" rel="noreferrer">Informacje o wydaniu</a>
+            {/if}
+          </span>
+          <button type="button" class="primary" disabled={update.installing || update.dev} onclick={() => installUpdate()}>
+            {update.installing ? "Aktualizowanie…" : "Aktualizuj"}
+          </button>
+        {:else if update.current}
+          <span class="hint">
+            Masz najnowszą wersję ({update.current})
+            {#if update.checkedAt}
+              · sprawdzono {formatCheckedAt(update.checkedAt)}
+            {/if}
+          </span>
+        {/if}
+      </div>
     </div>
-    {#if update.error}
-      <p class="hint">{update.error}</p>
-    {/if}
   </section>
 {/if}
 
@@ -153,4 +194,22 @@
     margin: 0.65rem 0 0.85rem;
     font-size: 0.88rem;
   }
+  .log-limit-row { margin-top: 0.55rem; }
+  .log-limit-row select { min-width: 8rem; }
+  .update-check-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .update-inline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem 0.75rem;
+    min-width: 0;
+    flex: 1;
+  }
+  .update-inline .hint { margin: 0; }
+  .update-inline .error { color: var(--danger); }
+  .update-inline a { color: var(--accent); }
 </style>

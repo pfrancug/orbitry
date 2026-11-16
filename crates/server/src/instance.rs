@@ -81,6 +81,36 @@ pub fn acquire_with_retry(timeout: Duration) -> Result<Option<InstanceLock>, Str
     }
 }
 
+/// Wait until `pid` has exited. If it is still alive after `timeout`, terminate
+/// it (used by the updater for the previous Orbitry instance) and wait briefly
+/// for the process to disappear.
+pub fn wait_for_pid_or_kill(pid: u32, timeout: Duration) -> Result<(), String> {
+    if pid == 0 || pid == std::process::id() {
+        return Ok(());
+    }
+    if wait_for_pid(pid, timeout).is_ok() {
+        return Ok(());
+    }
+    let _ = terminate_pid(pid);
+    wait_for_pid(pid, Duration::from_secs(5)).map_err(|_| {
+        format!("process {pid} is still running after it was asked to exit")
+    })
+}
+
+pub fn terminate_pid(pid: u32) -> Result<(), String> {
+    if pid == 0 || pid == std::process::id() {
+        return Ok(());
+    }
+    #[cfg(windows)]
+    {
+        terminate_pid_windows(pid)
+    }
+    #[cfg(unix)]
+    {
+        terminate_pid_unix(pid)
+    }
+}
+
 /// Wait until `pid` has exited, or return an error if `timeout` elapses.
 pub fn wait_for_pid(pid: u32, timeout: Duration) -> Result<(), String> {
     #[cfg(windows)]
@@ -136,4 +166,58 @@ fn wait_for_pid_unix(pid: u32, timeout: Duration) -> Result<(), String> {
         }
         thread::sleep(Duration::from_millis(200));
     }
+}
+
+#[cfg(windows)]
+fn terminate_pid_windows(pid: u32) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, TerminateProcess, WaitForSingleObject,
+    };
+
+    const PROCESS_TERMINATE: u32 = 0x0001;
+    const PROCESS_SYNCHRONIZE: u32 = 0x00100000;
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+
+    unsafe {
+        let handle = OpenProcess(
+            PROCESS_TERMINATE | PROCESS_SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION,
+            0,
+            pid,
+        );
+        if handle.is_null() {
+            return Ok(());
+        }
+        let ok = TerminateProcess(handle, 1);
+        let result = WaitForSingleObject(handle, 5000);
+        CloseHandle(handle);
+        if ok == 0 {
+            return Err(format!("could not terminate process {pid}"));
+        }
+        if result == WAIT_OBJECT_0 {
+            Ok(())
+        } else {
+            Err(format!("process {pid} did not exit after terminate"))
+        }
+    }
+}
+
+#[cfg(unix)]
+fn terminate_pid_unix(pid: u32) -> Result<(), String> {
+    let raw = pid as i32;
+    unsafe {
+        if libc::kill(raw, 0) != 0 {
+            return Ok(());
+        }
+        let _ = libc::kill(raw, libc::SIGTERM);
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(3) {
+            if libc::kill(raw, 0) != 0 {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        let _ = libc::kill(raw, libc::SIGKILL);
+    }
+    Ok(())
 }

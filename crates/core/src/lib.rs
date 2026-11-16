@@ -6,6 +6,9 @@ mod config;
 mod git;
 mod group;
 mod health;
+mod logpump;
+mod logs;
+mod metrics;
 mod manager;
 mod ports;
 mod ports_resolve;
@@ -25,7 +28,10 @@ pub use config::{
 pub use git::{find_git_root, GitInfo};
 pub use health::{check_health, HealthInfo, HealthStatus};
 pub use group::{group_projects, PartRole, ProjectPart, RepoGroup};
+pub use logpump::run_log_pump;
+pub use logs::{clamp_log_limit_mb, DEFAULT_LOG_LIMIT_MB, MAX_LOG_LIMIT_MB, MIN_LOG_LIMIT_MB};
 pub use manager::{ProcessManager, StartError, Subscription};
+pub use metrics::{MetricsHub, MetricsSnapshot};
 pub use ports::{
     apply_port_overrides, detect_expected_ports, detect_static_ports, listening_ports_for,
     Listener, ListeningSnapshot, PortInfo, PortSource,

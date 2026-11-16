@@ -1,4 +1,4 @@
-import type { AppConfig, AppWarning, PortOverride, ProjectsResponse, Run, ScriptPattern, UpdateResponse, VersionInfo } from "./types";
+import type { AppConfig, AppWarning, MetricsSnapshot, PortOverride, ProjectsResponse, Run, ScriptPattern, ToolsInfo, UpdateResponse, VersionInfo } from "./types";
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -34,6 +34,7 @@ export function saveConfig(config: {
   portOverrides?: PortOverride[];
   configBridge?: import("./types").ConfigBridgeMode;
   autoCheckUpdates?: boolean;
+  logLimitMb?: number;
 }): Promise<AppConfig> {
   return request("/api/config", {
     method: "PUT",
@@ -108,4 +109,16 @@ export function startUpdate(confirm = false): Promise<UpdateResponse> {
     method: "POST",
     body: JSON.stringify({ confirm }),
   });
+}
+
+export function fetchUpdateStatus(): Promise<VersionInfo> {
+  return request("/api/update/status");
+}
+
+export function fetchTools(): Promise<ToolsInfo> {
+  return request("/api/tools");
+}
+
+export function fetchMetrics(): Promise<MetricsSnapshot> {
+  return request("/api/metrics");
 }

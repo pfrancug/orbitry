@@ -5,6 +5,8 @@
   import type { ProjectPart } from "$lib/types";
   import PortChips from "./PortChips.svelte";
   import WarningBadge from "./WarningBadge.svelte";
+  import ResourceChip from "./ResourceChip.svelte";
+  import { runMetrics } from "$lib/metrics.svelte";
 
   let { part, marker = null }: { part: ProjectPart; marker?: "new" | "changed" | "removed" | null } = $props();
 
@@ -43,6 +45,11 @@
     <span class="port-cell">
       <PortChips ports={ports} health={live?.health ?? null} {expected} />
     </span>
+    {#if live}
+      <span class="res-cell">
+        <ResourceChip usage={runMetrics(live.id)} compact />
+      </span>
+    {/if}
   </button>
 
   <div class="app-actions">

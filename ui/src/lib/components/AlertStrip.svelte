@@ -9,6 +9,7 @@
   const STORAGE_KEY = "orbitry.alertsOpen";
 
   let open = $state(false);
+  let root: HTMLDivElement | undefined;
 
   const warnings = $derived(dedupeWarnings([...(runState.warnings ?? []), ...(dash.warnings ?? [])]));
   const danger = $derived(warnings.some((item) => item.severity === "error"));
@@ -21,8 +22,8 @@
     }
   }
 
-  function toggle() {
-    open = !open;
+  function setOpen(next: boolean) {
+    open = next;
     try {
       localStorage.setItem(STORAGE_KEY, open ? "1" : "0");
     } catch {
@@ -30,18 +31,43 @@
     }
   }
 
-  onMount(loadOpen);
+  function toggle() {
+    setOpen(!open);
+  }
+
+  function onPointerDown(event: PointerEvent) {
+    if (!open) return;
+    const target = event.target;
+    if (target instanceof Node && root?.contains(target)) return;
+    setOpen(false);
+  }
+
+  function onKey(event: KeyboardEvent) {
+    if (event.key === "Escape" && open) {
+      setOpen(false);
+    }
+  }
+
+  onMount(() => {
+    loadOpen();
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  });
 </script>
 
 {#if warnings.length}
-  <div class="alert-strip" class:danger class:warn={!danger}>
-    <button class="alert-toggle" type="button" onclick={toggle} aria-expanded={open}>
+  <div class="alert-overlay" class:danger class:warn={!danger} bind:this={root}>
+    <button class="alert-pill" type="button" onclick={toggle} aria-expanded={open} aria-haspopup="dialog">
       <Icon name="alert" size={14} />
-      <span>{warningSummaryLabel(warnings)}</span>
+      <span class="alert-label">{warningSummaryLabel(warnings)}</span>
       <span class="chevron" class:open></span>
     </button>
     {#if open}
-      <div class="alert-body">
+      <div class="alert-popover" role="dialog" aria-label="Ostrzeżenia">
         <WarningList {warnings} />
       </div>
     {/if}

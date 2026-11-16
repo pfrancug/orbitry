@@ -71,6 +71,10 @@ fn is_true(value: &bool) -> bool {
     *value
 }
 
+fn default_log_limit_mb() -> u32 {
+    crate::logs::DEFAULT_LOG_LIMIT_MB
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
@@ -84,6 +88,8 @@ pub struct Config {
     pub config_bridge: ConfigBridgeMode,
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub auto_check_updates: bool,
+    #[serde(default = "default_log_limit_mb")]
+    pub log_limit_mb: u32,
 }
 
 impl Default for Config {
@@ -94,6 +100,7 @@ impl Default for Config {
             port_overrides: Vec::new(),
             config_bridge: ConfigBridgeMode::Auto,
             auto_check_updates: true,
+            log_limit_mb: default_log_limit_mb(),
         }
     }
 }

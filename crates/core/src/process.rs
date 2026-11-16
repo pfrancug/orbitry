@@ -32,6 +32,10 @@ pub struct Run {
     pub command: String,
     pub cwd: String,
     pub pid: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process_start: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_path: Option<String>,
     pub status: RunStatus,
     pub exit_code: Option<i32>,
     pub started_at: i64,
@@ -154,18 +158,13 @@ pub fn script_command(pm: &str, script: &str, cwd: &Path) -> tokio::process::Com
         command.args(["/C", pm, "run", script]);
         #[cfg(windows)]
         {
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            command.creation_flags(CREATE_NO_WINDOW);
+            command.creation_flags(crate::logpump::detach_creation_flags());
         }
         command
     } else {
         let mut command = tokio::process::Command::new(pm);
         command.args(["run", script]);
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
+        crate::logpump::apply_detach_flags_tokio(&mut command);
         command
     };
     cmd.current_dir(cwd)
@@ -174,8 +173,6 @@ pub fn script_command(pm: &str, script: &str, cwd: &Path) -> tokio::process::Com
         .env("TERM", "xterm-256color")
         .env("PATH", path_with_node_bins(cwd))
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
         .kill_on_drop(false);
     cmd
 }
@@ -251,72 +248,3 @@ pub fn kill_process_tree_force(pid: u32) -> Result<(), String> {
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt as _;
-
-#[cfg(windows)]
-pub struct WinJob {
-    handle: windows_sys::Win32::Foundation::HANDLE,
-}
-
-#[cfg(windows)]
-unsafe impl Send for WinJob {}
-
-#[cfg(windows)]
-unsafe impl Sync for WinJob {}
-
-#[cfg(windows)]
-impl WinJob {
-    pub fn new() -> Option<Self> {
-        use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
-        use windows_sys::Win32::System::JobObjects::{
-            CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        };
-
-        unsafe {
-            let handle: HANDLE = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-            if handle.is_null() {
-                return None;
-            }
-            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            let ok = SetInformationJobObject(
-                handle,
-                JobObjectExtendedLimitInformation,
-                (&info as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
-                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            );
-            if ok == 0 {
-                CloseHandle(handle);
-                return None;
-            }
-            Some(Self { handle })
-        }
-    }
-
-    pub fn assign(&self, pid: u32) -> bool {
-        use windows_sys::Win32::Foundation::CloseHandle;
-        use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
-        use windows_sys::Win32::System::Threading::{
-            OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
-        };
-
-        unsafe {
-            let proc = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
-            if proc.is_null() {
-                return false;
-            }
-            let ok = AssignProcessToJobObject(self.handle, proc);
-            CloseHandle(proc);
-            ok != 0
-        }
-    }
-}
-
-#[cfg(windows)]
-impl Drop for WinJob {
-    fn drop(&mut self) {
-        unsafe {
-            windows_sys::Win32::Foundation::CloseHandle(self.handle);
-        }
-    }
-}

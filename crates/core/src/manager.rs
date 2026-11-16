@@ -1,33 +1,44 @@
 //! In-process manager for running detected scripts and streaming their logs.
 
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::sync::{broadcast, Mutex};
 
+use crate::config::PortOverride;
 use crate::display_path;
 use crate::health::{check_health, HealthInfo, HealthStatus};
-use crate::config::PortOverride;
+use crate::logpump::{
+    apply_detach_flags, detach_creation_flags, detach_creation_flags_no_breakaway,
+};
+use crate::logs::{
+    append_line, atomic_write, cleanup_logs, ensure_logs_dir, file_cap_bytes, run_log_path,
+    run_log_rotated_path, run_system_log_path, runs_path, write_log_limit, FinishedLog,
+    DEFAULT_LOG_LIMIT_MB,
+};
+use crate::metrics::{pid_still_same, process_start_time, RunPidIndex};
 use crate::ports::{apply_port_overrides, detect_expected_ports, ports_from_log, ListeningSnapshot};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use crate::process::{
     detect_package_manager, kill_process_tree, kill_process_tree_force, now_ms, run_command_label,
     script_command, LogLine, LogStream, Run, RunEvent, RunStatus,
 };
 
-#[cfg(windows)]
-use crate::process::WinJob;
-
 pub const LOG_BUFFER_CAP: usize = 2000;
 const FINISHED_CAP: usize = 50;
 const BROADCAST_CAP: usize = 256;
+const TAIL_POLL: Duration = Duration::from_millis(150);
 
 pub struct ProcessManager {
     inner: Mutex<Inner>,
-    #[cfg(windows)]
-    job: Option<WinJob>,
+    log_limit_mb: AtomicU32,
+    pids: RunPidIndex,
 }
 
 struct Inner {
@@ -41,6 +52,7 @@ struct RunRecord {
     tx: broadcast::Sender<RunEvent>,
     next_seq: u64,
     stop_requested: bool,
+    tail_offset: u64,
 }
 
 pub struct Subscription {
@@ -62,9 +74,83 @@ impl ProcessManager {
                 runs: HashMap::new(),
                 overrides: Vec::new(),
             }),
-            #[cfg(windows)]
-            job: WinJob::new(),
+            log_limit_mb: AtomicU32::new(DEFAULT_LOG_LIMIT_MB),
+            pids: RunPidIndex::default(),
         })
+    }
+
+    pub fn pid_index(&self) -> &RunPidIndex {
+        &self.pids
+    }
+
+    pub async fn set_log_limit_mb(self: &Arc<Self>, limit_mb: u32) {
+        let limit = crate::logs::clamp_log_limit_mb(limit_mb);
+        self.log_limit_mb.store(limit, Ordering::Relaxed);
+        let _ = write_log_limit(limit);
+        let manager = Arc::clone(self);
+        tokio::task::spawn_blocking(move || manager.cleanup_now()).await.ok();
+    }
+
+    pub fn log_limit_mb(&self) -> u32 {
+        self.log_limit_mb.load(Ordering::Relaxed)
+    }
+
+    pub async fn restore(self: &Arc<Self>) {
+        let _ = ensure_logs_dir();
+        let _ = write_log_limit(self.log_limit_mb());
+        let path = runs_path();
+        let Ok(data) = std::fs::read(&path) else {
+            self.spawn_reaper();
+            return;
+        };
+        let persisted: Vec<Run> = serde_json::from_slice(&data).unwrap_or_default();
+        for mut info in persisted {
+            let id = info.id.clone();
+            let was_running = info.status == RunStatus::Running;
+            if was_running {
+                let still = match (info.pid, info.process_start) {
+                    (Some(pid), Some(start)) => pid_still_same(pid, start),
+                    _ => false,
+                };
+                if !still {
+                    info.status = RunStatus::Exited;
+                    info.ended_at = Some(now_ms());
+                    info.exit_code = None;
+                    info.health = HealthInfo::unknown();
+                }
+            }
+            let (tx, _) = broadcast::channel(BROADCAST_CAP);
+            let mut rec = RunRecord {
+                info: info.clone(),
+                buffer: VecDeque::new(),
+                tx,
+                next_seq: 1,
+                stop_requested: false,
+                tail_offset: 0,
+            };
+            load_log_history(&mut rec);
+            if rec.info.status == RunStatus::Running {
+                rec.push_system("reconnected after Orbitry restart");
+            } else if was_running {
+                rec.push_system("process was no longer running after Orbitry restart");
+            }
+            let running_again = rec.info.status == RunStatus::Running;
+            let offset = rec.file_end();
+            rec.tail_offset = offset;
+            {
+                let mut inner = self.inner.lock().await;
+                inner.runs.insert(id.clone(), rec);
+            }
+            if running_again {
+                let manager = Arc::clone(self);
+                tokio::spawn(async move { manager.tail_and_reap(&id).await });
+            }
+        }
+        self.publish_pids().await;
+        self.persist().await;
+        self.spawn_reaper();
+        let manager = Arc::clone(self);
+        tokio::task::spawn_blocking(move || manager.cleanup_now());
     }
 
     pub async fn start(
@@ -96,21 +182,16 @@ impl ProcessManager {
             let inner = self.inner.lock().await;
             inner.overrides.clone()
         };
+        let _ = ensure_logs_dir();
         let pm = detect_package_manager(&cwd);
         let command = run_command_label(pm, &script);
         let id = uuid::Uuid::new_v4().to_string();
-        let mut child = script_command(pm, &script, &cwd)
-            .spawn()
-            .map_err(|err| StartError::Message(format!("spawn {command}: {err}")))?;
-        let pid = child.id();
-
-        #[cfg(windows)]
-        if let (Some(job), Some(pid)) = (&self.job, pid) {
-            let _ = job.assign(pid);
-        }
-
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
+        let log_path = run_log_path(&id);
+        let file_cap = file_cap_bytes(self.log_limit_mb());
+                let child_and_pid = spawn_detached_app(pm, &script, &cwd, &log_path, file_cap)
+            .map_err(StartError::Message)?;
+        let (mut child, pid) = child_and_pid;
+        let process_start = pid.and_then(process_start_time);
 
         let mut expected_ports = detect_expected_ports(&cwd, &[], Some(&script), None);
         apply_port_overrides(&mut expected_ports, &part_id, &overrides);
@@ -124,6 +205,8 @@ impl ProcessManager {
             command: command.clone(),
             cwd: display_path(&cwd),
             pid,
+            process_start,
+            log_path: Some(log_path.display().to_string()),
             status: RunStatus::Running,
             exit_code: None,
             started_at: now_ms(),
@@ -144,29 +227,13 @@ impl ProcessManager {
                 tx,
                 next_seq: 1,
                 stop_requested: false,
+                tail_offset: 0,
             };
             let pid_label = pid
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "?".into());
             rec.push_system(&format!("started {command} (pid {pid_label})"));
             inner.runs.insert(id.clone(), rec);
-        }
-
-        if let Some(pipe) = stdout {
-            tokio::spawn(pump_lines(
-                Arc::clone(self),
-                id.clone(),
-                LogStream::Stdout,
-                pipe,
-            ));
-        }
-        if let Some(pipe) = stderr {
-            tokio::spawn(pump_lines(
-                Arc::clone(self),
-                id.clone(),
-                LogStream::Stderr,
-                pipe,
-            ));
         }
 
         let waiter = Arc::clone(self);
@@ -176,6 +243,13 @@ impl ProcessManager {
             let code = status.ok().and_then(|s| s.code());
             waiter.finish(&wait_id, code).await;
         });
+
+        let tailer = Arc::clone(self);
+        let tail_id = id.clone();
+        tokio::spawn(async move { tailer.tail_logs(&tail_id).await });
+
+        self.publish_pids().await;
+        self.persist().await;
 
         let inner = self.inner.lock().await;
         Ok(inner
@@ -209,6 +283,7 @@ impl ProcessManager {
                 let inner = self.inner.lock().await;
                 if let Some(rec) = inner.runs.get(id) {
                     if rec.info.status != RunStatus::Running {
+                        self.persist_sync(&inner);
                         return Ok(rec.info.clone());
                     }
                 } else {
@@ -249,16 +324,7 @@ impl ProcessManager {
 
     pub async fn list(&self) -> Vec<Run> {
         self.refresh_live().await;
-        let inner = self.inner.lock().await;
-        let mut runs: Vec<Run> = inner.runs.values().map(|rec| rec.info.clone()).collect();
-        runs.sort_by(|a, b| {
-            let a_running = a.status == RunStatus::Running;
-            let b_running = b.status == RunStatus::Running;
-            b_running
-                .cmp(&a_running)
-                .then(b.started_at.cmp(&a.started_at))
-        });
-        runs
+        self.list_cached().await
     }
 
     pub async fn set_port_overrides(&self, overrides: Vec<PortOverride>) {
@@ -295,34 +361,47 @@ impl ProcessManager {
     }
 
     async fn finish(&self, id: &str, exit_code: Option<i32>) {
-        let mut inner = self.inner.lock().await;
-        let Some(rec) = inner.runs.get_mut(id) else {
-            return;
-        };
-        if rec.info.status != RunStatus::Running {
-            return;
+        {
+            let mut inner = self.inner.lock().await;
+            let Some(rec) = inner.runs.get_mut(id) else {
+                return;
+            };
+            if rec.info.status != RunStatus::Running {
+                return;
+            }
+            rec.info.exit_code = exit_code;
+            rec.info.ended_at = Some(now_ms());
+            rec.info.status = if rec.stop_requested || exit_code == Some(0) {
+                RunStatus::Exited
+            } else {
+                RunStatus::Failed
+            };
+            rec.info.health = HealthInfo {
+                status: HealthStatus::Unknown,
+                url: rec.info.health.url.clone(),
+                checked_at: rec.info.health.checked_at,
+                ports: rec.info.health.ports.clone(),
+            };
+            rec.info.warnings.clear();
+            let code_label = exit_code
+                .map(|code| code.to_string())
+                .unwrap_or_else(|| "unknown".into());
+            rec.push_system(&format!("exited with code {code_label}"));
+            let run = rec.info.clone();
+            let _ = rec.tx.send(RunEvent::Status { run });
+            prune_finished(&mut inner);
+            self.persist_sync(&inner);
         }
-        rec.info.exit_code = exit_code;
-        rec.info.ended_at = Some(now_ms());
-        rec.info.status = if rec.stop_requested || exit_code == Some(0) {
-            RunStatus::Exited
-        } else {
-            RunStatus::Failed
+        self.publish_pids().await;
+        let manager_limit = self.log_limit_mb();
+        let manager = {
+            // capture finished + running for cleanup
+            let inner = self.inner.lock().await;
+            collect_cleanup_state(&inner)
         };
-        rec.info.health = HealthInfo {
-            status: HealthStatus::Unknown,
-            url: rec.info.health.url.clone(),
-            checked_at: rec.info.health.checked_at,
-            ports: rec.info.health.ports.clone(),
-        };
-        rec.info.warnings.clear();
-        let code_label = exit_code
-            .map(|code| code.to_string())
-            .unwrap_or_else(|| "unknown".into());
-        rec.push_system(&format!("exited with code {code_label}"));
-        let run = rec.info.clone();
-        let _ = rec.tx.send(RunEvent::Status { run });
-        prune_finished(&mut inner);
+        tokio::task::spawn_blocking(move || {
+            cleanup_logs(manager_limit, &manager.0, &manager.1);
+        });
     }
 
     async fn push_line(&self, id: &str, stream: LogStream, text: String) {
@@ -405,10 +484,194 @@ impl ProcessManager {
             }
         }
     }
+
+    async fn persist(&self) {
+        let inner = self.inner.lock().await;
+        self.persist_sync(&inner);
+    }
+
+    fn persist_sync(&self, inner: &Inner) {
+        let runs: Vec<Run> = inner.runs.values().map(|rec| rec.info.clone()).collect();
+        if let Ok(data) = serde_json::to_vec_pretty(&runs) {
+            let _ = atomic_write(&runs_path(), &data);
+        }
+    }
+
+    async fn publish_pids(&self) {
+        let inner = self.inner.lock().await;
+        let pids: Vec<(String, u32)> = inner
+            .runs
+            .values()
+            .filter(|rec| rec.info.status == RunStatus::Running)
+            .filter_map(|rec| rec.info.pid.map(|pid| (rec.info.id.clone(), pid)))
+            .collect();
+        self.pids.set(pids);
+    }
+
+    fn spawn_reaper(self: &Arc<Self>) {
+        let manager = Arc::clone(self);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                manager.reap_missing().await;
+            }
+        });
+    }
+
+    async fn reap_missing(&self) {
+        let stale: Vec<String> = {
+            let inner = self.inner.lock().await;
+            inner
+                .runs
+                .values()
+                .filter(|rec| rec.info.status == RunStatus::Running)
+                .filter(|rec| match (rec.info.pid, rec.info.process_start) {
+                    (Some(pid), Some(start)) => !pid_still_same(pid, start),
+                    (Some(pid), None) => process_start_time(pid).is_none(),
+                    _ => true,
+                })
+                .map(|rec| rec.info.id.clone())
+                .collect()
+        };
+        for id in stale {
+            self.finish(&id, None).await;
+        }
+    }
+
+    async fn tail_and_reap(&self, id: &str) {
+        tokio::join!(self.tail_logs(id), async {
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let running = {
+                    let inner = self.inner.lock().await;
+                    inner
+                        .runs
+                        .get(id)
+                        .is_some_and(|rec| rec.info.status == RunStatus::Running)
+                };
+                if !running {
+                    break;
+                }
+            }
+        });
+    }
+
+    async fn tail_logs(&self, id: &str) {
+        let log_path = run_log_path(id);
+        let rotated = run_log_rotated_path(id);
+        let mut offset = {
+            let inner = self.inner.lock().await;
+            inner.runs.get(id).map(|rec| rec.tail_offset).unwrap_or(0)
+        };
+        let mut buf = Vec::new();
+        loop {
+            {
+                let inner = self.inner.lock().await;
+                if inner
+                    .runs
+                    .get(id)
+                    .is_none_or(|rec| rec.info.status != RunStatus::Running)
+                {
+                    // One last read so the final lines still appear.
+                    let _ = self.read_new_lines(id, &log_path, &rotated, &mut offset, &mut buf).await;
+                    break;
+                }
+            }
+            let _ = self
+                .read_new_lines(id, &log_path, &rotated, &mut offset, &mut buf)
+                .await;
+            tokio::time::sleep(TAIL_POLL).await;
+        }
+    }
+
+    async fn read_new_lines(
+        &self,
+        id: &str,
+        path: &Path,
+        rotated: &Path,
+        offset: &mut u64,
+        leftover: &mut Vec<u8>,
+    ) -> std::io::Result<()> {
+        let size = match tokio::fs::metadata(path).await {
+            Ok(meta) => meta.len(),
+            Err(_) => return Ok(()),
+        };
+        if size < *offset {
+            // The live file was rotated; drain the remainder of the previous file first.
+            if rotated.exists() {
+                if let Ok(mut file) = tokio::fs::File::open(rotated).await {
+                    let _ = file.seek(tokio::io::SeekFrom::Start(*offset)).await;
+                    let mut rest = Vec::new();
+                    let _ = file.read_to_end(&mut rest).await;
+                    leftover.extend_from_slice(&rest);
+                    self.flush_lines(id, leftover, false).await;
+                }
+            }
+            *offset = 0;
+        }
+        if size == *offset {
+            return Ok(());
+        }
+        let mut file = tokio::fs::File::open(path).await?;
+        file.seek(tokio::io::SeekFrom::Start(*offset)).await?;
+        let mut chunk = Vec::new();
+        file.read_to_end(&mut chunk).await?;
+        *offset += chunk.len() as u64;
+        leftover.extend_from_slice(&chunk);
+        self.flush_lines(id, leftover, false).await;
+        Ok(())
+    }
+
+    async fn flush_lines(&self, id: &str, leftover: &mut Vec<u8>, drain: bool) {
+        let text = String::from_utf8_lossy(leftover);
+        let last_nl = text.rfind('\n');
+        let (complete, rest) = if let Some(index) = last_nl {
+            let split = index + 1;
+            let bytes = split.min(leftover.len());
+            let complete = String::from_utf8_lossy(&leftover[..bytes]).to_string();
+            let rest = leftover[bytes..].to_vec();
+            (complete, rest)
+        } else if drain {
+            let complete = String::from_utf8_lossy(leftover).to_string();
+            leftover.clear();
+            if complete.is_empty() {
+                return;
+            }
+            (complete, Vec::new())
+        } else {
+            return;
+        };
+        *leftover = rest;
+        for line in complete.split_inclusive(['\n', '\r']) {
+            let line = line.trim_end_matches(['\r', '\n']);
+            if line.is_empty() {
+                continue;
+            }
+            self.push_line(id, LogStream::Stdout, line.to_string()).await;
+        }
+    }
+
+    fn cleanup_now(&self) {
+        // Best-effort; called from a blocking thread.
+        let running;
+        let finished;
+        if let Ok(inner) = self.inner.try_lock() {
+            let state = collect_cleanup_state(&inner);
+            running = state.0;
+            finished = state.1;
+        } else {
+            return;
+        }
+        cleanup_logs(self.log_limit_mb(), &running, &finished);
+    }
 }
 
 impl RunRecord {
     fn push(&mut self, stream: LogStream, text: String) {
+        if stream == LogStream::System {
+            let path = run_system_log_path(&self.info.id);
+            let _ = append_line(&path, &text);
+        }
         let seq = self.next_seq;
         self.next_seq += 1;
         let ts = now_ms();
@@ -432,6 +695,48 @@ impl RunRecord {
 
     fn push_system(&mut self, text: &str) {
         self.push(LogStream::System, text.to_string());
+    }
+
+    fn file_end(&self) -> u64 {
+        run_log_path(&self.info.id)
+            .metadata()
+            .map(|m| m.len())
+            .unwrap_or(0)
+    }
+}
+
+fn load_log_history(rec: &mut RunRecord) {
+    let rotated = run_log_rotated_path(&rec.info.id);
+    let live = run_log_path(&rec.info.id);
+    let system = run_system_log_path(&rec.info.id);
+    let mut lines: Vec<(i64, LogStream, String)> = Vec::new();
+    // We don't store timestamps in the files; use 0 and let seq order them.
+    for (path, stream) in [
+        (rotated, LogStream::Stdout),
+        (live, LogStream::Stdout),
+        (system, LogStream::System),
+    ] {
+        if let Ok(data) = std::fs::read_to_string(&path) {
+            for line in data.lines() {
+                if !line.is_empty() {
+                    lines.push((0, stream, line.to_string()));
+                }
+            }
+        }
+    }
+    if lines.len() > LOG_BUFFER_CAP {
+        lines = lines.split_off(lines.len() - LOG_BUFFER_CAP);
+    }
+    for (_, stream, text) in lines {
+        // Avoid writing system lines back to disk while loading.
+        let seq = rec.next_seq;
+        rec.next_seq += 1;
+        rec.buffer.push_back(LogLine {
+            seq,
+            stream,
+            text,
+            ts: rec.info.started_at,
+        });
     }
 }
 
@@ -457,81 +762,91 @@ fn prune_finished(inner: &mut Inner) {
     }
 }
 
-async fn pump_lines<R>(manager: Arc<ProcessManager>, id: String, stream: LogStream, pipe: R)
-where
-    R: tokio::io::AsyncRead + Unpin + Send + 'static,
-{
-    let mut reader = BufReader::new(pipe);
-    let mut buf = Vec::new();
-    loop {
-        buf.clear();
-        match read_line_cr(&mut reader, &mut buf).await {
-            Ok(0) => break,
-            Ok(_) => {
-                let text = String::from_utf8_lossy(&buf)
-                    .trim_end_matches(['\r', '\n'])
-                    .to_string();
-                manager.push_line(&id, stream, text).await;
-            }
-            Err(_) => break,
-        }
-    }
+fn collect_cleanup_state(inner: &Inner) -> (Vec<String>, Vec<FinishedLog>) {
+    let running: Vec<String> = inner
+        .runs
+        .values()
+        .filter(|rec| rec.info.status == RunStatus::Running)
+        .map(|rec| rec.info.id.clone())
+        .collect();
+    let finished = inner
+        .runs
+        .values()
+        .filter(|rec| rec.info.status != RunStatus::Running)
+        .map(|rec| FinishedLog {
+            run_id: rec.info.id.clone(),
+            part_key: format!("{}::{}", rec.info.part_id, rec.info.script),
+            ended_at_ms: rec.info.ended_at.unwrap_or(rec.info.started_at),
+        })
+        .collect();
+    (running, finished)
 }
 
-async fn read_line_cr<R: tokio::io::AsyncBufRead + Unpin>(
-    reader: &mut R,
-    buf: &mut Vec<u8>,
-) -> std::io::Result<usize> {
-    let mut read = 0usize;
-    loop {
-        let available = reader.fill_buf().await?;
-        if available.is_empty() {
-            return Ok(read);
-        }
-        let mut consumed = 0usize;
-        let mut done = false;
-        let mut take = 0usize;
-        for (index, byte) in available.iter().enumerate() {
-            if *byte == b'\n' {
-                take = index + 1;
-                consumed = take;
-                done = true;
-                break;
-            }
-            if *byte == b'\r' {
-                take = index + 1;
-                consumed = take;
-                if index + 1 < available.len() && available[index + 1] == b'\n' {
-                    take = index + 2;
-                    consumed = take;
-                }
-                done = true;
-                break;
-            }
-        }
-        if !done {
-            take = available.len();
-            consumed = take;
-        }
-        buf.extend_from_slice(&available[..take]);
-        read += consumed;
-        reader.consume(consumed);
-        if done {
-            return Ok(read);
-        }
-    }
-}
+fn spawn_detached_app(
+    pm: &str,
+    script: &str,
+    cwd: &Path,
+    log_path: &Path,
+    file_cap: u64,
+) -> Result<(tokio::process::Child, Option<u32>), String> {
+    let (reader, writer) =
+        os_pipe::pipe().map_err(|err| format!("log pipe: {err}"))?;
+    let writer_err = writer
+        .try_clone()
+        .map_err(|err| format!("log pipe: {err}"))?;
 
-impl Drop for ProcessManager {
-    fn drop(&mut self) {
-        if let Ok(inner) = self.inner.try_lock() {
-            for rec in inner.runs.values() {
-                if rec.info.status == RunStatus::Running {
-                    if let Some(pid) = rec.info.pid {
-                        let _ = kill_process_tree(pid);
-                    }
-                }
+    let mut pump_cmd = std::process::Command::new(
+        crate::logpump::ensure_logpump_exe().map_err(|err| format!("logpump: {err}"))?,
+    );
+    pump_cmd
+        .args([
+            "--internal-log-pump",
+            "--log",
+            &log_path.to_string_lossy(),
+            "--limit-file",
+            &crate::logs::log_limit_path().to_string_lossy(),
+            "--file-cap",
+            &file_cap.to_string(),
+        ])
+        .stdin(std::process::Stdio::from(reader))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    apply_detach_flags(&mut pump_cmd);
+    let mut pump = match pump_cmd.spawn() {
+        Ok(child) => child,
+        Err(_) => {
+            #[cfg(windows)]
+            {
+                pump_cmd.creation_flags(detach_creation_flags_no_breakaway());
             }
+            pump_cmd
+                .spawn()
+                .map_err(|err| format!("logpump: {err}"))?
+        }
+    };
+    std::thread::spawn(move || {
+        let _ = pump.wait();
+    });
+
+    let mut cmd = script_command(pm, script, cwd);
+    cmd.stdout(std::process::Stdio::from(writer))
+        .stderr(std::process::Stdio::from(writer_err));
+    match cmd.spawn() {
+        Ok(child) => {
+            let pid = child.id();
+            Ok((child, pid))
+        }
+        Err(err) => {
+            #[cfg(windows)]
+            {
+                let mut retry = script_command(pm, script, cwd);
+                retry.creation_flags(detach_creation_flags_no_breakaway());
+                // The previous pipe writers were moved; we cannot retry with the same
+                // handles. Surface the original error instead of a broken retry.
+                let _ = detach_creation_flags();
+                let _ = retry;
+            }
+            Err(format!("spawn {pm} run {script}: {err}"))
         }
     }
 }

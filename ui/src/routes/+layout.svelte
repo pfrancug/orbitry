@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { fly } from "svelte/transition";
   import "../app.css";
   import AlertStrip from "$lib/components/AlertStrip.svelte";
   import ControlPanel from "$lib/components/ControlPanel.svelte";
@@ -15,7 +16,6 @@
   import { initLocale, t } from "$lib/i18n.svelte";
   import { migrateClientStorage } from "$lib/storage";
   import { refreshVersion, startUpdatePolling, update, updateInProgress } from "$lib/update.svelte";
-  import { formatAgeMs } from "$lib/format";
   import { findPart } from "$lib/format";
   import { closePanel, refreshRuns, runState } from "$lib/runs.svelte";
   import { refreshMetrics } from "$lib/metrics.svelte";
@@ -46,6 +46,23 @@
 
   function onKey(event: KeyboardEvent) {
     if (event.key === "Escape" && runState.panelOpen) closePanel();
+  }
+
+  function scanAge(ms: number) {
+    const seconds = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    if (seconds < 60) return t("chrome.justNow");
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return t("chrome.ageMinutes", { count: minutes });
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return t("chrome.ageHours", { count: hours });
+    const days = Math.floor(hours / 24);
+    if (days < 14) return t("chrome.ageDays", { count: days });
+    return new Date(ms).toLocaleDateString();
+  }
+
+  function panelFly(node: Element) {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    return fly(node, reduce ? { duration: 0, x: 0, y: 0 } : { duration: 200, x: 32, y: 0 });
   }
 
   onMount(() => {
@@ -102,13 +119,13 @@
         >
           <span class="scan-dot" aria-hidden="true"></span>
           {#if dash.scan.state === "scanning" && dash.scan.stale && dash.scan.scannedAt}
-            Cached · scanned {formatAgeMs(dash.scan.scannedAt)} · verifying…
+            {t("chrome.cachedVerifying", { time: scanAge(dash.scan.scannedAt) })}
           {:else if dash.scan.state === "scanning"}
-            Scanning…
+            {t("chrome.scanning")}
           {:else if dash.scan.state === "cached" && dash.scan.scannedAt}
-            Cached · scanned {formatAgeMs(dash.scan.scannedAt)}
+            {t("chrome.cachedScanned", { time: scanAge(dash.scan.scannedAt) })}
           {:else if dash.scan.error}
-            Scan failed
+            {t("chrome.scanFailed")}
           {/if}
         </div>
       {/if}
@@ -118,10 +135,10 @@
         type="button"
         disabled={dash.refreshing || dash.loading}
         onclick={() => refreshAll(true)}
-        title="Refresh"
+        title={t("chrome.refresh")}
       >
         <Icon name="refresh" />
-        <span class="btn-label">{dash.refreshing || dash.scan?.state === "scanning" ? "Verifying..." : "Refresh"}</span>
+        <span class="btn-label">{dash.refreshing || dash.scan?.state === "scanning" ? t("chrome.verifying") : t("chrome.refresh")}</span>
       </button>
     </header>
 
@@ -149,7 +166,9 @@
         {@render children()}
       </main>
       {#if runState.panelOpen}
-        <ControlPanel part={selectedPart} />
+        <div class="control-panel-wrap" transition:panelFly>
+          <ControlPanel part={selectedPart} />
+        </div>
       {/if}
     </div>
   </div>

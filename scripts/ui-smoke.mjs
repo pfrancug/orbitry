@@ -268,6 +268,63 @@ async function runSmoke(base) {
     if (after <= before) {
       errors.push(`wheel over models list did not scroll .list-pane (scrollTop ${before} -> ${after})`);
     }
+
+    await page.goto(`${base}/`, { waitUntil: "networkidle" });
+    await page.waitForSelector(".sidebar-nav .nav-item .nav-icon", { timeout: 10_000 });
+    const boxesOf = (selector) =>
+      page.$$eval(selector, (els) =>
+        els.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { x: r.x, y: r.y };
+        }),
+      );
+    const iconSel = ".sidebar-nav .nav-item .nav-icon";
+    const beforeIcons = await boxesOf(iconSel);
+    const beforeToggle = await page.locator(".sidebar-toggle .nav-icon").evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y };
+    });
+    await page.locator(".sidebar-toggle").click();
+    await page.locator(".sidebar").evaluate((el) => {
+      const shell = el.closest(".app-shell");
+      return new Promise((resolve) => {
+        const done = () => resolve();
+        const target = shell ?? el;
+        const timeout = setTimeout(done, 400);
+        target.addEventListener(
+          "transitionend",
+          (event) => {
+            if (event.propertyName === "grid-template-columns" || event.propertyName === "width") {
+              clearTimeout(timeout);
+              done();
+            }
+          },
+          { once: true },
+        );
+      });
+    });
+    await page.waitForTimeout(50);
+    const afterIcons = await boxesOf(iconSel);
+    const afterToggle = await page.locator(".sidebar-toggle .nav-icon").evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y };
+    });
+    if (!beforeIcons.length) errors.push("no sidebar nav icons found");
+    if (beforeIcons.length !== afterIcons.length) {
+      errors.push(`sidebar icon count changed: ${beforeIcons.length} -> ${afterIcons.length}`);
+    }
+    for (let i = 0; i < Math.min(beforeIcons.length, afterIcons.length); i += 1) {
+      const dx = Math.abs(beforeIcons[i].x - afterIcons[i].x);
+      const dy = Math.abs(beforeIcons[i].y - afterIcons[i].y);
+      if (dx > 1 || dy > 1) {
+        errors.push(`sidebar icon ${i} jumped by dx=${dx.toFixed(2)} dy=${dy.toFixed(2)}`);
+      }
+    }
+    if (Math.abs(beforeToggle.x - afterToggle.x) > 1 || Math.abs(beforeToggle.y - afterToggle.y) > 1) {
+      errors.push(
+        `sidebar toggle icon jumped by dx=${Math.abs(beforeToggle.x - afterToggle.x).toFixed(2)} dy=${Math.abs(beforeToggle.y - afterToggle.y).toFixed(2)}`,
+      );
+    }
   } finally {
     await browser.close();
   }

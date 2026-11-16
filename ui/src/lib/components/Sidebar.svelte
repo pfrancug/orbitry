@@ -29,15 +29,15 @@
   }
 </script>
 
-<aside class="sidebar" class:collapsed aria-label={t("nav.overview")} data-locale={locale}>
+<aside class="sidebar" class:collapsed aria-label={t("nav.sidebar")} data-locale={locale}>
   <div class="sidebar-brand">
-    <img class="mark" src="/orbitry.svg" width="28" height="28" alt="" />
-    {#if !collapsed}
-      <div>
-        <p class="logo">Orbitry</p>
-        <p class="tagline">Control plane</p>
-      </div>
-    {/if}
+    <span class="nav-icon">
+      <img class="mark" src="/orbitry.svg" width="28" height="28" alt="" />
+    </span>
+    <div class="sidebar-brand-copy">
+      <p class="logo">Orbitry</p>
+      <p class="tagline">{t("nav.tagline")}</p>
+    </div>
   </div>
 
   <nav class="sidebar-nav">
@@ -48,14 +48,13 @@
         href={item.href}
         title={item.label}
       >
-        <Icon name={item.icon} size={18} />
-        {#if !collapsed}
-          <span>{item.label}</span>
-          {#if item.href === "/" && running > 0}
-            <em class="nav-badge">{running}</em>
-          {/if}
-        {:else if item.href === "/" && running > 0}
-          <em class="nav-dot" aria-label="{running} running"></em>
+        <span class="nav-icon">
+          <Icon name={item.icon} size={18} />
+        </span>
+        <span class="nav-label">{item.label}</span>
+        {#if item.href === "/" && running > 0}
+          <em class="nav-badge">{running}</em>
+          <em class="nav-dot" aria-label={t("nav.runningCount", { count: running })}></em>
         {/if}
       </a>
     {/each}
@@ -65,10 +64,13 @@
     class="sidebar-toggle"
     type="button"
     onclick={ontoggle}
-    title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-    aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+    title={collapsed ? t("nav.expand") : t("nav.collapse")}
+    aria-label={collapsed ? t("nav.expand") : t("nav.collapse")}
+    aria-expanded={!collapsed}
   >
-    <Icon name={collapsed ? "expand" : "collapse"} />
-    {#if !collapsed}<span>Collapse</span>{/if}
+    <span class="nav-icon">
+      <Icon name={collapsed ? "expand" : "collapse"} />
+    </span>
+    <span class="sidebar-toggle-label">{t("nav.collapse")}</span>
   </button>
 </aside>

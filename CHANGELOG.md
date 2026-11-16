@@ -5,6 +5,14 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-11-16
+
+### Fixed
+
+- The left sidebar now animates when it collapses to the icon rail or expands again. Icons stay in a fixed column and no longer jump or recenter. Labels fade and clip out, and the collapse control stays in place.
+- The details panel slides in from the right and fades when it opens or closes, including close from the X or by clicking the same list item again. It remains an overlay, so it does not push the page.
+- Remaining top-bar and sidebar chrome strings (Refresh, Control plane, Collapse, scan status) are translated in Polish and English.
+
 ## [0.9.0] - 2026-11-16
 
 ### Changed
@@ -14,7 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The unused top-bar menu button is gone. The left sidebar stays available and can still collapse to an icon rail from its own control.
 - The details panel is no longer opened from a top-bar icon. It opens from a list item and closes when that item is clicked again or when the panel is closed. Closed panel content is not kept or restored. Existing saved panel and popover state is cleared by a localStorage migration.
 - The warnings popover is wider and simpler: a short header, a single scrolling list, minimal dividers, and an Open details action when the warning belongs to an app. On narrower desktop widths the panel overlays on the right instead of becoming a mobile bottom sheet.
-- Scan notices stay over the main list and no longer cover the details panel header or the warnings popover.
 
 ## [0.8.0] - 2026-11-16
 

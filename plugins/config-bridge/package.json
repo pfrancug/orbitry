@@ -2,11 +2,9 @@
   "name": "orbitry-config-bridge",
   "version": "0.0.0",
   "private": true,
-  "description": "Optional Node plugin that evaluates code-based app configs and returns JSON to Orbitry.",
-  "license": "MIT",
   "type": "module",
-  "author": "Piotr Francug",
-  "engines": {
-    "node": ">=20"
+  "description": "Optional Orbitry helper that reads a project's Vite or Next config without starting a server.",
+  "bin": {
+    "orbitry-config-bridge": "./index.mjs"
   }
 }

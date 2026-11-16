@@ -5,6 +5,27 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-11-16
+
+### Added
+
+- The details side panel has Details and Logs tabs, and a footer with Open in Terminal, VS Code, and the system file manager (File Explorer on Windows, Finder on macOS, the file manager on Linux). Those open actions are user-initiated and use `CREATE_NO_WINDOW` on Windows.
+- The Logs page uses a console-style tab strip instead of pill chips, with a dark monospace output area.
+- On Overview, each running process keeps a logs link. Restart and Stop moved into a "…" menu. The port itself is the link to the app; the extra external-link icon is gone.
+
+### Changed
+
+- On the AI Models page, "Used by" shows unique project names, not a list of file paths. Paths stay in the expandable row details. The list has column headers, and the summary cards put the label under the number (models, total, sources).
+- Project app rows are a single aligned row in the style of a process list: role, name and indicators, ports, resources, and a primary script action with a menu of every script from the app's `package.json`. Autostart was removed from the list and stays in the details panel. The separate Build button and section are gone; build is one of the scripts. A script's source is shown only when it is not the app's own package. Missing dependencies show as a "deps" indicator next to warnings, with the explanation and Install action on click or in the details panel.
+- The details panel is wider. Warnings in the panel are listed immediately, not behind a collapsed disclosure.
+- The "Ignore port" control was removed from the UI. Existing config may still contain an `ignore` field; it is accepted and ignored so older files keep loading.
+- Settings saves no longer replace the whole dashboard snapshot or flash the form as busy. Only the changed config fields update, and the project list is refetched only when folders or script patterns change.
+- Button hover and focus styles are consistent: a subtle background and border change, no layout shift, and a visible focus ring. Primary buttons keep their fill on hover instead of dropping back to a faint background.
+
+### Detection
+
+- The scanner now lists every script in an app's `package.json`. Known run and build names stay classified as before. Other scripts are available to run but are not used for autostart or as the default run action.
+
 ## [0.7.0] - 2026-11-16
 
 ### Added

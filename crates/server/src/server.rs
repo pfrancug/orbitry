@@ -656,6 +656,7 @@ async fn post_open(
     let result = tokio::task::spawn_blocking(move || match body.kind.as_str() {
         "terminal" => crate::open::open_in_terminal(&path),
         "vscode" => crate::open::open_in_vscode(&path),
+        "explorer" => crate::open::open_in_explorer(&path),
         other => Err(format!("unknown open kind: {other}")),
     })
     .await

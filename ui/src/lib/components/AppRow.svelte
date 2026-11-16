@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { appAutostartEnabled, appAutostartTitle, dash, partMarker, setAppAutostart, startBlockReason, startWarnReason, systemAutostartEnabled, visibleWarnings } from "$lib/dashboard.svelte";
-  import { displayPorts, installCommand, isJsLike, partTitle, roleLabel, runScripts, scriptEachKey, scriptLabel, warningsForPart } from "$lib/format";
+  import { dash, partMarker, startBlockReason, startWarnReason, visibleWarnings } from "$lib/dashboard.svelte";
+  import { allScripts, displayPorts, isJsLike, partTitle, primaryScript, roleLabel, scriptEachKey, scriptLabel, scriptSourceDiffers, warningsForPart } from "$lib/format";
   import { i18n, t } from "$lib/i18n.svelte";
-  import { isPending, runningFor, runState, startInstall, togglePart, toggleScript } from "$lib/runs.svelte";
+  import { isPending, runningFor, runState, togglePart, toggleScript } from "$lib/runs.svelte";
   import type { ProjectPart } from "$lib/types";
   import PortChips from "./PortChips.svelte";
   import WarningBadge from "./WarningBadge.svelte";
+  import DepsBadge from "./DepsBadge.svelte";
   import ResourceChip from "./ResourceChip.svelte";
   import { runMetrics } from "$lib/metrics.svelte";
 
@@ -24,38 +25,42 @@
     visibleWarnings(warningsForPart(part.id, runState.runs, [...(runState.warnings ?? []), ...(dash.warnings ?? [])])),
   );
   const expected = $derived(!live);
-  const systemOn = $derived(systemAutostartEnabled());
-  const autoOn = $derived(appAutostartEnabled(part.id));
-  const autoTitle = $derived(appAutostartTitle());
-  const startScripts = $derived(runScripts(part));
+  const scripts = $derived(allScripts(part));
+  const primary = $derived(primaryScript(part));
+  const activeName = $derived(live?.script ?? primary?.name ?? null);
+  const activeScript = $derived(scripts.find((script) => script.name === activeName) ?? primary);
   const missingDeps = $derived(isJsLike(part.kind) && !part.nodeModules);
-  const depsCommand = $derived(installCommand(part));
-  const installLive = $derived(runningFor(part.id, "install"));
-  const installPending = $derived(isPending(part.id, "install"));
+  const run = $derived(activeName ? runningFor(part.id, activeName) : undefined);
+  const pending = $derived(activeName ? isPending(part.id, activeName) : false);
+  const blocked = $derived(activeName && !run ? startBlockReason(part.id, activeName) : null);
+  const warned = $derived(activeName && !run ? startWarnReason(part.id, activeName) : null);
+  let menuOpen = $state(false);
+  let menuRoot = $state<HTMLDivElement | undefined>(undefined);
+
+  $effect(() => {
+    if (!menuOpen) return;
+    const onPointer = (event: PointerEvent) => {
+      if (menuRoot && !menuRoot.contains(event.target as Node)) menuOpen = false;
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") menuOpen = false;
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  });
 </script>
 
 <div class="app-row" class:selected class:live={Boolean(live)} class:removed={flag === "removed"} data-locale={locale}>
-  <label class="app-autostart" class:off={!systemOn} title={autoTitle}>
-    <input
-      type="checkbox"
-      checked={autoOn}
-      disabled={!systemOn || dash.saving}
-      aria-label={t("autostart.app")}
-      onclick={(event) => event.stopPropagation()}
-      onchange={(event) => {
-        event.stopPropagation();
-        setAppAutostart(part.id, event.currentTarget.checked);
-      }}
-    />
-    {t("autostart.short")}
-  </label>
-
   <span class="badge role role-{part.role}">{roleLabel(part.role)}</span>
 
   <button
     class="app-main"
     type="button"
-    onclick={() => togglePart(part.id, live?.script ?? startScripts[0]?.name)}
+    onclick={() => togglePart(part.id, live?.script ?? primary?.name)}
   >
     <div class="app-id">
       <div class="app-name">
@@ -65,6 +70,9 @@
           <span class="muted framework-tag">{part.framework}</span>
         {/if}
         <WarningBadge {warnings} />
+        {#if missingDeps}
+          <DepsBadge {part} />
+        {/if}
         {#if flag === "new"}<span class="marker new">{t("common.new")}</span>{/if}
         {#if flag === "changed"}<span class="marker changed">{t("common.changed")}</span>{/if}
         {#if flag === "removed"}<span class="marker removed">{t("common.removed")}</span>{/if}
@@ -76,27 +84,30 @@
     <PortChips ports={ports} health={live?.health ?? null} {expected} {part} script={live?.script} />
   </span>
 
+  <div class="app-status">
+    {#if live}
+      <span class="res-cell">
+        <ResourceChip usage={runMetrics(live.id)} compact />
+      </span>
+    {/if}
+  </div>
+
   <div class="app-actions">
-    {#if !startScripts.length}
+    {#if !scripts.length}
       <span class="muted">{t("script.noScripts")}</span>
-    {:else}
-      {#each startScripts as script (scriptEachKey(script))}
-        {@const run = runningFor(part.id, script.name)}
-        {@const pending = isPending(part.id, script.name)}
-        {@const blocked = !run ? startBlockReason(part.id, script.name) : null}
-        {@const warned = !run ? startWarnReason(part.id, script.name) : null}
+    {:else if activeScript}
+      <div class="script-split" bind:this={menuRoot}>
         <button
-          class="chip mini scope-{script.scope}"
+          class="chip mini script-main scope-{activeScript.scope}"
           class:running={Boolean(run)}
           class:pending
           type="button"
           aria-pressed={Boolean(run)}
-          aria-label={run ? `${t("script.stop")} ${scriptLabel(script)}` : `${t("script.start")} ${scriptLabel(script)}`}
           disabled={pending || Boolean(blocked)}
-          title={blocked ?? warned ?? (run ? `${t("script.stop")} ${scriptLabel(script)}` : `${t("script.start")} ${scriptLabel(script)}`)}
+          title={blocked ?? warned ?? (run ? `${t("script.stop")} ${scriptLabel(activeScript)}` : `${t("script.start")} ${scriptLabel(activeScript)}`)}
           onclick={(event) => {
             event.stopPropagation();
-            toggleScript(part.id, script.name, dash.groups);
+            toggleScript(part.id, activeScript.name, dash.groups);
           }}
         >
           {#if run}
@@ -104,86 +115,128 @@
           {:else}
             <span class="play-icon" aria-hidden="true"></span>
           {/if}
-          {script.name}
+          {scriptLabel(activeScript)}
         </button>
-      {/each}
-    {/if}
-  </div>
-
-  <div class="app-status">
-    {#if missingDeps}
-      <div class="deps-status" title={t("deps.tooltip", { command: depsCommand })}>
-        <div class="deps-copy">
-          <strong>{t("deps.status")}</strong>
-          <span>{t("deps.statusHint", { command: depsCommand })}</span>
-        </div>
-        <button
-          class="chip mini"
-          class:running={Boolean(installLive)}
-          class:pending={installPending}
-          type="button"
-          disabled={installPending || Boolean(installLive)}
-          title={t("deps.explain", { command: depsCommand })}
-          onclick={(event) => {
-            event.stopPropagation();
-            startInstall(part.id, dash.groups);
-          }}
-        >
-          {installLive || installPending ? t("deps.installing") : t("deps.install")}
-        </button>
+        {#if scripts.length > 1}
+          <button
+            class="chip mini script-caret"
+            class:open={menuOpen}
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title={t("script.more")}
+            aria-label={t("script.more")}
+            onclick={(event) => {
+              event.stopPropagation();
+              menuOpen = !menuOpen;
+            }}
+          >
+            <span class="caret" aria-hidden="true"></span>
+          </button>
+          {#if menuOpen}
+            <div class="script-menu" role="menu">
+              {#each scripts as script (scriptEachKey(script))}
+                {@const itemRun = runningFor(part.id, script.name)}
+                {@const itemPending = isPending(part.id, script.name)}
+                {@const itemBlocked = !itemRun ? startBlockReason(part.id, script.name) : null}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class:running={Boolean(itemRun)}
+                  disabled={itemPending || Boolean(itemBlocked)}
+                  title={itemBlocked ?? script.command}
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    menuOpen = false;
+                    toggleScript(part.id, script.name, dash.groups);
+                  }}
+                >
+                  <span>{scriptLabel(script)}</span>
+                  {#if scriptSourceDiffers(script)}
+                    <em>{t("script.viaRoot", { name: script.sourceName || t("script.workspace") })}</em>
+                  {/if}
+                  {#if itemRun}
+                    <span class="muted">{t("script.stop")}</span>
+                  {/if}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        {/if}
       </div>
-    {/if}
-    {#if live}
-      <span class="res-cell">
-        <ResourceChip usage={runMetrics(live.id)} compact />
-      </span>
     {/if}
   </div>
 </div>
 
 <style>
-  .app-autostart {
+  .script-split {
+    position: relative;
     display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 11px;
-    font-weight: 650;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--muted);
-    cursor: pointer;
-    user-select: none;
-    white-space: nowrap;
+    align-items: stretch;
   }
-  .app-autostart input {
-    margin: 0;
-    accent-color: var(--accent);
+  .script-main {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
   }
-  .app-autostart.off {
-    opacity: 0.55;
-    cursor: not-allowed;
+  .script-caret {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left-width: 0;
+    padding-left: 7px;
+    padding-right: 7px;
   }
-  .deps-status {
+  .script-split:has(.script-caret) .script-main {
+    border-right-color: var(--line-strong);
+  }
+  .caret {
+    width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 4px 3.5px 0 3.5px;
+    border-color: currentColor transparent transparent transparent;
+  }
+  .script-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 40;
+    min-width: 12rem;
+    max-width: 18rem;
+    padding: 4px;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: rgba(16, 16, 22, 0.98);
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+  }
+  .script-menu button {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    min-width: 0;
-    flex: 1;
+    gap: 8px;
+    width: 100%;
+    margin: 0;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
   }
-  .deps-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    min-width: 0;
+  .script-menu button:hover {
+    background: rgba(255, 255, 255, 0.06);
   }
-  .deps-copy strong {
-    font-size: 11px;
-    font-weight: 650;
-    color: var(--warn);
+  .script-menu button:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
-  .deps-copy span {
-    font-size: 11px;
+  .script-menu em {
+    font-style: normal;
     color: var(--muted);
+    font-size: 11px;
   }
 </style>

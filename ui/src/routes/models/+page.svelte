@@ -85,6 +85,15 @@
   }
 
 
+  function usageNames(usages: ModelUsage[] | undefined): string[] {
+    const names: string[] = [];
+    for (const usage of usages ?? []) {
+      const name = (usage.projectName ?? "").trim();
+      if (name && !names.includes(name)) names.push(name);
+    }
+    return names;
+  }
+
   function usagePaths(usages: ModelUsage[] | undefined): string[] {
     const paths: string[] = [];
     for (const usage of usages ?? []) {
@@ -98,10 +107,6 @@
       }
     }
     return paths;
-  }
-
-  function countLabel(count: number, one: string, many: string): string {
-    return count === 1 ? t(one) : t(many, { count });
   }
 
   function scanLine(): string {
@@ -155,21 +160,32 @@
   <div class="models-page">
     <section class="models-summary" aria-label={t("models.totals")}>
       <div>
-        <strong>{countLabel(rows.length, "models.summaryCountOne", "models.summaryCount")}</strong>
+        <strong>{rows.length}</strong>
+        <span class="muted">{rows.length === 1 ? t("models.card.model") : t("models.card.models")}</span>
       </div>
       <div>
         <strong>{fmtBytes(inventory.grandTotalBytes)}</strong>
-        <span class="muted">{t("models.together")}</span>
+        <span class="muted">{t("models.card.total")}</span>
       </div>
       <div>
-        <strong>{countLabel(sourceCount, "models.summarySourcesOne", "models.summarySources")}</strong>
+        <strong>{sourceCount}</strong>
+        <span class="muted">{sourceCount === 1 ? t("models.card.source") : t("models.card.sources")}</span>
       </div>
     </section>
 
     {#if rows.length}
+      <div class="model-table">
+        <div class="model-head" role="row">
+          <span>{t("models.col.model")}</span>
+          <span>{t("models.col.size")}</span>
+          <span>{t("models.col.location")}</span>
+          <span>{t("models.col.usedBy")}</span>
+        </div>
       <ul class="model-list">
         {#each rows as row (row.key)}
           {@const open = expanded.has(row.key)}
+          {@const names = usageNames(row.usedBy)}
+          {@const paths = usagePaths(row.usedBy)}
           <li class="model-item" class:open>
             <button
               class="model-line"
@@ -182,9 +198,9 @@
               <span class="num tabular">{fmtBytes(row.sizeBytes)}</span>
               <span class="muted loc" title={row.path ?? ""}>{row.location}</span>
               <span class="used">
-                {#if usagePaths(row.usedBy).length}
-                  {#each usagePaths(row.usedBy) as path (path)}
-                    <span class="path-chip" title={path}>{path}</span>
+                {#if names.length}
+                  {#each names as name (name)}
+                    <span class="path-chip" title={name}>{name}</span>
                   {/each}
                 {:else}
                   <span class="muted">{t("models.usedByNone")}</span>
@@ -197,6 +213,18 @@
                   <div>
                     <dt>{t("models.location")}</dt>
                     <dd class="mono" title={row.path}>{row.path}</dd>
+                  </div>
+                {/if}
+                {#if paths.length}
+                  <div>
+                    <dt>{t("models.usedPaths")}</dt>
+                    <dd>
+                      <ul class="used-paths">
+                        {#each paths as path (path)}
+                          <li class="mono" title={path}>{path}</li>
+                        {/each}
+                      </ul>
+                    </dd>
                   </div>
                 {/if}
                 {#if row.id}
@@ -216,6 +244,7 @@
           </li>
         {/each}
       </ul>
+      </div>
     {:else}
       <p class="muted">{t("models.empty")}</p>
     {/if}
@@ -238,23 +267,51 @@
     border-radius: var(--radius);
     background: var(--card);
   }
-  .models-summary strong { display: block; font-size: 0.95rem; }
+  .models-summary strong {
+    display: block;
+    font-size: 1.45rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+  }
+  .models-summary .muted {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    text-transform: lowercase;
+  }
   .muted { color: var(--muted); font-size: 12px; }
-  .model-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
+  .model-table {
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--card);
     overflow: visible;
   }
-  .model-item + .model-item { border-top: 1px solid rgba(255, 255, 255, 0.04); }
+  .model-head,
   .model-line {
     display: grid;
     grid-template-columns: minmax(8rem, 1.4fr) max-content minmax(6rem, 1fr) minmax(7rem, 1.2fr);
     gap: 10px;
     align-items: center;
+  }
+  .model-head {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .model-head span:nth-child(2) { text-align: right; }
+  .model-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+  }
+  .model-item + .model-item { border-top: 1px solid rgba(255, 255, 255, 0.04); }
+  .model-line {
     width: 100%;
     padding: 9px 12px;
     background: transparent;
@@ -301,10 +358,17 @@
   dt { color: var(--muted); margin: 0; }
   dd { margin: 0; overflow-wrap: anywhere; }
   .mono { font-family: var(--mono); font-size: 12px; }
+  .used-paths {
+    margin: 0;
+    padding-left: 1.1rem;
+    display: grid;
+    gap: 4px;
+  }
   .models-skel { height: 8rem; }
   .error { color: var(--danger); }
   @media (max-width: 800px) {
-    .models-summary, .model-line { grid-template-columns: 1fr 1fr; }
+    .models-summary, .model-head, .model-line { grid-template-columns: 1fr 1fr; }
+    .model-head { display: none; }
     .model-details div { grid-template-columns: 1fr; }
   }
 </style>

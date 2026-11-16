@@ -10,7 +10,6 @@
     healthLabel,
     issueWarnings,
     partTitle,
-    portUrl,
     warningsForRun,
   } from "$lib/format";
   import { clearAllDone, clearAllRecent, dismissDone, doneKey, favoriteKey, loadDismissedDone, loadFavorites, loadRecent, removeRecent, toggleFavorite, type RecentScript } from "$lib/recent";
@@ -26,6 +25,7 @@
   } from "$lib/runs.svelte";
   import type { Run } from "$lib/types";
   import Icon from "$lib/components/Icon.svelte";
+  import ActionMenu from "$lib/components/ActionMenu.svelte";
   import PortChips from "$lib/components/PortChips.svelte";
   import WarningBadge from "$lib/components/WarningBadge.svelte";
   import ResourceMeter from "$lib/components/ResourceMeter.svelte";
@@ -269,7 +269,6 @@
           {#each running as run (run.id)}
             {@const part = findPart(run.partId, dash.groups) ?? null}
             {@const ports = displayRunPorts(run, part)}
-            {@const port = ports[0]}
             {@const pending = isPending(run.partId, run.script)}
             {@const warnings = warningsForRun(run, allWarnings)}
             <tr class:selected={runState.selectedId === run.id && runState.panelOpen}>
@@ -294,32 +293,28 @@
               <td><ResourceChip usage={runMetrics(run.id)} /></td>
               <td class="tabular muted">{run.pid ?? "—"}</td>
               <td class="row-actions">
-                {#if port}
-                  <a class="icon-btn ghost" href={portUrl(port.port, port.url)} target="_blank" rel="noopener noreferrer" title={t("overview.openBrowser")}>
-                    <Icon name="external" />
-                  </a>
-                {/if}
                 <button class="icon-btn ghost" type="button" title={t("overview.logs")} onclick={() => showLogs(run)}>
                   <Icon name="logs" />
                 </button>
-                <button
-                  class="icon-btn ghost"
-                  type="button"
-                  title={startBlockReason(run.partId, run.script) ?? t("overview.restart")}
-                  disabled={pending || Boolean(startBlockReason(run.partId, run.script))}
-                  onclick={() => restartScript(run.partId, run.script, dash.groups)}
-                >
-                  <Icon name="restart" />
-                </button>
-                <button
-                  class="icon-btn ghost danger"
-                  type="button"
-                  title={t("overview.stop")}
-                  disabled={pending}
-                  onclick={() => stopScript(run.partId, run.script)}
-                >
-                  <Icon name="stop" size={12} />
-                </button>
+                <ActionMenu title={t("overview.more")}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={pending || Boolean(startBlockReason(run.partId, run.script))}
+                    onclick={() => restartScript(run.partId, run.script, dash.groups)}
+                  >
+                    {t("overview.restart")}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    class="danger"
+                    disabled={pending}
+                    onclick={() => stopScript(run.partId, run.script)}
+                  >
+                    {t("overview.stop")}
+                  </button>
+                </ActionMenu>
               </td>
             </tr>
           {/each}

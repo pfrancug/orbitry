@@ -4,8 +4,10 @@
   import LogViewer from "$lib/components/LogViewer.svelte";
   import { dash } from "$lib/dashboard.svelte";
   import { findPart, groupNameFor, partTitle } from "$lib/format";
+  import { i18n, t } from "$lib/i18n.svelte";
   import { openRun, runState } from "$lib/runs.svelte";
 
+  const locale = $derived(i18n.locale);
   const requested = $derived(page.url.searchParams.get("run"));
 
   const tabs = $derived.by(() => {
@@ -39,14 +41,14 @@
   }
 </script>
 
-<div class="page-head">
+<div class="page-head" data-locale={locale}>
   <div>
-    <h1>Logs</h1>
+    <h1>{t("logs.title")}</h1>
     <p>
       {#if tabs.length === 0}
-        No process output yet.
+        {t("logs.noneHint")}
       {:else}
-        Live output from running and recent processes.
+        {t("logs.subtitle")}
       {/if}
     </p>
   </div>
@@ -54,12 +56,12 @@
 
 {#if tabs.length === 0}
   <div class="empty-card">
-    <strong>No logs to show.</strong>
-    <p>Start an app from Overview or Projects and its output will land here.</p>
-    <a class="btn primary" href="/projects">Open projects</a>
+    <strong>{t("logs.emptyTitle")}</strong>
+    <p>{t("logs.emptyBody")}</p>
+    <a class="btn primary" href="/projects">{t("logs.openProjects")}</a>
   </div>
 {:else}
-  <div class="log-page">
+  <div class="log-page console">
     <div class="log-tabs" role="tablist">
       {#each tabs as run (run.id)}
         <button
@@ -69,11 +71,11 @@
           type="button"
           role="tab"
           aria-selected={run.id === activeId}
+          title={groupNameFor(run.partId, dash.groups)}
           onclick={() => choose(run.id)}
         >
           {#if run.status === "running"}<span class="pulse" aria-hidden="true"></span>{/if}
           <span class="tab-name">{label(run.id)}</span>
-          <span class="muted">{groupNameFor(run.partId, dash.groups)}</span>
         </button>
       {/each}
     </div>

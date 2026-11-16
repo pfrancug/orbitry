@@ -67,7 +67,7 @@ export function pickFolder(): Promise<{ path: string } | null> {
   });
 }
 
-export function openPath(kind: "terminal" | "vscode", path: string): Promise<void> {
+export function openPath(kind: "terminal" | "vscode" | "explorer", path: string): Promise<void> {
   return fetch("/api/open", {
     method: "POST",
     headers: { Accept: "application/json", "Content-Type": "application/json" },

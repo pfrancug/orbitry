@@ -1,4 +1,4 @@
-export type ScriptKind = "dev" | "preview" | "build";
+export type ScriptKind = "dev" | "preview" | "build" | "other";
 export type ScriptScope = "fe" | "be" | "shared";
 export type ProjectKind = "javascript" | "rust" | "python" | "go" | "docker" | "mixed";
 export type PartRole = "root" | "fe" | "be" | "shared" | "lib";

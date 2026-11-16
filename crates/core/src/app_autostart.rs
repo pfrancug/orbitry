@@ -102,7 +102,11 @@ pub fn default_autostart_script(part: &ProjectPart) -> Option<&DetectedScript> {
     part.scripts
         .iter()
         .find(|script| matches!(script.kind, ScriptKind::Dev))
-        .or_else(|| part.scripts.first())
+        .or_else(|| {
+            part.scripts
+                .iter()
+                .find(|script| matches!(script.kind, ScriptKind::Preview))
+        })
 }
 
 /// Listeners currently bound to any of the given ports (IPv4 and IPv6).

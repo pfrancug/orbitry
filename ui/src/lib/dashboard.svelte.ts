@@ -326,6 +326,28 @@ function withOverrides(next: {
   };
 }
 
+function patchConfig(next: AppConfig | Record<string, unknown>) {
+  if (!dash.config) {
+    dash.config = next as AppConfig;
+    return;
+  }
+  Object.assign(dash.config, next);
+}
+
+function cloneConfig(): AppConfig | null {
+  return dash.config ? structuredClone(dash.config) : null;
+}
+
+function shouldRefreshProjects(next: { roots: string[]; scriptPatterns: ScriptPattern[] }): boolean {
+  const current = dash.config;
+  if (!current) return true;
+  const rootsChanged =
+    next.roots.length !== current.roots.length ||
+    next.roots.some((root, index) => root !== current.roots[index]);
+  const patternsChanged = JSON.stringify(next.scriptPatterns) !== JSON.stringify(current.scriptPatterns);
+  return rootsChanged || patternsChanged;
+}
+
 export async function persist(next: {
   roots: string[];
   scriptPatterns: ScriptPattern[];
@@ -337,21 +359,17 @@ export async function persist(next: {
   desktopNotifications?: boolean;
   ignoredProjects?: string[];
 }) {
-  dash.saving = true;
   dash.error = null;
+  const refreshProjects = shouldRefreshProjects(next);
   const payload = withOverrides(next);
-  const previous = dash.config;
-  if (dash.config) {
-    dash.config = { ...dash.config, ...payload };
-  }
+  const previous = cloneConfig();
+  if (dash.config) patchConfig(payload);
   try {
-    dash.config = await saveConfig(payload);
-    applyProjectSnapshot(await fetchProjects());
+    patchConfig(await saveConfig(payload));
+    if (refreshProjects) applyProjectSnapshot(await fetchProjects());
   } catch (err: unknown) {
-    if (previous) dash.config = previous;
+    if (previous) patchConfig(previous);
     dash.error = err instanceof Error ? err.message : "Could not save settings.";
-  } finally {
-    dash.saving = false;
   }
 }
 
@@ -461,38 +479,33 @@ export async function setAutoCheckUpdates(enabled: boolean) {
 export async function setLogLimitMb(limitMb: number) {
   if (!dash.config) return;
   const value = Math.min(100, Math.max(2, Math.round(limitMb)));
-  dash.saving = true;
   dash.error = null;
-  const previous = dash.config;
-  dash.config = { ...dash.config, logLimitMb: value };
+  const previous = cloneConfig();
+  patchConfig({ logLimitMb: value });
   try {
     const payload = withOverrides({
       roots: dash.config.roots,
       scriptPatterns: dash.config.scriptPatterns,
       logLimitMb: value,
     });
-    dash.config = await saveConfig(payload);
+    patchConfig(await saveConfig(payload));
   } catch (err: unknown) {
-    if (previous) dash.config = previous;
+    if (previous) patchConfig(previous);
     dash.error = err instanceof Error ? err.message : "Could not save settings.";
-  } finally {
-    dash.saving = false;
   }
 }
 
 export async function setStartWithSystem(enabled: boolean) {
   if (!dash.config) return;
-  dash.saving = true;
   dash.error = null;
-  const previous = dash.config;
-  dash.config = {
-    ...dash.config,
+  const previous = cloneConfig();
+  patchConfig({
     autostart: {
       enabled,
       command: dash.config.autostart?.command,
       stale: false,
     },
-  };
+  });
   try {
     const payload = {
       ...withOverrides({
@@ -501,12 +514,10 @@ export async function setStartWithSystem(enabled: boolean) {
       }),
       startWithSystem: enabled,
     };
-    dash.config = await saveConfig(payload);
+    patchConfig(await saveConfig(payload));
   } catch (err: unknown) {
-    if (previous) dash.config = previous;
+    if (previous) patchConfig(previous);
     dash.error = err instanceof Error ? err.message : "Could not save settings.";
-  } finally {
-    dash.saving = false;
   }
 }
 
@@ -538,27 +549,24 @@ export function appAutostartTitle(): string {
 
 export async function setAppAutostart(partId: string, enabled: boolean) {
   if (!dash.config) return;
-  dash.saving = true;
   dash.error = null;
-  const previous = dash.config;
+  const previous = cloneConfig();
   const current = dash.config.autostartApps ?? [];
   const next = enabled
     ? current.some((id) => pathsEqual(id, partId))
       ? current
       : [...current, partId]
     : current.filter((id) => !pathsEqual(id, partId));
-  dash.config = { ...dash.config, autostartApps: next };
+  patchConfig({ autostartApps: next });
   try {
     const payload = withOverrides({
       roots: dash.config.roots,
       scriptPatterns: dash.config.scriptPatterns,
       autostartApps: next,
     });
-    dash.config = await saveConfig(payload);
+    patchConfig(await saveConfig(payload));
   } catch (err: unknown) {
-    if (previous) dash.config = previous;
+    if (previous) patchConfig(previous);
     dash.error = err instanceof Error ? err.message : "Could not save settings.";
-  } finally {
-    dash.saving = false;
   }
 }

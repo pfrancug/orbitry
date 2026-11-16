@@ -13,7 +13,7 @@
   import { bannerMessage, dash, dismissBanner, refreshAll } from "$lib/dashboard.svelte";
   import { refreshModels } from "$lib/models.svelte";
   import { refreshTools } from "$lib/tools.svelte";
-  import { initLocale } from "$lib/i18n.svelte";
+  import { initLocale, t } from "$lib/i18n.svelte";
   import { migrateClientStorage } from "$lib/storage";
   import { refreshVersion, startUpdatePolling, update, updateInProgress } from "$lib/update.svelte";
   import { formatAgeMs } from "$lib/format";

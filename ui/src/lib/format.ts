@@ -357,8 +357,57 @@ export function formatCheckedAt(ts: number | null | undefined): string {
   return date.toLocaleString("pl-PL", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
 }
 
+export function isRunKind(kind: DetectedScript["kind"] | null | undefined): boolean {
+  return kind === "dev" || kind === "preview";
+}
+
 export function runScripts(part: ProjectPart | null | undefined): DetectedScript[] {
-  return (part?.scripts ?? []).filter((script) => script.kind !== "build");
+  return allScripts(part).filter((script) => isRunKind(script.kind));
+}
+
+/** All package.json scripts, collapsing identical command + cwd duplicates. */
+export function allScripts(part: ProjectPart | null | undefined): DetectedScript[] {
+  const seen = new Map<string, DetectedScript>();
+  for (const script of part?.scripts ?? []) {
+    const command = (script.command ?? "").trim().toLowerCase();
+    const cwd = (script.cwd ?? "").trim().toLowerCase();
+    const key = command
+      ? `${command}|${cwd}`
+      : `name:${script.name}|${cwd}|${script.source ?? ""}`;
+    const existing = seen.get(key);
+    if (!existing) {
+      seen.set(key, script);
+      continue;
+    }
+    // Prefer the app's own package over a workspace copy of the same command.
+    if (existing.source === "workspace" && script.source !== "workspace") {
+      seen.set(key, script);
+    }
+  }
+  return [...seen.values()];
+}
+
+export function primaryScript(part: ProjectPart | null | undefined): DetectedScript | null {
+  const scripts = allScripts(part);
+  return (
+    scripts.find((script) => script.kind === "dev") ??
+    scripts.find((script) => script.kind === "preview") ??
+    scripts.find((script) => script.kind !== "build") ??
+    scripts[0] ??
+    null
+  );
+}
+
+export function scriptSourceDiffers(script: DetectedScript | null | undefined): boolean {
+  return script?.source === "workspace";
+}
+
+export function desktopOs(): "windows" | "mac" | "linux" {
+  if (typeof navigator === "undefined") return "linux";
+  const value = `${navigator.userAgent} ${navigator.platform}`;
+  if (/Mac|iPhone|iPad/i.test(value)) return "mac";
+  if (/Win/i.test(value)) return "windows";
+  return "linux";
 }
 
 export function buildScripts(part: ProjectPart | null | undefined): DetectedScript[] {

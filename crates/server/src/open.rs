@@ -1,4 +1,4 @@
-//! User-triggered helpers: native folder picker, terminal, and VS Code.
+//! User-triggered helpers: native folder picker, terminal, VS Code, and the file manager.
 //!
 //! These spawn visible UI only in response to an explicit API call from the
 //! dashboard. Verification must never invoke them.
@@ -86,6 +86,25 @@ pub fn open_in_vscode(path: &Path) -> Result<(), String> {
     }
     #[allow(unreachable_code)]
     Err("opening VS Code is not supported on this platform".into())
+}
+
+pub fn open_in_explorer(path: &Path) -> Result<(), String> {
+    let path = require_dir(path)?;
+    let rendered = display_path(path);
+    #[cfg(windows)]
+    {
+        return spawn_detached(Path::new("explorer.exe"), &[&rendered], None, true);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        return spawn_visible("open", &[&rendered], None);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        return spawn_visible("xdg-open", &[&rendered], None);
+    }
+    #[allow(unreachable_code)]
+    Err("opening the file manager is not supported on this platform".into())
 }
 
 fn require_dir(path: &Path) -> Result<&Path, String> {

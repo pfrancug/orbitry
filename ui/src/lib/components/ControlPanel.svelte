@@ -2,7 +2,8 @@
   import { appAutostartEnabled, appAutostartTitle, dash, setAppAutostart, startBlockReason, startWarnReason, systemAutostartEnabled } from "$lib/dashboard.svelte";
   import { openPath } from "$lib/api";
   import {
-    buildButtonName,
+    allScripts,
+    desktopOs,
     displayPorts,
     formatUptime,
     healthLabel,
@@ -10,14 +11,13 @@
     isJsLike,
     partTitle,
     roleLabel,
-    runScripts,
     scriptLabel,
+    scriptSourceDiffers,
     shortPath,
     timeAgo,
     warningsForPart,
     warningsForRun,
     scriptEachKey,
-    uniqueBuildScripts,
   } from "$lib/format";
   import { i18n, t } from "$lib/i18n.svelte";
   import {
@@ -37,7 +37,6 @@
   import PortChips from "./PortChips.svelte";
   import LogViewer from "./LogViewer.svelte";
   import WarningList from "./WarningList.svelte";
-  import PortOverrides from "./PortOverrides.svelte";
   import { tools } from "$lib/tools.svelte";
   import ResourceChip from "./ResourceChip.svelte";
   import { runMetrics } from "$lib/metrics.svelte";
@@ -48,18 +47,23 @@
   const systemOn = $derived(systemAutostartEnabled());
   const autoOn = $derived(part ? appAutostartEnabled(part.id) : false);
   const autoTitle = $derived(appAutostartTitle());
-  const startables = $derived(runScripts(part));
-  const builds = $derived(uniqueBuildScripts(part));
+  const scripts = $derived(allScripts(part));
+  let tab = $state<"details" | "logs">("details");
+
+  $effect(() => {
+    // Keep the chosen tab when switching apps; reset only when the panel has no part.
+    if (!part) tab = "details";
+  });
 
   const scriptName = $derived.by(() => {
     if (!part) return null;
-    if (runState.selectedScript && startables.some((item) => item.name === runState.selectedScript)) {
+    if (runState.selectedScript && scripts.some((item) => item.name === runState.selectedScript)) {
       return runState.selectedScript;
     }
-    return runningFor(part.id)?.script ?? startables[0]?.name ?? null;
+    return runningFor(part.id)?.script ?? scripts[0]?.name ?? null;
   });
 
-  const selectedScript = $derived(startables.find((item) => item.name === scriptName) ?? null);
+  const selectedScript = $derived(scripts.find((item) => item.name === scriptName) ?? null);
 
   const current = $derived.by(() => {
     if (!part) return null;
@@ -94,14 +98,21 @@
   );
   const cwdPreview = $derived(selectedScript?.cwd || part?.path || "");
   const sourceHint = $derived(
-    selectedScript?.source === "workspace"
+    selectedScript && scriptSourceDiffers(selectedScript)
       ? t("script.viaRoot", { name: selectedScript.sourceName || t("script.workspace") })
-      : t("script.package"),
+      : null,
+  );
+  const os = $derived(desktopOs());
+  const explorerLabel = $derived(
+    os === "windows" ? t("panel.explorer.windows") : os === "mac" ? t("panel.explorer.mac") : t("panel.explorer.linux"),
+  );
+  const explorerTitle = $derived(
+    os === "windows" ? t("panel.explorerTitle.windows") : os === "mac" ? t("panel.explorerTitle.mac") : t("panel.explorerTitle.linux"),
   );
 
   let opening = $state<string | null>(null);
 
-  async function openWith(kind: "terminal" | "vscode") {
+  async function openWith(kind: "terminal" | "vscode" | "explorer") {
     if (!part) return;
     opening = kind;
     dash.error = null;
@@ -146,23 +157,184 @@
       <p>{t("panel.empty")}</p>
     </div>
   {:else}
-    <div class="panel-meta">
-      {#if part.version}<span class="badge quiet">v{part.version}</span>{/if}
-      {#if part.framework}<span class="badge framework">{part.framework}</span>{/if}
-      {#if part.git}
-        <span class="git">
-          <span class="dot {part.git.dirty ? 'dirty' : 'clean'}"></span>
-          {part.git.branch}
-        </span>
-      {/if}
-      <span class="build" class:ok={part.build?.built} title={part.build?.stale ? t("build.stale") : undefined}>
-        {part.build?.built ? t("build.ready", { time: timeAgo(part.build.lastBuiltAt) }) : t("build.missing")}
-        {#if part.build?.built && part.build.stale} · {t("build.stale")}{/if}
-      </span>
+    <div class="panel-tabs" role="tablist">
+      <button
+        class="panel-tab"
+        class:active={tab === "details"}
+        type="button"
+        role="tab"
+        aria-selected={tab === "details"}
+        onclick={() => (tab = "details")}
+      >
+        {t("panel.tab.details")}
+      </button>
+      <button
+        class="panel-tab"
+        class:active={tab === "logs"}
+        type="button"
+        role="tab"
+        aria-selected={tab === "logs"}
+        onclick={() => (tab = "logs")}
+      >
+        {t("panel.tab.logs")}
+      </button>
     </div>
 
-    <section class="panel-section">
-      <h3>{t("panel.about")}</h3>
+    {#if tab === "details"}
+      <div class="panel-body">
+        <div class="panel-meta">
+          {#if part.version}<span class="badge quiet">v{part.version}</span>{/if}
+          {#if part.framework}<span class="badge framework">{part.framework}</span>{/if}
+          {#if part.git}
+            <span class="git">
+              <span class="dot {part.git.dirty ? 'dirty' : 'clean'}"></span>
+              {part.git.branch}
+            </span>
+          {/if}
+          <span class="build" class:ok={part.build?.built} title={part.build?.stale ? t("build.stale") : undefined}>
+            {part.build?.built ? t("build.ready", { time: timeAgo(part.build.lastBuiltAt) }) : t("build.missing")}
+            {#if part.build?.built && part.build.stale} · {t("build.stale")}{/if}
+          </span>
+        </div>
+
+        <section class="panel-section">
+          <h3>{t("panel.autostart")}</h3>
+          <label class="panel-autostart" class:off={!systemOn} title={autoTitle}>
+            <input
+              type="checkbox"
+              checked={autoOn}
+              disabled={!systemOn || !part}
+              aria-label={t("autostart.appFull")}
+              onchange={(event) => part && setAppAutostart(part.id, event.currentTarget.checked)}
+            />
+            {t("autostart.appFull")}
+          </label>
+        </section>
+
+        <section class="panel-section">
+          <h3>{t("panel.scripts")}</h3>
+          {#if !scripts.length}
+            <p class="hint">{t("script.noneHint")}</p>
+          {:else}
+            <label class="script-picker">
+              <span>{t("script.label")}</span>
+              <select
+                value={scriptName ?? ""}
+                onchange={(event) => {
+                  const value = (event.currentTarget as HTMLSelectElement).value;
+                  if (value) selectPart(part.id, value, true);
+                }}
+              >
+                {#each scripts as script (scriptEachKey(script))}
+                  <option value={script.name}>{scriptLabel(script)}</option>
+                {/each}
+              </select>
+            </label>
+            {#if selectedScript}
+              <div class="command-preview">
+                <div class="preview-field">
+                  <span class="preview-label">{t("script.commandLabel")}</span>
+                  <pre class="preview-command"><code>{commandPreview}</code></pre>
+                </div>
+                <div class="preview-field">
+                  <span class="preview-label">{t("script.cwdLabel")}</span>
+                  <code class="preview-cwd" title={cwdPreview}>{cwdPreview}</code>
+                </div>
+                {#if sourceHint}
+                  <div class="preview-field">
+                    <span class="preview-label">{t("script.sourceLabel")}</span>
+                    <span class="preview-source">{sourceHint}</span>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+            {#if startWarned && !startBlocked}
+              <p class="hint">{startWarned}</p>
+            {/if}
+            <div class="panel-actions">
+              {#if live}
+                <button
+                  class="btn danger"
+                  type="button"
+                  disabled={pending}
+                  onclick={() => scriptName && stopScript(part.id, scriptName)}
+                >
+                  <Icon name="stop" size={12} /> {t("script.stop")}
+                </button>
+                <button
+                  class="btn"
+                  type="button"
+                  disabled={pending || Boolean(startBlocked)}
+                  title={startBlocked ?? t("script.restart")}
+                  onclick={() => scriptName && restartScript(part.id, scriptName, dash.groups)}
+                >
+                  <Icon name="restart" size={14} /> {t("script.restart")}
+                </button>
+              {:else}
+                <button
+                  class="btn primary"
+                  type="button"
+                  disabled={pending || !scriptName || Boolean(startBlocked)}
+                  title={startBlocked ?? t("script.start")}
+                  onclick={() => scriptName && startScript(part.id, scriptName, dash.groups)}
+                >
+                  <Icon name="play" size={12} /> {t("script.start")}
+                </button>
+              {/if}
+            </div>
+          {/if}
+        </section>
+
+        {#if missingDeps}
+          <section class="panel-section">
+            <h3>{t("deps.status")}</h3>
+            <p class="hint">{t("deps.statusHint", { command: installCommand(part) })}</p>
+            <div class="panel-actions">
+              <button
+                class="btn"
+                type="button"
+                disabled={isPending(part.id, "install") || Boolean(runningFor(part.id, "install"))}
+                title={t("deps.explain", { command: installCommand(part) })}
+                onclick={() => startInstall(part.id, dash.groups)}
+              >
+                {runningFor(part.id, "install") || isPending(part.id, "install") ? t("deps.installing") : t("deps.install")}
+              </button>
+            </div>
+          </section>
+        {/if}
+
+        <section class="panel-section">
+          <h3>{t("panel.status")}</h3>
+          <div class="panel-status">
+            <span class="log-status status-{current?.status ?? 'idle'}">{statusLabel(current)}</span>
+            <PortChips {ports} health={health ?? null} {expected} {part} script={scriptName} />
+            <span class="health health-{health?.status ?? 'unknown'}" title={health?.url ?? ""}>
+              {healthLabel(health)}
+            </span>
+            {#if current?.pid}
+              <span class="muted">pid {current.pid}</span>
+            {/if}
+            {#if current?.status === "running"}
+              <span class="muted">{formatUptime(current.startedAt)}</span>
+              <ResourceChip usage={runMetrics(current.id)} />
+            {/if}
+          </div>
+        </section>
+
+        {#if warnings.length}
+          <section class="panel-section">
+            <h3>{t("panel.warnings")}</h3>
+            <WarningList {warnings} flat />
+          </section>
+        {/if}
+      </div>
+    {:else}
+      <div class="panel-body panel-logs-tab">
+        <LogViewer runId={current?.id ?? null} />
+      </div>
+    {/if}
+
+    <footer class="panel-footer">
       <div class="open-actions">
         <button
           class="btn"
@@ -184,174 +356,18 @@
           <Icon name="code" size={14} />
           {opening === "vscode" ? t("panel.opening") : "VS Code"}
         </button>
+        <button
+          class="btn"
+          type="button"
+          disabled={opening !== null}
+          title={explorerTitle}
+          onclick={() => openWith("explorer")}
+        >
+          <Icon name="folder" size={14} />
+          {opening === "explorer" ? t("panel.opening") : explorerLabel}
+        </button>
       </div>
-    </section>
-
-    <section class="panel-section">
-      <h3>{t("panel.autostart")}</h3>
-      <label class="panel-autostart" class:off={!systemOn} title={autoTitle}>
-        <input
-          type="checkbox"
-          checked={autoOn}
-          disabled={!systemOn || dash.saving || !part}
-          aria-label={t("autostart.appFull")}
-          onchange={(event) => part && setAppAutostart(part.id, event.currentTarget.checked)}
-        />
-        {t("autostart.appFull")}
-      </label>
-    </section>
-
-    <section class="panel-section">
-      <h3>{t("panel.run")}</h3>
-      {#if !startables.length}
-        <p class="hint">{t("script.noneHint")}</p>
-      {:else}
-        <label class="script-picker">
-          <span>{t("script.label")}</span>
-          <select
-            value={scriptName ?? ""}
-            onchange={(event) => {
-              const value = (event.currentTarget as HTMLSelectElement).value;
-              if (value) selectPart(part.id, value, true);
-            }}
-          >
-            {#each startables as script (scriptEachKey(script))}
-              <option value={script.name}>{scriptLabel(script)}</option>
-            {/each}
-          </select>
-        </label>
-        {#if selectedScript}
-          <div class="command-preview">
-            <div class="preview-field">
-              <span class="preview-label">{t("script.commandLabel")}</span>
-              <pre class="preview-command"><code>{commandPreview}</code></pre>
-            </div>
-            <div class="preview-field">
-              <span class="preview-label">{t("script.cwdLabel")}</span>
-              <code class="preview-cwd" title={cwdPreview}>{cwdPreview}</code>
-            </div>
-            <div class="preview-field">
-              <span class="preview-label">{t("script.sourceLabel")}</span>
-              <span class="preview-source">{sourceHint}</span>
-            </div>
-          </div>
-        {/if}
-        {#if startWarned && !startBlocked}
-          <p class="hint">{startWarned}</p>
-        {/if}
-        <div class="panel-actions">
-          {#if live}
-            <button
-              class="btn danger"
-              type="button"
-              disabled={pending}
-              onclick={() => scriptName && stopScript(part.id, scriptName)}
-            >
-              <Icon name="stop" size={12} /> {t("script.stop")}
-            </button>
-            <button
-              class="btn"
-              type="button"
-              disabled={pending || Boolean(startBlocked)}
-              title={startBlocked ?? t("script.restart")}
-              onclick={() => scriptName && restartScript(part.id, scriptName, dash.groups)}
-            >
-              <Icon name="restart" size={14} /> {t("script.restart")}
-            </button>
-          {:else}
-            <button
-              class="btn primary"
-              type="button"
-              disabled={pending || !scriptName || Boolean(startBlocked)}
-              title={startBlocked ?? t("script.start")}
-              onclick={() => scriptName && startScript(part.id, scriptName, dash.groups)}
-            >
-              <Icon name="play" size={12} /> {t("script.start")}
-            </button>
-          {/if}
-        </div>
-      {/if}
-    </section>
-
-    {#if missingDeps}
-      <section class="panel-section">
-        <h3>{t("deps.status")}</h3>
-        <p class="hint">{t("deps.statusHint", { command: installCommand(part) })}</p>
-        <div class="panel-actions">
-          <button
-            class="btn"
-            type="button"
-            disabled={isPending(part.id, "install") || Boolean(runningFor(part.id, "install"))}
-            title={t("deps.explain", { command: installCommand(part) })}
-            onclick={() => startInstall(part.id, dash.groups)}
-          >
-            {runningFor(part.id, "install") || isPending(part.id, "install") ? t("deps.installing") : t("deps.install")}
-          </button>
-        </div>
-      </section>
-    {/if}
-
-    {#if builds.length}
-      <section class="panel-section">
-        <h3>{t("panel.build")}</h3>
-        <div class="panel-actions">
-          {#each builds as script (scriptEachKey(script, "build"))}
-            {@const run = runningFor(part.id, script.name)}
-            {@const building = isPending(part.id, script.name) || Boolean(run)}
-            <button
-              class="btn"
-              type="button"
-              disabled={building}
-              title={script.command}
-              onclick={() => (run ? stopScript(part.id, script.name) : startScript(part.id, script.name, dash.groups))}
-            >
-              {#if run}
-                {t("build.running")}
-              {:else if builds.length > 1}
-                {t("build.runNamed", { name: buildButtonName(script) })}
-              {:else}
-                {t("build.run")}
-              {/if}
-            </button>
-          {/each}
-        </div>
-      </section>
-    {/if}
-
-    <section class="panel-section">
-      <h3>{t("panel.status")}</h3>
-      <div class="panel-status">
-        <span class="log-status status-{current?.status ?? 'idle'}">{statusLabel(current)}</span>
-        <PortChips {ports} health={health ?? null} {expected} {part} script={scriptName} />
-        <span class="health health-{health?.status ?? 'unknown'}" title={health?.url ?? ""}>
-          {healthLabel(health)}
-        </span>
-        {#if current?.pid}
-          <span class="muted">pid {current.pid}</span>
-        {/if}
-        {#if current?.status === "running"}
-          <span class="muted">{formatUptime(current.startedAt)}</span>
-          <ResourceChip usage={runMetrics(current.id)} />
-        {/if}
-      </div>
-    </section>
-
-    {#if warnings.length}
-      <section class="panel-warnings panel-section scroll-region">
-        <h3>{t("panel.warnings")}</h3>
-        <WarningList {warnings} />
-      </section>
-    {/if}
-
-    <section class="panel-section">
-      <h3>{t("panel.ports")}</h3>
-      <PortOverrides {part} {ports} />
-    </section>
-
-    <section class="panel-section panel-logs">
-      <h3>{t("panel.logs")}</h3>
-      <LogViewer runId={current?.id ?? null} />
-    </section>
+    </footer>
   {/if}
 </aside>
 
@@ -372,6 +388,49 @@
   .panel-autostart.off {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+  .panel-tabs {
+    display: flex;
+    gap: 0;
+    margin: 0 16px;
+    border-bottom: 1px solid var(--line);
+    flex: 0 0 auto;
+  }
+  .panel-tab {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 8px 12px;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .panel-tab.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+  .panel-tab:hover:not(.active) {
+    color: var(--text);
+    background: transparent;
+  }
+  .panel-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding-top: 12px;
+  }
+  .panel-logs-tab {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    background: #0b0c10;
   }
   .panel-section {
     margin: 0 16px 14px;
@@ -426,7 +485,16 @@
     overflow-wrap: anywhere;
   }
   .preview-source { font-size: 12px; color: var(--text); }
-  .secondary-actions {
-    margin-top: 8px;
+  .panel-footer {
+    flex: 0 0 auto;
+    margin-top: auto;
+    padding: 12px 16px 16px;
+    border-top: 1px solid var(--line);
+    background: rgba(11, 11, 16, 0.96);
+  }
+  .panel-footer .open-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 </style>

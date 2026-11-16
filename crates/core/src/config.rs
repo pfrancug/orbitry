@@ -9,6 +9,7 @@ pub enum ScriptKind {
     Dev,
     Preview,
     Build,
+    Other,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

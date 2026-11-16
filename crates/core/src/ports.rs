@@ -314,7 +314,8 @@ pub fn merge_ports(ports: &mut Vec<PortInfo>, incoming: impl IntoIterator<Item =
 
 
 
-/// Apply user port overrides from Orbitry config: custom names, health URLs, or ignore.
+/// Apply user port overrides from Orbitry config: custom names and health URLs.
+/// The `ignore` field is still accepted in config for compatibility, but it is no longer applied.
 pub fn apply_port_overrides(ports: &mut Vec<PortInfo>, part_id: &str, overrides: &[PortOverride]) {
     let relevant: Vec<&PortOverride> = overrides
         .iter()
@@ -338,9 +339,8 @@ pub fn apply_port_overrides(ports: &mut Vec<PortInfo>, part_id: &str, overrides:
         {
             port.health_url = Some(url.to_string());
         }
-        port.ignored = item.ignore;
+        let _ = item.ignore;
     }
-    ports.retain(|port| !port.ignored);
 }
 
 pub fn detect_static_ports(

@@ -109,20 +109,19 @@ pub fn detect_scripts(
 ) -> Vec<DetectedScript> {
     let mut detected = Vec::new();
     for (name, command) in scripts {
-        if let Some((kind, custom_scope)) = match_script(name, custom) {
-            let scope =
-                custom_scope.unwrap_or_else(|| classify_scope(name, package_dir, dep_names));
-            detected.push(DetectedScript {
-                name: name.clone(),
-                command: command.clone(),
-                kind,
-                scope,
-                cwd: Some(display_path(package_dir)),
-                source: ScriptSource::Package,
-                source_name: None,
-                label: None,
-            });
-        }
+        let (kind, custom_scope) = match_script(name, custom).unwrap_or((ScriptKind::Other, None));
+        let scope =
+            custom_scope.unwrap_or_else(|| classify_scope(name, package_dir, dep_names));
+        detected.push(DetectedScript {
+            name: name.clone(),
+            command: command.clone(),
+            kind,
+            scope,
+            cwd: Some(display_path(package_dir)),
+            source: ScriptSource::Package,
+            source_name: None,
+            label: None,
+        });
     }
     detected
 }

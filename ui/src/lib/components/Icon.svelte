@@ -90,5 +90,9 @@
     <path d="M7 10l3 2-3 2M13 14h4" />
   {:else if name === "code"}
     <path d="M8 8l-4 4 4 4M16 8l4 4-4 4" />
+  {:else if name === "more"}
+    <circle cx="6" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="18" cy="12" r="1.4" fill="currentColor" stroke="none" />
   {/if}
 </svg>

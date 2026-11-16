@@ -28,7 +28,10 @@ These are standing rules for the project. Follow them in every change. They repl
 - **Ignore list.** Projects added to the Settings ignore list stay visible, but they produce no notices or warnings: not in the alert strip, the warnings popover, scan-change notices, or desktop notifications.
 - **Labeled ports.** Every port shown in the dashboard has a visible label for what it is (a name such as dev, preview, or api, or the port's source). A number alone is not enough.
 - **Absolute resource scales.** Overview CPU and RAM meters use a fixed scale from zero to maximum (CPU 0–100%, RAM 0–total), not a range auto-fitted to recent samples.
-- **Calm app rows.** In an expanded project, each app is two lines. The autostart control sits on the left in the same place on every row. Run scripts stay in the row. Build actions belong in the side panel as an advanced section. Do not show an "app" / "apps" count. Missing dependencies are a labeled status with an explanation, not a cryptic badge.
+- **Calm app rows.** In an expanded project, each app is one aligned row in a shared column grid: role, name and indicators, ports, live resources, and a primary script action. Autostart does not belong in the list; it stays in the details panel. All scripts from the app's `package.json` are available from a primary run action and a script menu. Build is just one of those scripts, not a separate button. Do not show an "app" / "apps" count. Missing dependencies use a warning-like "deps" indicator, with the explanation and Install action on click or in the details panel.
+- **Details panel.** The side panel is wide enough to read commands and paths. It has two tabs, Details and Logs. Warnings are listed immediately, not behind a collapsed disclosure. Open in Terminal, VS Code, and the system file manager sit at the bottom of the panel. Mention a script's source only when it does not come from the app's own package.
+- **No port-ignore UI.** The dashboard does not offer an "ignore this port" control. An existing `ignore` field in config is still accepted so older files load, but it is not applied.
+- **Fine-grained updates.** Saving a setting must update only the state that changed. Do not replace the whole config object, remount the page, refetch the project list, or flash a loading/disabled state on unrelated controls.
 
 
 ## Compatibility and releases
@@ -40,5 +43,5 @@ These are standing rules for the project. Follow them in every change. They repl
 
 ## Scope of detection
 
-- Detect commands that actually run or build an app (`dev`, `preview`/`start`, `build`). Do not scan test, lint, or similar scripts.
+- Detect every script in an app's `package.json`. Known names (`dev`, `preview`/`start`, `build`) keep their run or build kind. Other scripts (test, lint, and similar) are listed so the user can run them, but they are not used for autostart or as the default run action.
 - Default script patterns ship with the scanner. Extra patterns are added in the dashboard, not by hand-editing config.

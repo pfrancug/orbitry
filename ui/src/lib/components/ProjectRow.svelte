@@ -7,6 +7,7 @@
   import type { RepoGroup as RepoGroupType } from "$lib/types";
   import AppRow from "./AppRow.svelte";
   import ComposeSection from "./ComposeSection.svelte";
+  import DepsBadge from "./DepsBadge.svelte";
   import WarningBadge from "./WarningBadge.svelte";
 
   let {
@@ -78,8 +79,13 @@
       {#if versions[0]}
         <span class="badge quiet">v{versions[0]}</span>
       {/if}
-      {#if needsInstall && !open}
-        <span class="deps-flag" title={t("deps.projectHint")}>{t("deps.status")}</span>
+      {#if needsInstall}
+        {@const missing = (group.parts ?? []).find((item) => isJsLike(item.kind) && !item.nodeModules)}
+        {#if missing}
+          <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
+            <DepsBadge part={missing} />
+          </span>
+        {/if}
       {/if}
     </div>
   </button>
@@ -91,7 +97,6 @@
       {/each}
       {#each removedParts as item (item.partId)}
         <div class="app-row removed">
-          <span class="app-autostart"></span>
           <span class="role"></span>
           <div class="app-main">
             <div class="app-id">

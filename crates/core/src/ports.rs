@@ -277,13 +277,13 @@ pub fn framework_label(framework: &str) -> String {
 pub fn merge_ports(ports: &mut Vec<PortInfo>, incoming: impl IntoIterator<Item = PortInfo>) {
     for port in incoming {
         if let Some(existing) = ports.iter_mut().find(|item| item.port == port.port) {
+            // Decide the name before updating the source. Otherwise a log/process
+            // merge would look like a log-to-log rename after the source is raised.
+            if should_take_name(existing, &port) {
+                existing.name = port.name;
+            }
             if port.source.rank() > existing.source.rank() {
                 existing.source = port.source;
-            }
-            if existing.name.is_none() {
-                existing.name = port.name;
-            } else if port.name.is_some() && port.source.rank() >= existing.source.rank() {
-                existing.name = port.name;
             }
             for bind in port.binds {
                 if !existing.binds.iter().any(|item| item == &bind) {
@@ -310,6 +310,72 @@ pub fn merge_ports(ports: &mut Vec<PortInfo>, incoming: impl IntoIterator<Item =
         }
     }
     ports.sort_by_key(|item| item.port);
+}
+
+/// Config, env, flags, the config-bridge, and framework defaults are the source
+/// of truth for a port's name. Logs and live process inspection only confirm
+/// that the port is listening and must not overwrite a config-derived name.
+pub fn is_config_derived_source(source: PortSource) -> bool {
+    matches!(
+        source,
+        PortSource::Default
+            | PortSource::Config
+            | PortSource::Env
+            | PortSource::Flag
+            | PortSource::Bridge
+    )
+}
+
+fn name_priority(source: PortSource) -> u8 {
+    match source {
+        PortSource::Config | PortSource::Bridge => 5,
+        PortSource::Env | PortSource::Flag => 4,
+        PortSource::Default => 3,
+        PortSource::Process => 2,
+        PortSource::Log => 1,
+    }
+}
+
+fn should_take_name(existing: &PortInfo, incoming: &PortInfo) -> bool {
+    let Some(_) = incoming.name.as_ref().map(|name| name.trim()).filter(|name| !name.is_empty()) else {
+        return false;
+    };
+    match existing.name.as_ref().map(|name| name.trim()).filter(|name| !name.is_empty()) {
+        None => true,
+        Some(_) => {
+            let incoming_config = is_config_derived_source(incoming.source);
+            let existing_config = is_config_derived_source(existing.source);
+            if existing_config && !incoming_config {
+                false
+            } else if incoming_config && !existing_config {
+                true
+            } else {
+                name_priority(incoming.source) >= name_priority(existing.source)
+            }
+        }
+    }
+}
+
+/// Pick a display name for a live port: config-derived names win over log names.
+pub fn preferred_port_name<'a, I>(port: u16, existing: Option<&str>, known: I) -> Option<String>
+where
+    I: IntoIterator<Item = &'a PortInfo>,
+{
+    let known: Vec<&PortInfo> = known.into_iter().filter(|item| item.port == port).collect();
+    let config_name = known
+        .iter()
+        .find(|item| is_config_derived_source(item.source) && item.name.as_ref().is_some_and(|name| !name.trim().is_empty()))
+        .and_then(|item| item.name.clone());
+    if let Some(name) = config_name {
+        return Some(name);
+    }
+    if let Some(name) = existing.map(str::trim).filter(|name| !name.is_empty()) {
+        return Some(name.to_string());
+    }
+    known
+        .iter()
+        .find(|item| item.name.as_ref().is_some_and(|name| !name.trim().is_empty()))
+        .and_then(|item| item.name.clone())
 }
 
 
@@ -468,6 +534,9 @@ fn collect_local_ports(dir: &Path, script_filter: Option<&str>, ports: &mut Vec<
 }
 
 pub fn ports_from_log(line: &str) -> Vec<PortInfo> {
+    if !is_listen_ready_line(line) {
+        return Vec::new();
+    }
     let name = concurrent_prefix(line);
     let mut found = Vec::new();
     for port in ports_from_host_urls(line) {
@@ -475,18 +544,35 @@ pub fn ports_from_log(line: &str) -> Vec<PortInfo> {
     }
     if found.is_empty() {
         let lower = line.to_ascii_lowercase();
-        if lower.contains("listening")
-            || lower.contains("local:")
-            || lower.contains("ready in")
-            || lower.contains("localhost")
-            || lower.contains("--port")
-        {
-            for port in extract_ports(&lower, false) {
-                merge_ports(&mut found, PortInfo::named(port, PortSource::Log, name.clone()));
-            }
+        for port in extract_ports(&lower, false) {
+            merge_ports(&mut found, PortInfo::named(port, PortSource::Log, name.clone()));
         }
     }
     found
+}
+
+fn is_listen_ready_line(line: &str) -> bool {
+    let lower = strip_ansi(line).to_ascii_lowercase();
+    const MARKERS: &[&str] = &[
+        "listening",
+        "listen on",
+        "local:",
+        "ready in",
+        "ready started",
+        "started server",
+        "server running",
+        "server started",
+        "now running",
+        "bound to",
+        "listening at",
+        "listening on",
+        "running at",
+        "running on",
+        "started on",
+        "serving at",
+        "serving on",
+    ];
+    MARKERS.iter().any(|marker| lower.contains(marker))
 }
 
 fn concurrent_prefix(line: &str) -> Option<String> {
@@ -1017,14 +1103,61 @@ fn ports_from_port_assignments(text: &str) -> Vec<u16> {
             .map(|i| i + 1)
             .unwrap_or(0);
         let ident = &lower[start..abs + 4];
-        let after = lower[abs + 4..].trim_start_matches(|c: char| c.is_ascii_alphanumeric() || c == '_');
-        let after = after.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ':' | '='));
         if ident == "port" || ident.ends_with("_port") {
-            if let Some(port) = parse_port_token(after.split(|c: char| !c.is_ascii_digit()).next().unwrap_or("")) {
-                ports.push(port);
+            let after = &text[abs + 4..];
+            let stmt_end = after
+                .find(|c: char| c == ';' || c == '\n' || c == '\r')
+                .unwrap_or(after.len());
+            for port in ports_from_assignment_rhs(&after[..stmt_end]) {
+                if !ports.contains(&port) {
+                    ports.push(port);
+                }
             }
         }
         search = abs + 4;
+    }
+    ports
+}
+
+fn ports_from_assignment_rhs(stmt: &str) -> Vec<u16> {
+    let mut ports = Vec::new();
+    let lower = stmt.to_ascii_lowercase();
+    // Fallback literals: `|| 5177`, `?? 5177`, `|| "5177"`, `process.env.PORT || '5177'`.
+    for sep in ["||", "??"] {
+        let mut start = 0;
+        while let Some(at) = lower[start..].find(sep) {
+            let abs = start + at + sep.len();
+            let rest = stmt[abs..].trim_start().trim_start_matches(['\'', '"', '`', '(']);
+            if rest.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                if let Some(port) = parse_port_token(rest.split(|c: char| !c.is_ascii_digit()).next().unwrap_or("")) {
+                    if !ports.contains(&port) {
+                        ports.push(port);
+                    }
+                }
+            }
+            start = abs;
+        }
+    }
+    // Direct literals: `PORT = 5177`, `PORT: 5177`, or `const PORT: number = 5177`.
+    if let Some(at) = lower.rfind('=') {
+        let rest = stmt[at + 1..].trim_start().trim_start_matches(['\'', '"', '`']);
+        if rest.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            if let Some(port) = parse_port_token(rest.split(|c: char| !c.is_ascii_digit()).next().unwrap_or("")) {
+                if !ports.contains(&port) {
+                    ports.insert(0, port);
+                }
+            }
+        }
+    } else {
+        let after = stmt.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ':' | '='));
+        let immediate = after.trim_start_matches(['\'', '"', '`']);
+        if immediate.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            if let Some(port) = parse_port_token(immediate.split(|c: char| !c.is_ascii_digit()).next().unwrap_or("")) {
+                if !ports.contains(&port) {
+                    ports.push(port);
+                }
+            }
+        }
     }
     ports
 }
@@ -1389,4 +1522,108 @@ fn parse_ss(text: &str) -> Vec<Listener> {
         }
     }
     listeners
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn named(port: u16, source: PortSource, name: &str) -> PortInfo {
+        PortInfo::named(port, source, Some(name.to_string())).expect("plausible port")
+    }
+
+    #[test]
+    fn port_assignments_read_env_fallbacks() {
+        let samples = [
+            "const PORT = Number(process.env.PORT) || 5177;",
+            "const PORT = process.env.PORT ?? 5177;",
+            "const PORT = parseInt(process.env.PORT || '5177');",
+            "const PORT = parseInt(process.env.PORT || \"5177\", 10);",
+            "const PORT = parseInt(process.env.PORT, 10) || 5177;",
+            "const PORT = 5177;",
+        ];
+        for sample in samples {
+            let found = ports_from_port_assignments(sample);
+            assert!(
+                found.contains(&5177),
+                "expected 5177 in {sample:?}, got {found:?}"
+            );
+            assert!(
+                !found.contains(&10),
+                "must not treat parseInt radix 10 as a port in {sample:?}: {found:?}"
+            );
+        }
+        assert_eq!(ports_from_port_assignments("const PORT = parseInt(process.env.PORT, 10);"), Vec::<u16>::new());
+    }
+
+    #[test]
+    fn log_ports_only_come_from_listen_ready_lines() {
+        let listen = ports_from_log("[server] API listening on http://127.0.0.1:5177");
+        assert_eq!(listen.len(), 1);
+        assert_eq!(listen[0].port, 5177);
+        assert_eq!(listen[0].name.as_deref(), Some("server"));
+
+        let vite = ports_from_log("[dashboard]  ➜  Local:   http://127.0.0.1:5178/");
+        assert_eq!(vite.len(), 1);
+        assert_eq!(vite[0].port, 5178);
+        assert_eq!(vite[0].name.as_deref(), Some("dashboard"));
+
+        let mention = ports_from_log("[server] Dashboard: http://127.0.0.1:5178");
+        assert!(mention.is_empty(), "mentioned URL must not be a bound port: {mention:?}");
+
+        let proxy = ports_from_log("[dashboard] Proxying /api to http://127.0.0.1:5177");
+        assert!(proxy.is_empty(), "proxy mention must not be a bound port: {proxy:?}");
+    }
+
+    #[test]
+    fn config_name_beats_log_name_for_the_same_port() {
+        let mut ports = vec![named(5178, PortSource::Log, "server")];
+        merge_ports(&mut ports, [named(5178, PortSource::Config, "dashboard")]);
+        assert_eq!(ports.len(), 1);
+        assert_eq!(ports[0].name.as_deref(), Some("dashboard"));
+
+        let mut ports = vec![named(5178, PortSource::Config, "dashboard")];
+        merge_ports(&mut ports, [named(5178, PortSource::Log, "server")]);
+        assert_eq!(ports[0].name.as_deref(), Some("dashboard"));
+    }
+
+    #[test]
+    fn preferred_name_uses_config_then_log() {
+        let expected = vec![
+            named(3000, PortSource::Default, "server"),
+            named(5178, PortSource::Config, "dashboard"),
+        ];
+        let logs = vec![
+            named(5177, PortSource::Log, "server"),
+            named(5178, PortSource::Log, "server"),
+        ];
+        let known: Vec<&PortInfo> = expected.iter().chain(logs.iter()).collect();
+        assert_eq!(
+            preferred_port_name(5178, Some("server"), known.iter().copied()),
+            Some("dashboard".into())
+        );
+        assert_eq!(
+            preferred_port_name(5177, Some("server"), known.iter().copied()),
+            Some("server".into())
+        );
+        // A monorepo with explicit backend/frontend names stays correctly attributed.
+        let expected = vec![
+            named(3190, PortSource::Config, "backend"),
+            named(5190, PortSource::Config, "frontend"),
+        ];
+        let logs = vec![
+            named(3190, PortSource::Log, "backend"),
+            named(5190, PortSource::Log, "frontend"),
+        ];
+        let known: Vec<&PortInfo> = expected.iter().chain(logs.iter()).collect();
+        assert_eq!(
+            preferred_port_name(3190, Some("backend"), known.iter().copied()),
+            Some("backend".into())
+        );
+        assert_eq!(
+            preferred_port_name(5190, Some("frontend"), known.iter().copied()),
+            Some("frontend".into())
+        );
+    }
 }

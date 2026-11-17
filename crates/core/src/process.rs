@@ -10,7 +10,7 @@ use std::process::Stdio;
 use serde::{Deserialize, Serialize};
 
 use crate::health::HealthInfo;
-use crate::ports::{localhost_url, merge_ports, PortInfo, PortSource};
+use crate::ports::{localhost_url, merge_ports, preferred_port_name, PortInfo, PortSource};
 use crate::warnings::Warning;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,14 +63,11 @@ impl Run {
     pub fn apply_live_ports(&mut self, live: Vec<PortInfo>) {
         let mut live = live;
         for item in &mut live {
-            if item.name.is_none() {
-                item.name = self
-                    .log_ports
-                    .iter()
-                    .chain(self.expected_ports.iter())
-                    .find(|port| port.port == item.port)
-                    .and_then(|port| port.name.clone());
-            }
+            item.name = preferred_port_name(
+                item.port,
+                item.name.as_deref(),
+                self.expected_ports.iter().chain(self.log_ports.iter()),
+            );
             if item.url.is_none() {
                 item.url = Some(localhost_url(item.port, None));
             }
@@ -278,3 +275,88 @@ pub fn kill_process_tree_force(pid: u32) -> Result<(), String> {
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt as _;
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::health::HealthInfo;
+    use crate::ports::{PortInfo, PortSource};
+
+    fn named(port: u16, source: PortSource, name: Option<&str>) -> PortInfo {
+        PortInfo::named(port, source, name.map(str::to_string)).expect("plausible port")
+    }
+
+    fn run_with(expected: Vec<PortInfo>, logs: Vec<PortInfo>) -> Run {
+        Run {
+            id: "run".into(),
+            part_id: "part".into(),
+            part_name: "part".into(),
+            part_path: "/tmp/part".into(),
+            script: "dev".into(),
+            command: "npm run dev".into(),
+            cwd: "/tmp/part".into(),
+            pid: Some(1),
+            process_start: None,
+            log_path: None,
+            status: RunStatus::Running,
+            exit_code: None,
+            started_at: 0,
+            ended_at: None,
+            ports: Vec::new(),
+            expected_ports: expected,
+            health: HealthInfo::unknown(),
+            warnings: Vec::new(),
+            log_ports: logs,
+        }
+    }
+
+    #[test]
+    fn live_port_names_prefer_config_over_logs() {
+        let mut run = run_with(
+            vec![
+                named(3000, PortSource::Default, Some("server")),
+                named(5178, PortSource::Config, Some("dashboard")),
+            ],
+            vec![
+                named(5177, PortSource::Log, Some("server")),
+                named(5178, PortSource::Log, Some("server")),
+            ],
+        );
+        run.apply_live_ports(vec![
+            named(5177, PortSource::Process, Some("server")),
+            named(5178, PortSource::Process, Some("server")),
+        ]);
+        let names: Vec<(u16, Option<&str>)> = run
+            .ports
+            .iter()
+            .map(|port| (port.port, port.name.as_deref()))
+            .collect();
+        assert_eq!(
+            names,
+            vec![(5177, Some("server")), (5178, Some("dashboard"))],
+            "config name must win for the dashboard port; the API port keeps the server label"
+        );
+
+        let mut monorepo = run_with(
+            vec![
+                named(3190, PortSource::Config, Some("backend")),
+                named(5190, PortSource::Config, Some("frontend")),
+            ],
+            vec![
+                named(3190, PortSource::Log, Some("backend")),
+                named(5190, PortSource::Log, Some("frontend")),
+            ],
+        );
+        monorepo.apply_live_ports(vec![
+            named(3190, PortSource::Process, Some("backend")),
+            named(5190, PortSource::Process, Some("frontend")),
+        ]);
+        let names: Vec<(u16, Option<&str>)> = monorepo
+            .ports
+            .iter()
+            .map(|port| (port.port, port.name.as_deref()))
+            .collect();
+        assert_eq!(names, vec![(3190, Some("backend")), (5190, Some("frontend"))]);
+    }
+}

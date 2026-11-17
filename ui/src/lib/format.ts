@@ -124,6 +124,10 @@ export function portsFor(part: ProjectPart, runs: Run[]): PortInfo[] {
 function withPortNames(ports: PortInfo[], known?: PortInfo[] | null): PortInfo[] {
   if (!known?.length) return ports;
   return ports.map((item) => {
+    const configNamed = known.find(
+      (port) => port.port === item.port && Boolean(port.name?.trim()) && isExpectedSource(port.source),
+    );
+    if (configNamed?.name?.trim()) return { ...item, name: configNamed.name };
     if (item.name?.trim()) return item;
     const named = known.find((port) => port.port === item.port && Boolean(port.name?.trim()));
     return named ? { ...item, name: named.name } : item;

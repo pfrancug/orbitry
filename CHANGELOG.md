@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Port labels prefer a name from the project's configuration over a name guessed from log output. Logs still confirm that a port is listening, but a line that only mentions another URL is no longer treated as a bound port and can no longer overwrite a config-derived name.
-- Fallback port values in source, such as `process.env.PORT || …`, are recognized, so a framework default is no longer shown when the real port is written that way.
+- Fallback port values in source, such as `process.env.PORT || …`, are recognized. If that variable is set in a project `.env` file or in the start script (for example `PORT=… npm run dev`), that value is used; otherwise the fallback after `||` or `??` is used. A framework default is only shown when neither is present.
 
 ## [0.9.2] - 2026-11-17
 

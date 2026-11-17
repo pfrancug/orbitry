@@ -527,10 +527,16 @@ fn package_can_bind(dir: &Path, scripts: &[DetectedScript], script_filter: Optio
 }
 
 fn collect_local_ports(dir: &Path, script_filter: Option<&str>, ports: &mut Vec<PortInfo>) {
+    let env = env_port_bindings(dir, script_filter);
+    for (key, &port) in &env {
+        if is_port_env_key(key) {
+            merge_ports(ports, PortInfo::new(port, PortSource::Env));
+        }
+    }
     collect_env_ports(dir, ports);
     collect_config_ports(dir, ports, script_filter);
     collect_flag_ports(dir, &[], script_filter, ports);
-    collect_source_ports(dir, ports);
+    collect_source_ports(dir, ports, &env);
 }
 
 pub fn ports_from_log(line: &str) -> Vec<PortInfo> {
@@ -821,7 +827,8 @@ pub fn default_port_for(framework: &str) -> Option<u16> {
     Some(port)
 }
 
-fn ports_from_env(text: &str) -> Vec<u16> {
+
+fn is_port_env_key(key: &str) -> bool {
     const KEYS: &[&str] = &[
         "port",
         "server_port",
@@ -836,6 +843,11 @@ fn ports_from_env(text: &str) -> Vec<u16> {
         "nuxt_port",
         "astro_port",
     ];
+    KEYS.iter()
+        .any(|candidate| key.eq_ignore_ascii_case(candidate))
+}
+
+fn ports_from_env(text: &str) -> Vec<u16> {
     let mut ports = Vec::new();
     for raw in text.lines() {
         let line = raw.trim();
@@ -846,10 +858,7 @@ fn ports_from_env(text: &str) -> Vec<u16> {
             continue;
         };
         let key = key.trim().trim_start_matches("export ").trim();
-        if KEYS
-            .iter()
-            .any(|candidate| key.eq_ignore_ascii_case(candidate))
-        {
+        if is_port_env_key(key) {
             if let Some(port) = parse_port_token(value.trim().trim_matches(['\'', '"'])) {
                 ports.push(port);
             }
@@ -1047,7 +1056,7 @@ fn matching_brace(text: &str, open: usize) -> Option<usize> {
     None
 }
 
-fn collect_source_ports(dir: &Path, ports: &mut Vec<PortInfo>) {
+fn collect_source_ports(dir: &Path, ports: &mut Vec<PortInfo>, env: &HashMap<String, u16>) {
     const FILES: &[&str] = &[
         "src/index.ts",
         "src/index.js",
@@ -1068,8 +1077,8 @@ fn collect_source_ports(dir: &Path, ports: &mut Vec<PortInfo>) {
     }
     let combined = sources.join("
 ");
-    for port in ports_from_port_assignments(&combined) {
-        merge_ports(ports, PortInfo::new(port, PortSource::Config));
+    for (port, source) in resolved_port_assignments(&combined, env) {
+        merge_ports(ports, PortInfo::new(port, source));
     }
 
     // Resolve imported PORT constants from a workspace "shared" package.
@@ -1082,8 +1091,8 @@ fn collect_source_ports(dir: &Path, ports: &mut Vec<PortInfo>) {
                 }
                 for name in FILES {
                     if let Ok(text) = fs::read_to_string(shared.join(name)) {
-                        for port in ports_from_port_assignments(&text) {
-                            merge_ports(ports, PortInfo::new(port, PortSource::Config));
+                        for (port, source) in resolved_port_assignments(&text, env) {
+                            merge_ports(ports, PortInfo::new(port, source));
                         }
                     }
                 }
@@ -1092,7 +1101,18 @@ fn collect_source_ports(dir: &Path, ports: &mut Vec<PortInfo>) {
     }
 }
 
+#[cfg(test)]
 fn ports_from_port_assignments(text: &str) -> Vec<u16> {
+    resolved_port_assignments(text, &HashMap::new())
+        .into_iter()
+        .map(|(port, _source)| port)
+        .collect()
+}
+
+/// Resolve `PORT = process.env.PORT || 5177` style assignments.
+/// An env value for the referenced variable wins; otherwise the fallback
+/// literal after `||` / `??` is used. A bare `PORT = 5177` is a config literal.
+fn resolved_port_assignments(text: &str, env: &HashMap<String, u16>) -> Vec<(u16, PortSource)> {
     let mut ports = Vec::new();
     let lower = text.to_ascii_lowercase();
     let mut search = 0;
@@ -1108,15 +1128,171 @@ fn ports_from_port_assignments(text: &str) -> Vec<u16> {
             let stmt_end = after
                 .find(|c: char| c == ';' || c == '\n' || c == '\r')
                 .unwrap_or(after.len());
-            for port in ports_from_assignment_rhs(&after[..stmt_end]) {
-                if !ports.contains(&port) {
-                    ports.push(port);
+            for item in resolve_assignment_rhs(&after[..stmt_end], env) {
+                if !ports.iter().any(|(port, _)| *port == item.0) {
+                    ports.push(item);
                 }
             }
+            search = abs + 4 + stmt_end;
+            continue;
         }
         search = abs + 4;
     }
     ports
+}
+
+fn resolve_assignment_rhs(stmt: &str, env: &HashMap<String, u16>) -> Vec<(u16, PortSource)> {
+    let keys = assignment_env_keys(stmt);
+    let rhs_ports = ports_from_assignment_rhs(stmt);
+    if !keys.is_empty() {
+        for key in &keys {
+            if let Some(&port) = env.get(key) {
+                return vec![(port, PortSource::Env)];
+            }
+        }
+        // No env value: use the code fallback after || or ??, if any.
+        let fallbacks = assignment_fallback_ports(stmt);
+        return fallbacks
+            .into_iter()
+            .map(|port| (port, PortSource::Config))
+            .collect();
+    }
+    rhs_ports
+        .into_iter()
+        .map(|port| (port, PortSource::Config))
+        .collect()
+}
+
+fn assignment_fallback_ports(stmt: &str) -> Vec<u16> {
+    let mut ports = Vec::new();
+    let lower = stmt.to_ascii_lowercase();
+    for sep in ["||", "??"] {
+        let mut start = 0;
+        while let Some(at) = lower[start..].find(sep) {
+            let abs = start + at + sep.len();
+            let rest = stmt[abs..].trim_start().trim_start_matches(['\'', '"', '`', '(']);
+            if rest.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                if let Some(port) = parse_port_token(rest.split(|c: char| !c.is_ascii_digit()).next().unwrap_or("")) {
+                    if !ports.contains(&port) {
+                        ports.push(port);
+                    }
+                }
+            }
+            start = abs;
+        }
+    }
+    ports
+}
+
+fn assignment_env_keys(stmt: &str) -> Vec<String> {
+    let lower = stmt.to_ascii_lowercase();
+    let mut keys = Vec::new();
+    let mut search = 0;
+    let marker = "process.env";
+    while let Some(at) = lower[search..].find(marker) {
+        let rest = &lower[search + at + marker.len()..];
+        let key = if let Some(stripped) = rest.strip_prefix('.') {
+            let ident: String = stripped
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            if ident.is_empty() {
+                None
+            } else {
+                Some(ident)
+            }
+        } else {
+            let rest = rest.trim_start();
+            if rest.starts_with('[') {
+                let inner = rest[1..].trim_start().trim_start_matches(['\'', '"', '`']);
+                let ident: String = inner
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .collect();
+                if ident.is_empty() {
+                    None
+                } else {
+                    Some(ident)
+                }
+            } else {
+                None
+            }
+        };
+        if let Some(key) = key {
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
+        }
+        search += at + marker.len();
+    }
+    keys
+}
+
+fn env_port_bindings(dir: &Path, script_filter: Option<&str>) -> HashMap<String, u16> {
+    let mut map = HashMap::new();
+    const NAMES: &[&str] = &[
+        ".env",
+        ".env.local",
+        ".env.development",
+        ".env.development.local",
+        ".env.dev",
+    ];
+    for name in NAMES {
+        if let Ok(text) = fs::read_to_string(dir.join(name)) {
+            for (key, port) in bindings_from_env_text(&text) {
+                map.insert(key, port);
+            }
+        }
+    }
+    if let Some(commands) = package_script_commands(dir, script_filter) {
+        for command in commands {
+            for (key, port) in bindings_from_inline_env(&command) {
+                map.insert(key, port);
+            }
+        }
+    }
+    map
+}
+
+fn bindings_from_env_text(text: &str) -> Vec<(String, u16)> {
+    let mut bindings = Vec::new();
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim().trim_start_matches("export ").trim().to_ascii_lowercase();
+        if key.is_empty() {
+            continue;
+        }
+        if let Some(port) = parse_port_token(value.trim().trim_matches(['\'', '"'])) {
+            bindings.push((key, port));
+        }
+    }
+    bindings
+}
+
+fn bindings_from_inline_env(command: &str) -> Vec<(String, u16)> {
+    let mut bindings = Vec::new();
+    for token in command.split_whitespace() {
+        let Some((key, value)) = token.split_once('=') else {
+            continue;
+        };
+        if key.starts_with('-') {
+            continue;
+        }
+        let key = key.trim().to_ascii_lowercase();
+        if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            continue;
+        }
+        if let Some(port) = parse_port_token(value.trim_matches(['\'', '"'])) {
+            bindings.push((key, port));
+        }
+    }
+    bindings
 }
 
 fn ports_from_assignment_rhs(stmt: &str) -> Vec<u16> {
@@ -1625,5 +1801,45 @@ mod tests {
             preferred_port_name(5190, Some("frontend"), known.iter().copied()),
             Some("frontend".into())
         );
+    }
+
+    #[test]
+    fn env_value_wins_over_assignment_fallback() {
+        let sample = "const PORT = Number(process.env.PORT) || 5177;";
+        let mut env = HashMap::new();
+        env.insert("port".into(), 4000);
+        let found = resolved_port_assignments(sample, &env);
+        assert_eq!(found, vec![(4000, PortSource::Env)]);
+        assert_eq!(
+            resolved_port_assignments(sample, &HashMap::new()),
+            vec![(5177, PortSource::Config)]
+        );
+        assert_eq!(
+            resolved_port_assignments("const PORT = process.env['PORT'] ?? 5177;", &env),
+            vec![(4000, PortSource::Env)]
+        );
+        assert_eq!(
+            resolved_port_assignments("const PORT = parseInt(process.env.PORT || '5177', 10);", &env),
+            vec![(4000, PortSource::Env)]
+        );
+        // A hardcoded port is not replaced by a different env value.
+        assert_eq!(
+            resolved_port_assignments("const PORT = 5177;", &env),
+            vec![(5177, PortSource::Config)]
+        );
+    }
+
+    #[test]
+    fn inline_script_env_sets_port() {
+        let found = bindings_from_inline_env("PORT=4000 tsx watch src/index.ts");
+        assert_eq!(found, vec![("port".into(), 4000)]);
+        let found = bindings_from_inline_env("cross-env PORT=4000 npm run dev");
+        assert_eq!(found, vec![("port".into(), 4000)]);
+        let found = bindings_from_env_text("PORT=4000\n# comment\nSECRET=nope\nTIMEOUT=5000\n");
+        assert_eq!(found, vec![("port".into(), 4000), ("timeout".into(), 5000)]);
+        assert!(is_port_env_key("PORT"));
+        assert!(is_port_env_key("api_port"));
+        assert!(!is_port_env_key("timeout"));
+        assert!(!is_port_env_key("secret"));
     }
 }

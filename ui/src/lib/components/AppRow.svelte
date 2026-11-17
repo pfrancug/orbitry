@@ -69,9 +69,13 @@
         {#if part.framework}
           <span class="muted framework-tag">{part.framework}</span>
         {/if}
-        <WarningBadge {warnings} />
+        <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
+          <WarningBadge {warnings} />
+        </span>
         {#if missingDeps}
-          <DepsBadge {part} />
+          <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
+            <DepsBadge {part} />
+          </span>
         {/if}
         {#if flag === "new"}<span class="marker new">{t("common.new")}</span>{/if}
         {#if flag === "changed"}<span class="marker changed">{t("common.changed")}</span>{/if}

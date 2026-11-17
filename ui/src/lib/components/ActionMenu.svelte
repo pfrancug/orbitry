@@ -25,7 +25,8 @@
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") open = false;
     };
-    const onClick = () => {
+    const onClick = (event: MouseEvent) => {
+      event.stopPropagation();
       open = false;
     };
     document.addEventListener("pointerdown", onPointer);

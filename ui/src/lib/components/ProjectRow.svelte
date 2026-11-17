@@ -59,7 +59,9 @@
         {:else if failed}
           <span class="dot fail" title={t("projects.failed")}></span>
         {/if}
-        <WarningBadge {warnings} />
+        <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
+          <WarningBadge {warnings} />
+        </span>
         {#if groupMarker === "new"}<span class="marker new">{t("common.new")}</span>{/if}
         {#if groupMarker === "changed"}<span class="marker changed">{t("common.changed")}</span>{/if}
         {#if groupMarker === "removed"}<span class="marker removed">{t("common.removed")}</span>{/if}

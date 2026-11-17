@@ -231,7 +231,10 @@
                 type="button"
                 disabled={isPending(item.partId, item.script) || Boolean(startBlockReason(item.partId, item.script))}
                 title={startBlockReason(item.partId, item.script) ?? `${t("script.start")} ${item.script}`}
-                onclick={() => startScript(item.partId, item.script, dash.groups)}
+                onclick={(event) => {
+                  event.stopPropagation();
+                  startScript(item.partId, item.script, dash.groups);
+                }}
               >
                 <Icon name="play" size={12} />
                 <span>
@@ -276,7 +279,9 @@
               <td>
                 <button class="linkish" type="button" onclick={() => inspect(run)}>
                   {partLabel(run)}
-                  <WarningBadge {warnings} />
+                  <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
+                    <WarningBadge {warnings} />
+                  </span>
                 </button>
               </td>
               <td><span class="badge quiet">{run.script}</span></td>
@@ -293,7 +298,15 @@
               <td><ResourceChip usage={runMetrics(run.id)} /></td>
               <td class="tabular muted">{run.pid ?? "—"}</td>
               <td class="row-actions">
-                <button class="icon-btn ghost" type="button" title={t("overview.logs")} onclick={() => showLogs(run)}>
+                <button
+                  class="icon-btn ghost"
+                  type="button"
+                  title={t("overview.logs")}
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    showLogs(run);
+                  }}
+                >
                   <Icon name="logs" />
                 </button>
                 <ActionMenu title={t("overview.more")}>
@@ -301,7 +314,10 @@
                     type="button"
                     role="menuitem"
                     disabled={pending || Boolean(startBlockReason(run.partId, run.script))}
-                    onclick={() => restartScript(run.partId, run.script, dash.groups)}
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      restartScript(run.partId, run.script, dash.groups);
+                    }}
                   >
                     {t("overview.restart")}
                   </button>
@@ -310,7 +326,10 @@
                     role="menuitem"
                     class="danger"
                     disabled={pending}
-                    onclick={() => stopScript(run.partId, run.script)}
+                    onclick={(event) => {
+                      event.stopPropagation();
+                      stopScript(run.partId, run.script);
+                    }}
                   >
                     {t("overview.stop")}
                   </button>
@@ -355,7 +374,15 @@
               </td>
               <td class="muted">{t("overview.ago", { time: formatUptime(run.endedAt, now) })}</td>
               <td class="row-actions">
-                <button class="icon-btn ghost" type="button" title={t("overview.logs")} onclick={() => showLogs(run)}>
+                <button
+                  class="icon-btn ghost"
+                  type="button"
+                  title={t("overview.logs")}
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    showLogs(run);
+                  }}
+                >
                   <Icon name="logs" />
                 </button>
                 <button
@@ -363,7 +390,10 @@
                   type="button"
                   title={startBlockReason(run.partId, run.script) ?? t("overview.startAgain")}
                   disabled={isPending(run.partId, run.script) || Boolean(startBlockReason(run.partId, run.script))}
-                  onclick={() => startScript(run.partId, run.script, dash.groups)}
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    startScript(run.partId, run.script, dash.groups);
+                  }}
                 >
                   <Icon name="play" size={12} />
                 </button>

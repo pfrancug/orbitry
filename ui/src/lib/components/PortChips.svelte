@@ -54,6 +54,7 @@
           target="_blank"
           rel="noopener noreferrer"
           title={titleOf(item, status)}
+          onclick={(event) => event.stopPropagation()}
         >
           <span class="status-dot" class:on={status === "ok"} class:fail={status === "fail"}></span>
           <em>{label}</em>

@@ -5,6 +5,12 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.4] - 2026-11-17
+
+### Fixed
+
+- Starting, restarting, or installing a script from the dashboard no longer opens the details panel. The panel still opens only from a list item, and it still closes when that item is clicked again or when the panel is closed. If the panel is already open, it stays open and follows the script that was just started. Port links, the logs action, and the overflow menu also leave the panel alone unless they are meant to open it.
+
 ## [0.9.3] - 2026-11-17
 
 ### Fixed

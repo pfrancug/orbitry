@@ -150,8 +150,8 @@ export async function toggleScript(partId: string, script: string, groups: RepoG
       const run = await startRun(partId, script);
       upsertRun(run);
       remember(partId, script, groups);
-      selectPart(partId, script, true);
-      openRun(run.id);
+      selectPart(partId, script, runState.panelOpen);
+      openRun(run.id, runState.panelOpen);
     }
   });
 }
@@ -162,8 +162,8 @@ export async function startInstall(partId: string, groups: RepoGroup[] = []) {
     const run = await requestInstall(partId);
     upsertRun(run);
     remember(partId, "install", groups);
-    selectPart(partId, "install", true);
-    openRun(run.id);
+    selectPart(partId, "install", runState.panelOpen);
+    openRun(run.id, runState.panelOpen);
   });
 }
 
@@ -178,8 +178,8 @@ export async function startScript(partId: string, script: string, groups: RepoGr
     const run = await startRun(partId, script);
     upsertRun(run);
     remember(partId, script, groups);
-    selectPart(partId, script, true);
-    openRun(run.id);
+    selectPart(partId, script, runState.panelOpen);
+    openRun(run.id, runState.panelOpen);
   });
 }
 
@@ -208,8 +208,8 @@ export async function restartScript(partId: string, script: string, groups: Repo
     const run = await startRun(partId, script);
     upsertRun(run);
     remember(partId, script, groups);
-    selectPart(partId, script, runState.panelOpen || true);
-    openRun(run.id);
+    selectPart(partId, script, runState.panelOpen);
+    openRun(run.id, runState.panelOpen);
   });
 }
 

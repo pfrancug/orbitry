@@ -551,7 +551,9 @@ async function runSmoke(base) {
           name: h2.textContent?.trim() ?? "",
           nameIdx,
           badgeIdx,
-          title: badge.getAttribute("title") ?? "",
+          // Custom HoverPopover replaces the native title tooltip; aria-label keeps the summary.
+          label: badge.getAttribute("aria-label") ?? "",
+          nativeTitle: badge.getAttribute("title") ?? "",
         });
       }
       return findings;
@@ -566,21 +568,52 @@ async function runSmoke(base) {
             `AI badge for ${item.name} is not after the project name (nameIdx=${item.nameIdx} badgeIdx=${item.badgeIdx})`,
           );
         }
-        if (!item.title) {
-          errors.push(`AI badge for ${item.name} has empty tooltip`);
+        if (!item.label) {
+          errors.push(`AI badge for ${item.name} has empty aria-label`);
+        }
+        if (item.nativeTitle) {
+          errors.push(`AI badge for ${item.name} still has a native title tooltip`);
         }
       }
       const demo = aiPlacement.find((item) => item.name === "demo-app");
       if (!demo) errors.push("demo-app missing AI badge (expected model + dependency signals)");
-      else if (!/openai|ai|demo-model/i.test(demo.title)) {
-        errors.push(`demo-app AI tooltip missing expected reasons: ${demo.title}`);
+      else if (!/openai|ai|demo-model/i.test(demo.label)) {
+        errors.push(`demo-app AI tooltip missing expected reasons: ${demo.label}`);
       }
       const comfy = aiPlacement.find((item) => item.name === "ComfyUI");
       if (!comfy) errors.push("ComfyUI missing AI badge (expected deps and/or local weights)");
-      else if (!/comfyui|torch|diffusers|safetensors/i.test(comfy.title)) {
-        errors.push(`ComfyUI AI tooltip missing expected reasons: ${comfy.title}`);
+      else if (!/comfyui|torch|diffusers|safetensors/i.test(comfy.label)) {
+        errors.push(`ComfyUI AI tooltip missing expected reasons: ${comfy.label}`);
       }
     }
+
+    // Projects must not show crash/fail dots — only running indicators.
+    const failDots = await page.locator(".project-row .dot.fail, .app-row .status-dot.fail").count();
+    if (failDots) errors.push(`Projects page still shows ${failDots} fail indicator(s)`);
+
+    // Settings categories + Plugins / Appearance.
+    await page.goto(`${base}/settings`, { waitUntil: "networkidle" });
+    await page.waitForSelector(".settings-nav", { timeout: 10_000 });
+    const settingsNav = await page.locator(".settings-nav-btn").allTextContents();
+    for (const label of ["General", "Appearance", "Open in", "Scanning", "Plugins", "About"]) {
+      if (!settingsNav.some((text) => text.trim() === label)) {
+        errors.push(`Settings missing category nav button: ${label}`);
+      }
+    }
+    await page.locator(".settings-nav-btn", { hasText: "Plugins" }).click();
+    await page.waitForSelector("text=Config bridge", { timeout: 5_000 });
+    const bridgeHint = await page.locator(".bridge-reads").textContent().catch(() => "");
+    if (!/vite\.config|next\.config|astro\.config/i.test(bridgeHint || "")) {
+      errors.push(`Plugins bridge reads text missing config files: ${bridgeHint}`);
+    }
+
+    // Databases project headers should be distinct from child rows.
+    await page.goto(`${base}/databases`, { waitUntil: "networkidle" });
+    await page.waitForSelector(".grid-row.project", { timeout: 10_000 });
+    const dbHeaders = await page.locator(".grid-row.project .project-name strong").count();
+    const dbChildren = await page.locator(".grid-row.child").count();
+    if (!dbHeaders) errors.push("Databases page missing project header rows");
+    if (!dbChildren) errors.push("Databases page missing indented database rows");
 
     // Failed models fetch must not break the projects page.
     expectingModelsFailure = true;

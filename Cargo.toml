@@ -5,6 +5,6 @@ members = ["crates/core", "crates/server"]
 [workspace.package]
 version = "0.0.0"
 edition = "2021"
-license = "MIT"
+license = "PolyForm-Noncommercial-1.0.0"
 authors = ["Piotr Francug"]
 repository = "https://github.com/pfrancug/orbitry"

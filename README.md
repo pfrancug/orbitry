@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img alt="MIT License" src="https://img.shields.io/badge/license-MIT-6c8cff?style=for-the-badge&labelColor=0b0b12" />
+  <img alt="PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-6c8cff?style=for-the-badge&labelColor=0b0b12" />
   &nbsp;
   <img alt="Early, in the making" src="https://img.shields.io/badge/status-early%2C%20in%20the%20making-c4b5fd?style=for-the-badge&labelColor=0b0b12" />
 </p>
@@ -56,5 +56,5 @@ Grab the latest build for Windows, macOS, or Linux from the [Releases](https://g
 Early. In the making. The orbit is taking shape.
 
 <p align="center">
-  <sub>MIT License · © 2026 Piotr Francug</sub>
+  <sub>PolyForm Noncommercial 1.0.0 · free for noncommercial use; commercial use requires permission · © 2026 Piotr Francug</sub>
 </p>

@@ -152,6 +152,10 @@ pub struct Config {
     /// attribute models. Older configs omit the field and keep the default.
     #[serde(default, skip_serializing_if = "is_false")]
     pub models_include_docs: bool,
+    /// AutoHotkey plugin (Windows). Default on; older configs omit it and keep
+    /// the default. On non-Windows hosts the plugin stays unavailable.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub ahk_plugin: bool,
 }
 
 impl Default for Config {
@@ -168,6 +172,7 @@ impl Default for Config {
             ignored_projects: Vec::new(),
             open_in: OpenInTargets::default(),
             models_include_docs: false,
+            ahk_plugin: true,
         }
     }
 }

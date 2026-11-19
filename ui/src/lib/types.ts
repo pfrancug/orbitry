@@ -1,6 +1,6 @@
 export type ScriptKind = "dev" | "preview" | "build" | "other";
 export type ScriptScope = "fe" | "be" | "shared";
-export type ProjectKind = "javascript" | "rust" | "python" | "go" | "docker" | "mixed";
+export type ProjectKind = "javascript" | "rust" | "python" | "go" | "docker" | "ahk" | "mixed";
 export type PartRole = "root" | "fe" | "be" | "shared" | "lib";
 export type PortSource = "default" | "config" | "env" | "flag" | "bridge" | "log" | "process";
 export type DatabaseSource = "env" | "prisma" | "compose" | "dependency" | "file";
@@ -19,9 +19,25 @@ export type BridgeStatus = {
   nodePath?: string | null;
   error?: string | null;
 };
+
+export type AhkInterpreter = {
+  version: string;
+  path: string;
+};
+
+export type AhkStatus = {
+  enabled: boolean;
+  available: boolean;
+  windows: boolean;
+  installed: boolean;
+  label: string;
+  state?: string;
+  reason?: string | null;
+  interpreters?: AhkInterpreter[];
+};
 export type HealthStatus = "unknown" | "ok" | "fail" | "skipped";
 
-export type ScriptSource = "package" | "workspace";
+export type ScriptSource = "package" | "workspace" | "ahk";
 
 export type DetectedScript = {
   name: string;
@@ -179,7 +195,10 @@ export type AppConfig = {
   openIn?: OpenInTargets;
   /** Present from 0.13.0. Older configs omit it (treated as false). */
   modelsIncludeDocs?: boolean;
+  /** Present from 0.14.0. Older configs omit it (treated as true). */
+  ahkPlugin?: boolean;
   bridgeStatus?: BridgeStatus;
+  ahkStatus?: AhkStatus;
   autostart?: AutostartStatus;
 };
 

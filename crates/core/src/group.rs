@@ -462,6 +462,8 @@ fn aggregate_build(members: &[Project]) -> BuildInfo {
 }
 
 fn is_js_like(kind: ProjectKind) -> bool {
+    // Mixed may include JS + AHK; Install still applies when package.json exists.
+    // Pure Ahk is never js-like.
     matches!(kind, ProjectKind::Javascript | ProjectKind::Mixed)
 }
 

@@ -105,9 +105,11 @@
   );
   const cwdPreview = $derived(selectedScript?.cwd || part?.path || "");
   const sourceHint = $derived(
-    selectedScript && scriptSourceDiffers(selectedScript)
-      ? t("script.viaRoot", { name: selectedScript.sourceName || t("script.workspace") })
-      : null,
+    selectedScript?.source === "ahk"
+      ? selectedScript.sourceName || "AutoHotkey"
+      : selectedScript && scriptSourceDiffers(selectedScript)
+        ? t("script.viaRoot", { name: selectedScript.sourceName || t("script.workspace") })
+        : null,
   );
   const os = $derived(desktopOs());
   const explorerLabel = $derived(

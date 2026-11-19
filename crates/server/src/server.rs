@@ -10,17 +10,17 @@ use axum::response::{IntoResponse, Json};
 use axum::routing::{get, post};
 use axum::Router;
 use orbitry_core::{
-    apply_port_overrides, attach_run_warnings, autostart_status, bridge_status, clamp_log_limit_mb,
+    ahk_status, apply_port_overrides, attach_run_warnings, autostart_status, bridge_status,
+    clamp_log_limit_mb,
     config_fingerprint, diff_groups, evaluate_warnings, export_cache, group_projects, load_config, paths_equal,
     empty_models_inventory, load_models_cache, load_scan_cache, models_cache_path, now_ms,
     refresh_compose, run_app_autostart, run_compose_action, compose_logs, save_config,
     save_models_cache, save_scan_cache, scan, scan_cache_path, scan_models_with_sink,
     set_autostart_enabled, static_compose_projects, AppAutostartReport, AutostartStatus,
-    BridgeStatus, ComposeAction, ComposeProject, Config,
-    ConfigBridgeMode, ListeningSnapshot, MetricsHub, MetricsSnapshot, ModelsInventory,
-    OpenInTargets,
-    ModelsScanState, PortOverride, ProcessManager, Project, RepoGroup, Run, RunStatus,
-    SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
+    AhkStatus, BridgeStatus, ComposeAction, ComposeProject, Config, ConfigBridgeMode,
+    ListeningSnapshot, MetricsHub, MetricsSnapshot, ModelsInventory, ModelsScanState, OpenInTargets,
+    PortOverride, ProcessManager, Project, RepoGroup, Run, RunStatus, SCANNER_VERSION, ScanCache,
+    ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -84,6 +84,7 @@ struct ConfigResponse {
     config: Config,
     default_patterns: Vec<DefaultPattern>,
     bridge_status: BridgeStatus,
+    ahk_status: AhkStatus,
     autostart: AutostartStatus,
 }
 
@@ -366,6 +367,9 @@ struct ConfigBody {
     /// When set, controls whether models attribution scans documentation Markdown.
     #[serde(default)]
     models_include_docs: Option<bool>,
+    /// AutoHotkey plugin toggle. Omitted keeps the saved value.
+    #[serde(default)]
+    ahk_plugin: Option<bool>,
 }
 
 async fn put_config(
@@ -398,6 +402,7 @@ async fn put_config(
         models_include_docs: body
             .models_include_docs
             .unwrap_or(existing.models_include_docs),
+        ahk_plugin: body.ahk_plugin.unwrap_or(existing.ahk_plugin),
     };
     config.normalize_autostart_apps();
     config.normalize_ignored_projects();
@@ -413,6 +418,7 @@ async fn put_config(
     let roots_or_patterns_changed =
         config.roots != existing.roots || config.script_patterns != existing.script_patterns;
     let bridge_changed = config.config_bridge != existing.config_bridge;
+    let ahk_changed = config.ahk_plugin != existing.ahk_plugin;
     let overrides_changed = config.port_overrides != existing.port_overrides;
     let models_docs_changed = config.models_include_docs != existing.models_include_docs;
     save_config(&state.config_path, &config).map_err(internal)?;
@@ -433,7 +439,7 @@ async fn put_config(
     if config.roots != existing.roots || models_docs_changed {
         start_models_scan(Arc::clone(&state));
     }
-    if roots_or_patterns_changed || bridge_changed {
+    if roots_or_patterns_changed || bridge_changed || ahk_changed {
         start_scan(Arc::clone(&state));
     }
     if let Some(enabled) = body.start_with_system {
@@ -468,16 +474,14 @@ async fn post_run(
         .flat_map(|group| group.parts.iter())
         .find(|item| item.id == body.part_id || item.path == body.part_id)
         .ok_or((StatusCode::NOT_FOUND, "part not found".into()))?;
-    if !part
+    let script = part
         .scripts
         .iter()
-        .any(|script| script.name == body.script)
-    {
-        return Err((
+        .find(|script| script.name == body.script)
+        .ok_or((
             StatusCode::NOT_FOUND,
             format!("script '{}' not found on this part", body.script),
-        ));
-    }
+        ))?;
     match state
         .manager
         .start(
@@ -485,10 +489,9 @@ async fn post_run(
             part.name.clone(),
             part.path.clone(),
             body.script.clone(),
-            part.scripts
-                .iter()
-                .find(|script| script.name == body.script)
-                .and_then(|script| script.cwd.clone()),
+            script.cwd.clone(),
+            script.source,
+            Some(script.command.clone()),
         )
         .await
     {
@@ -947,6 +950,7 @@ async fn maybe_run_app_autostart(state: &AppState) {
 fn config_response(config: Config) -> ConfigResponse {
     ConfigResponse {
         bridge_status: bridge_status(config.config_bridge),
+        ahk_status: ahk_status(&config),
         default_patterns: orbitry_core::default_kind_patterns()
             .into_iter()
             .map(|(kind, pattern)| DefaultPattern { kind, pattern })

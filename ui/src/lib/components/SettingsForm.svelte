@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, addIgnoredProject, removeIgnoredProject, setDesktopNotifications, setModelsIncludeDocs, setOpenInTarget, setStartWithSystem } from "$lib/dashboard.svelte";
+  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAhkPlugin, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, addIgnoredProject, removeIgnoredProject, setDesktopNotifications, setModelsIncludeDocs, setOpenInTarget, setStartWithSystem } from "$lib/dashboard.svelte";
   import { desktopOs, formatCheckedAt, pathsEqual, resolveOpenIn, shortPath } from "$lib/format";
   import { i18n, setLocale, t, type Locale } from "$lib/i18n.svelte";
   import { checkForUpdate, installUpdate, update } from "$lib/update.svelte";
@@ -305,22 +305,39 @@
           <p class="settings-hint">{t("settings.plugins.intro")}</p>
         </section>
 
-        <section class="settings-card">
-          <h2 class="settings-heading">{t("settings.bridge")}</h2>
-          <p class="hint">{t("settings.bridgeHint")}</p>
-          <p class="hint bridge-reads">{t("settings.bridgeReads")}</p>
-          <div class="bridge-row">
-            <span class="badge quiet">{dash.config.bridgeStatus?.label ?? (dash.config.configBridge === "off" ? t("settings.bridgeOff") : t("settings.bridgeUnknown"))}</span>
-          </div>
-          {#if dash.config.bridgeStatus?.nodeVersion}
-            <p class="hint">Node {dash.config.bridgeStatus.nodeVersion}{dash.config.bridgeStatus.nodePath ? ` · ${dash.config.bridgeStatus.nodePath}` : ""}</p>
-          {:else if dash.config.bridgeStatus?.state === "node-missing"}
-            <p class="hint">{t("settings.nodeMissing")}</p>
+        <section class="settings-card plugin-card" data-plugin="nodejs">
+          <header class="plugin-head">
+            <span class="plugin-icon" aria-hidden="true"><Icon name="code" size={16} /></span>
+            <div class="plugin-title">
+              <h2 class="settings-heading">{t("settings.plugin.node")}</h2>
+              <span
+                class="plugin-status"
+                class:ok={dash.config.bridgeStatus?.available}
+                class:off={(dash.config.configBridge ?? "auto") === "off" || dash.config.bridgeStatus?.state === "disabled"}
+              >
+                {dash.config.bridgeStatus?.label
+                  ?? ((dash.config.configBridge ?? "auto") === "off" ? t("settings.bridgeOff") : t("settings.bridgeUnknown"))}
+              </span>
+            </div>
+          </header>
+          {#if dash.config.bridgeStatus?.state === "node-missing"}
+            <p class="plugin-reason">{t("settings.nodeMissing")}</p>
           {:else if dash.config.bridgeStatus?.state === "plugin-missing"}
-            <p class="hint">{t("settings.pluginMissing")}</p>
+            <p class="plugin-reason">{t("settings.pluginMissing")}</p>
           {:else if dash.config.bridgeStatus?.error}
-            <p class="hint">{dash.config.bridgeStatus.error}</p>
+            <p class="plugin-reason">{dash.config.bridgeStatus.error}</p>
+          {:else if dash.config.bridgeStatus?.nodeVersion}
+            <p class="plugin-reason muted">Node {dash.config.bridgeStatus.nodeVersion}{dash.config.bridgeStatus.nodePath ? ` · ${dash.config.bridgeStatus.nodePath}` : ""}</p>
           {/if}
+          <div class="plugin-chips">
+            <span class="chip quiet">Vite</span>
+            <span class="chip quiet">Next</span>
+            <span class="chip quiet">Astro</span>
+          </div>
+          <ul class="plugin-reads">
+            <li>{t("settings.plugin.node.reads.ports")}</li>
+            <li>{t("settings.plugin.node.reads.scripts")}</li>
+          </ul>
           <div class="segmented">
             {#each ["auto", "on", "off"] as mode (mode)}
               <button
@@ -333,6 +350,49 @@
               </button>
             {/each}
           </div>
+        </section>
+
+        <section class="settings-card plugin-card" data-plugin="ahk">
+          <header class="plugin-head">
+            <span class="plugin-icon" aria-hidden="true"><Icon name="terminal" size={16} /></span>
+            <div class="plugin-title">
+              <h2 class="settings-heading">{t("settings.plugin.ahk")}</h2>
+              <span
+                class="plugin-status"
+                class:ok={dash.config.ahkStatus?.available}
+                class:off={!dash.config.ahkStatus?.available}
+              >
+                {dash.config.ahkStatus?.label ?? t("settings.bridgeUnknown")}
+              </span>
+            </div>
+          </header>
+          {#if dash.config.ahkStatus?.reason}
+            <p class="plugin-reason">{dash.config.ahkStatus.reason}</p>
+          {/if}
+          {#if dash.config.ahkStatus?.interpreters?.length}
+            <ul class="plugin-reads">
+              {#each dash.config.ahkStatus.interpreters as item (`${item.version}-${item.path}`)}
+                <li><code>{item.version}</code> · {item.path}</li>
+              {/each}
+            </ul>
+          {/if}
+          <div class="plugin-chips">
+            <span class="chip quiet">AutoHotkey v1</span>
+            <span class="chip quiet">AutoHotkey v2</span>
+          </div>
+          <ul class="plugin-reads">
+            <li>{t("settings.plugin.ahk.reads.scripts")}</li>
+            <li>{t("settings.plugin.ahk.reads.run")}</li>
+          </ul>
+          <label class="check-row autostart-row">
+            <input
+              type="checkbox"
+              checked={dash.config.ahkPlugin !== false}
+              disabled={dash.saving || dash.config.ahkStatus?.windows === false}
+              onchange={(event) => setAhkPlugin(event.currentTarget.checked)}
+            />
+            {t("settings.plugin.ahk.enable")}
+          </label>
         </section>
       {:else if category === "about"}
         <section class="settings-card">
@@ -443,6 +503,63 @@
     gap: 1rem;
     flex: 1;
     min-width: 0;
+  }
+  .plugin-card .settings-heading {
+    margin: 0;
+  }
+  .plugin-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 0.55rem;
+  }
+  .plugin-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--muted);
+    flex: none;
+  }
+  .plugin-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .plugin-status {
+    font-size: 11.5px;
+    color: var(--muted);
+    font-weight: 550;
+  }
+  .plugin-status.ok { color: #86efac; }
+  .plugin-status.off { color: var(--muted); }
+  .plugin-reason {
+    margin: 0 0 0.55rem;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .plugin-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 0.55rem;
+  }
+  .plugin-reads {
+    margin: 0 0 0.75rem;
+    padding-left: 1.1rem;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+  .plugin-reads code {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
   }
   .check-row {
     display: flex;

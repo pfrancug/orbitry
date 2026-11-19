@@ -13,6 +13,8 @@ pub enum ScriptSource {
     #[default]
     Package,
     Workspace,
+    /// Top-level `.ahk` script from the AutoHotkey plugin. Present from 0.14.0.
+    Ahk,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

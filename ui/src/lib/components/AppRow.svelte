@@ -171,7 +171,9 @@
                   }}
                 >
                   <span>{scriptLabel(script)}</span>
-                  {#if scriptSourceDiffers(script)}
+                  {#if script.source === "ahk"}
+                    <em>{script.sourceName || "AHK"}</em>
+                  {:else if scriptSourceDiffers(script)}
                     <em>{t("script.viaRoot", { name: script.sourceName || t("script.workspace") })}</em>
                   {/if}
                   {#if itemRun}

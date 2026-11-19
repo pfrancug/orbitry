@@ -264,7 +264,14 @@ const en: Record<string, string> = {
   "settings.cat.plugins": "Plugins",
   "settings.cat.about": "About",
   "settings.plugins.title": "Plugins",
-  "settings.plugins.intro": "Optional helpers that extend what Orbitry can learn from a project. They do not replace the package.json script scan.",
+  "settings.plugins.intro": "Optional helpers that extend what Orbitry can learn from a project.",
+  "settings.plugin.node": "Node.js",
+  "settings.plugin.node.reads.ports": "Ports from Vite / Next / Astro config files",
+  "settings.plugin.node.reads.scripts": "package.json scripts are read natively by the core (not this plugin)",
+  "settings.plugin.ahk": "AutoHotkey",
+  "settings.plugin.ahk.enable": "Enable AutoHotkey plugin",
+  "settings.plugin.ahk.reads.scripts": "Top-level *.ahk files as runnable scripts",
+  "settings.plugin.ahk.reads.run": "Runs via the installed AutoHotkey interpreter (v1 / v2)",
   "settings.modelsScan": "AI models scan",
   "settings.modelsScanHint": "Controls which project files are searched when attributing local models to projects.",
   "settings.modelsIncludeDocs": "Include documentation Markdown (README*.md and docs/)",
@@ -475,6 +482,9 @@ const en: Record<string, string> = {
   "logs.emptyBody": "Start an app from Overview or Projects and its output will land here.",
   "logs.openProjects": "Open projects",
   "logs.closeTab": "Close tab",
+  "logs.pick": "Select a process to stream logs.",
+  "logs.noOutput": "No output.",
+  "logs.noOutputRunning": "No output — this process may not write to the console.",
 };
 
 const pl: Record<string, string> = {
@@ -696,7 +706,14 @@ const pl: Record<string, string> = {
   "settings.cat.about": "O programie",
   "settings.cat.appearance": "Wygląd",
   "settings.plugins.title": "Wtyczki",
-  "settings.plugins.intro": "Opcjonalne pomoce, które rozszerzają to, czego Orbitry może się dowiedzieć o projekcie. Nie zastępują skanowania skryptów z package.json.",
+  "settings.plugins.intro": "Opcjonalne pomoce, które rozszerzają to, czego Orbitry może się dowiedzieć o projekcie.",
+  "settings.plugin.node": "Node.js",
+  "settings.plugin.node.reads.ports": "Porty z plików konfiguracyjnych Vite / Next / Astro",
+  "settings.plugin.node.reads.scripts": "Skrypty package.json czyta natywnie rdzeń (nie ta wtyczka)",
+  "settings.plugin.ahk": "AutoHotkey",
+  "settings.plugin.ahk.enable": "Włącz wtyczkę AutoHotkey",
+  "settings.plugin.ahk.reads.scripts": "Pliki *.ahk w katalogu głównym jako uruchamialne skrypty",
+  "settings.plugin.ahk.reads.run": "Uruchamia przez zainstalowany interpreter AutoHotkey (v1 / v2)",
   "settings.modelsScan": "Skan modeli AI",
   "settings.modelsScanHint": "Określa, które pliki projektu są przeszukiwane przy przypisywaniu lokalnych modeli do projektów.",
   "settings.modelsIncludeDocs": "Uwzględniaj dokumentację Markdown (README*.md i docs/)",
@@ -907,6 +924,9 @@ const pl: Record<string, string> = {
   "logs.emptyBody": "Uruchom aplikację z Przeglądu lub Projektów, a jej wyjście pojawi się tutaj.",
   "logs.openProjects": "Otwórz projekty",
   "logs.closeTab": "Zamknij kartę",
+  "logs.pick": "Wybierz proces, aby strumieniować logi.",
+  "logs.noOutput": "Brak wyjścia.",
+  "logs.noOutputRunning": "Brak wyjścia — ten proces może nie pisać do konsoli.",
 };
 
 export const messages = { en, pl };

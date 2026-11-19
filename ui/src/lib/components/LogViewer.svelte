@@ -1,6 +1,7 @@
 <script lang="ts">
   import { ansiToHtml } from "$lib/ansi";
   import { logsSocket } from "$lib/api";
+  import { t } from "$lib/i18n.svelte";
   import { upsertRun } from "$lib/runs.svelte";
   import type { LogLine, Run } from "$lib/types";
 
@@ -10,6 +11,7 @@
   let scroller = $state<HTMLElement | undefined>(undefined);
   let pinned = $state(true);
   let socket: WebSocket | null = null;
+  let runStatus = $state<Run["status"] | null>(null);
 
   $effect(() => {
     const id = runId;
@@ -17,9 +19,11 @@
       socket?.close();
       socket = null;
       lines = [];
+      runStatus = null;
       return;
     }
     lines = [];
+    runStatus = null;
     pinned = true;
     const next = logsSocket(id);
     socket = next;
@@ -31,6 +35,7 @@
           | { type: "status"; run: Run };
         if (message.type === "replay") {
           upsertRun(message.run);
+          runStatus = message.run.status;
           lines = message.lines;
         } else if (message.type === "line") {
           const { type: _type, ...line } = message;
@@ -38,6 +43,7 @@
           if (lines.length > 2500) lines = lines.slice(-2000);
         } else if (message.type === "status") {
           upsertRun(message.run);
+          runStatus = message.run.status;
         }
       } catch {
         // Ignore a malformed log frame.
@@ -70,9 +76,9 @@
   {/if}
   <div class="log-body" bind:this={scroller} onscroll={onScroll}>
     {#if !runId}
-      <p class="hint">Select a process to stream logs.</p>
+      <p class="hint">{t("logs.pick")}</p>
     {:else if lines.length === 0}
-      <p class="hint">Waiting for output...</p>
+      <p class="hint">{runStatus === "running" ? t("logs.noOutputRunning") : t("logs.noOutput")}</p>
     {:else}
       {#each lines as line (line.seq)}
         <div class="log-line stream-{line.stream}">{@html ansiToHtml(line.text)}</div>

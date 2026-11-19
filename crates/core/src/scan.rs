@@ -11,6 +11,7 @@ use crate::ai::detect_ai_dependencies;
 use crate::databases::{detect_databases, DatabaseInfo};
 use crate::git::{detect_git, GitInfo};
 use crate::ports::{apply_port_overrides, detect_static_ports, PortInfo};
+use crate::ahk::{ahk_active, detect_ahk_scripts, dir_has_ahk};
 use crate::scripts::{detect_scripts, guess_js_framework, DetectedScript};
 
 const SKIP_DIRS: &[&str] = &[
@@ -37,6 +38,8 @@ pub enum ProjectKind {
     Python,
     Go,
     Docker,
+    /// Folder with top-level `.ahk` scripts (AutoHotkey plugin). Present from 0.14.0.
+    Ahk,
     Mixed,
 }
 
@@ -102,7 +105,7 @@ pub fn scan(config: &Config) -> Vec<Project> {
         if !root.exists() {
             continue;
         }
-        if is_project(&root) {
+        if is_project(&root, config) {
             collect_project(&root, None, config, &mut seen, &mut projects);
             continue;
         }
@@ -116,7 +119,7 @@ pub fn scan(config: &Config) -> Vec<Project> {
             .collect();
         children.sort();
         for child in children {
-            if is_project(&child) {
+            if is_project(&child, config) {
                 collect_project(&child, None, config, &mut seen, &mut projects);
             }
         }
@@ -155,7 +158,7 @@ fn collect_project(
             if member == dir {
                 continue;
             }
-            if is_project(&member) {
+            if is_project(&member, config) {
                 collect_project(&member, Some(id.clone()), config, seen, projects);
             }
         }
@@ -173,8 +176,9 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
         || dir.join("docker-compose.yaml").exists()
         || dir.join("compose.yml").exists()
         || dir.join("compose.yaml").exists();
+    let has_ahk = ahk_active(config) && dir_has_ahk(dir);
 
-    if !has_js && !has_rust && !has_python && !has_go && !has_docker {
+    if !has_js && !has_rust && !has_python && !has_go && !has_docker && !has_ahk {
         return None;
     }
 
@@ -182,12 +186,13 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
     let mut version = None;
     let mut scripts = Vec::new();
     let mut framework = None;
-    let mut kind = match (has_js, has_rust, has_python, has_go, has_docker) {
-        (true, false, false, false, _) => ProjectKind::Javascript,
-        (false, true, false, false, _) => ProjectKind::Rust,
-        (false, false, true, false, _) => ProjectKind::Python,
-        (false, false, false, true, _) => ProjectKind::Go,
-        (false, false, false, false, true) => ProjectKind::Docker,
+    let mut kind = match (has_js, has_rust, has_python, has_go, has_docker, has_ahk) {
+        (true, false, false, false, _, false) => ProjectKind::Javascript,
+        (false, true, false, false, _, false) => ProjectKind::Rust,
+        (false, false, true, false, _, false) => ProjectKind::Python,
+        (false, false, false, true, _, false) => ProjectKind::Go,
+        (false, false, false, false, true, false) => ProjectKind::Docker,
+        (false, false, false, false, false, true) => ProjectKind::Ahk,
         _ => ProjectKind::Mixed,
     };
 
@@ -212,6 +217,18 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
                 pkg.scripts.unwrap_or_default().into_iter().collect();
             scripts = detect_scripts(&script_pairs, &config.script_patterns, dir, &dep_names);
             framework = guess_js_framework(&dep_names);
+        }
+    }
+
+    if has_ahk {
+        let existing: Vec<String> = scripts.iter().map(|script| script.name.clone()).collect();
+        scripts.extend(detect_ahk_scripts(dir, &existing));
+        if framework.is_none() {
+            framework = Some("autohotkey".to_string());
+        } else if !has_js || has_rust || has_python || has_go {
+            kind = ProjectKind::Mixed;
+        } else if has_js {
+            kind = ProjectKind::Mixed;
         }
     }
 
@@ -265,7 +282,7 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
     })
 }
 
-fn is_project(dir: &Path) -> bool {
+fn is_project(dir: &Path, config: &Config) -> bool {
     dir.join("package.json").exists()
         || dir.join("Cargo.toml").exists()
         || dir.join("pyproject.toml").exists()
@@ -275,6 +292,7 @@ fn is_project(dir: &Path) -> bool {
         || dir.join("docker-compose.yaml").exists()
         || dir.join("compose.yml").exists()
         || dir.join("compose.yaml").exists()
+        || (ahk_active(config) && dir_has_ahk(dir))
 }
 
 fn should_skip(path: &Path) -> bool {

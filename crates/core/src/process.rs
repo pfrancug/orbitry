@@ -156,6 +156,36 @@ pub fn run_command_label(pm: &str, script: &str) -> String {
     format!("{pm} run {script}")
 }
 
+pub fn ahk_command_label(exe: &Path, script: &Path) -> String {
+    let exe_name = exe
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("AutoHotkey");
+    let script_name = script
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("script.ahk");
+    format!("{exe_name} \"{script_name}\"")
+}
+
+/// Spawn AutoHotkey with a script path. Uses CREATE_NO_WINDOW on Windows.
+pub fn ahk_command(exe: &Path, script: &Path, cwd: &Path) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(exe);
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(crate::logpump::detach_creation_flags());
+    }
+    #[cfg(unix)]
+    {
+        crate::logpump::apply_detach_flags_tokio(&mut cmd);
+    }
+    cmd.arg(script)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .kill_on_drop(false);
+    cmd
+}
+
 /// `pm run <script>` in `cwd`, without opening a new console window.
 pub fn script_command(pm: &str, script: &str, cwd: &Path) -> tokio::process::Command {
     let mut cmd = if cfg!(windows) {

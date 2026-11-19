@@ -83,7 +83,18 @@ const configState = {
   autostartApps: [],
   desktopNotifications: false,
   ignoredProjects: [],
-  bridgeStatus: { state: "off", label: "Off" },
+  ahkPlugin: true,
+  bridgeStatus: { state: "disabled", label: "disabled", available: false, node: false, plugin: true },
+  ahkStatus: {
+    enabled: true,
+    available: false,
+    windows: false,
+    installed: false,
+    label: "Windows only",
+    state: "windows-only",
+    reason: "AutoHotkey runs on Windows only.",
+    interpreters: [],
+  },
   autostart: { enabled: false, stale: false },
 };
 
@@ -106,6 +117,15 @@ function applyConfigPut(body) {
   if (body.autoCheckUpdates != null) configState.autoCheckUpdates = body.autoCheckUpdates;
   if (body.logLimitMb != null) configState.logLimitMb = body.logLimitMb;
   if (body.desktopNotifications != null) configState.desktopNotifications = body.desktopNotifications;
+  if (body.ahkPlugin != null) {
+    configState.ahkPlugin = body.ahkPlugin;
+    configState.ahkStatus = {
+      ...configState.ahkStatus,
+      enabled: Boolean(body.ahkPlugin),
+      label: body.ahkPlugin ? configState.ahkStatus.label : "disabled",
+      state: body.ahkPlugin ? configState.ahkStatus.state : "disabled",
+    };
+  }
   if (Object.prototype.hasOwnProperty.call(body, "autostartApps")) {
     configState.autostartApps = Array.isArray(body.autostartApps) ? body.autostartApps : [];
   }
@@ -601,10 +621,17 @@ async function runSmoke(base) {
       }
     }
     await page.locator(".settings-nav-btn", { hasText: "Plugins" }).click();
-    await page.waitForSelector("text=Config bridge", { timeout: 5_000 });
-    const bridgeHint = await page.locator(".bridge-reads").textContent().catch(() => "");
-    if (!/vite\.config|next\.config|astro\.config/i.test(bridgeHint || "")) {
-      errors.push(`Plugins bridge reads text missing config files: ${bridgeHint}`);
+    await page.waitForSelector('[data-plugin="nodejs"]', { timeout: 5_000 });
+    const nodeCard = await page.locator('[data-plugin="nodejs"]').textContent().catch(() => "");
+    if (!/Node\.js|Vite|Next|Astro|Ports/i.test(nodeCard || "")) {
+      errors.push(`Node.js plugin card missing expected content: ${nodeCard}`);
+    }
+    const ahkCard = await page.locator('[data-plugin="ahk"]').textContent().catch(() => "");
+    if (!/AutoHotkey/i.test(ahkCard || "")) {
+      errors.push(`AutoHotkey plugin card missing: ${ahkCard}`);
+    }
+    if (!/Windows only|available|not installed|disabled/i.test(ahkCard || "")) {
+      errors.push(`AutoHotkey plugin card missing status: ${ahkCard}`);
     }
 
     // Databases project headers should be distinct from child rows.

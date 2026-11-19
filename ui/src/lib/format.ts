@@ -85,6 +85,7 @@ export function shortPath(path: string): string {
 }
 
 export function isJsLike(kind: ProjectKind): boolean {
+  // Pure AutoHotkey projects are never js-like (no Install / node_modules).
   return kind === "javascript" || kind === "mixed";
 }
 
@@ -423,7 +424,7 @@ export function primaryScript(part: ProjectPart | null | undefined): DetectedScr
 }
 
 export function scriptSourceDiffers(script: DetectedScript | null | undefined): boolean {
-  return script?.source === "workspace";
+  return script?.source === "workspace" || script?.source === "ahk";
 }
 
 export function desktopOs(): "windows" | "mac" | "linux" {

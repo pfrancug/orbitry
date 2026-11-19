@@ -12,7 +12,7 @@ use crate::ports::{PortInfo, PortSource};
 
 /// Bump this when the scan result shape or detection rules change in a way
 /// that would make a previously stored snapshot misleading.
-pub const SCANNER_VERSION: u32 = 5;
+pub const SCANNER_VERSION: u32 = 6;
 
 pub fn scan_cache_path() -> PathBuf {
     config_path().with_file_name("scan-cache.json")
@@ -48,6 +48,7 @@ pub fn config_fingerprint(config: &Config) -> String {
     serde_json::to_string(&serde_json::json!({
         "roots": roots,
         "patterns": patterns,
+        "ahkPlugin": config.ahk_plugin,
     }))
         .unwrap_or_default()
 }

@@ -48,6 +48,7 @@ export function saveConfig(config: {
   ignoredProjects?: string[];
   openIn?: import("./types").OpenInTargets;
   modelsIncludeDocs?: boolean;
+  ahkPlugin?: boolean;
 }): Promise<AppConfig> {
   return request("/api/config", {
     method: "PUT",

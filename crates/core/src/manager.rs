@@ -21,14 +21,16 @@ use crate::logs::{
     DEFAULT_LOG_LIMIT_MB,
 };
 use crate::metrics::{pid_still_same, process_start_time, RunPidIndex};
+use crate::ahk::{parse_requires, resolve_interpreter, AhkVersion};
 use crate::ports::{apply_port_overrides, detect_expected_ports, ports_from_log, ListeningSnapshot};
+use crate::scripts::ScriptSource;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 use crate::process::{
-    detect_package_manager, install_command, install_command_label, kill_process_tree,
-    kill_process_tree_force, now_ms, run_command_label, script_command, LogLine, LogStream, Run,
-    RunEvent, RunStatus,
+    ahk_command, ahk_command_label, detect_package_manager, install_command, install_command_label,
+    kill_process_tree, kill_process_tree_force, now_ms, run_command_label, script_command, LogLine,
+    LogStream, Run, RunEvent, RunStatus,
 };
 
 pub const LOG_BUFFER_CAP: usize = 2000;
@@ -161,9 +163,44 @@ impl ProcessManager {
         part_path: String,
         script: String,
         cwd: Option<String>,
+        source: ScriptSource,
+        command: Option<String>,
     ) -> Result<Run, StartError> {
-        self.spawn_run(part_id, part_name, part_path, script, cwd, SpawnKind::Script)
-            .await
+        let target = match source {
+            ScriptSource::Ahk => {
+                let script_path = command
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(PathBuf::from)
+                    .ok_or_else(|| StartError::Message("AHK script path missing".into()))?;
+                if !script_path.is_file() {
+                    return Err(StartError::Message(format!(
+                        "AHK script not found: {}",
+                        display_path(&script_path)
+                    )));
+                }
+                let version = parse_requires(&script_path).unwrap_or(AhkVersion::V2);
+                let exe = resolve_interpreter(version).ok_or_else(|| {
+                    StartError::Message(
+                        "AutoHotkey was not found. Install AutoHotkey or turn the plugin off."
+                            .into(),
+                    )
+                })?;
+                SpawnTarget::Ahk { exe, script: script_path }
+            }
+            _ => SpawnTarget::Npm,
+        };
+        self.spawn_run(
+            part_id,
+            part_name,
+            part_path,
+            script,
+            cwd,
+            SpawnKind::Script,
+            target,
+        )
+        .await
     }
 
     pub async fn start_install(
@@ -179,6 +216,7 @@ impl ProcessManager {
             "install".into(),
             None,
             SpawnKind::Install,
+            SpawnTarget::Npm,
         )
         .await
     }
@@ -191,6 +229,7 @@ impl ProcessManager {
         script: String,
         cwd: Option<String>,
         kind: SpawnKind,
+        target: SpawnTarget,
     ) -> Result<Run, StartError> {
         let cwd_raw = cwd
             .as_deref()
@@ -222,19 +261,26 @@ impl ProcessManager {
         };
         let _ = ensure_logs_dir();
         let pm = detect_package_manager(&cwd);
-        let command = match kind {
-            SpawnKind::Script => run_command_label(pm, &script),
-            SpawnKind::Install => install_command_label(pm),
+        let command = match (&kind, &target) {
+            (SpawnKind::Install, _) => install_command_label(pm),
+            (SpawnKind::Script, SpawnTarget::Ahk { exe, script }) => {
+                ahk_command_label(exe, script)
+            }
+            (SpawnKind::Script, SpawnTarget::Npm) => run_command_label(pm, &script),
         };
         let id = uuid::Uuid::new_v4().to_string();
         let log_path = run_log_path(&id);
         let file_cap = file_cap_bytes(self.log_limit_mb());
-        let child_and_pid = spawn_detached_app(pm, &script, &cwd, &log_path, file_cap, kind)
-            .map_err(StartError::Message)?;
+        let child_and_pid =
+            spawn_detached_app(pm, &script, &cwd, &log_path, file_cap, kind, &target)
+                .map_err(StartError::Message)?;
         let (mut child, pid) = child_and_pid;
         let process_start = pid.and_then(process_start_time);
 
-        let mut expected_ports = detect_expected_ports(&cwd, &[], Some(&script), None);
+        let mut expected_ports = match target {
+            SpawnTarget::Ahk { .. } => Vec::new(),
+            SpawnTarget::Npm => detect_expected_ports(&cwd, &[], Some(&script), None),
+        };
         apply_port_overrides(&mut expected_ports, &part_id, &overrides);
 
         let info = Run {
@@ -845,10 +891,23 @@ enum SpawnKind {
     Install,
 }
 
-fn make_app_command(pm: &str, script: &str, cwd: &Path, kind: SpawnKind) -> tokio::process::Command {
-    match kind {
-        SpawnKind::Script => script_command(pm, script, cwd),
-        SpawnKind::Install => install_command(pm, cwd),
+#[derive(Clone)]
+enum SpawnTarget {
+    Npm,
+    Ahk { exe: PathBuf, script: PathBuf },
+}
+
+fn make_app_command(
+    pm: &str,
+    script: &str,
+    cwd: &Path,
+    kind: SpawnKind,
+    target: &SpawnTarget,
+) -> tokio::process::Command {
+    match (kind, target) {
+        (SpawnKind::Install, _) => install_command(pm, cwd),
+        (SpawnKind::Script, SpawnTarget::Ahk { exe, script }) => ahk_command(exe, script, cwd),
+        (SpawnKind::Script, SpawnTarget::Npm) => script_command(pm, script, cwd),
     }
 }
 
@@ -859,6 +918,7 @@ fn spawn_detached_app(
     log_path: &Path,
     file_cap: u64,
     kind: SpawnKind,
+    target: &SpawnTarget,
 ) -> Result<(tokio::process::Child, Option<u32>), String> {
     let (reader, writer) =
         os_pipe::pipe().map_err(|err| format!("log pipe: {err}"))?;
@@ -899,7 +959,7 @@ fn spawn_detached_app(
         let _ = pump.wait();
     });
 
-    let mut cmd = make_app_command(pm, script, cwd, kind);
+    let mut cmd = make_app_command(pm, script, cwd, kind, target);
     cmd.stdout(std::process::Stdio::from(writer))
         .stderr(std::process::Stdio::from(writer_err));
     match cmd.spawn() {
@@ -910,14 +970,21 @@ fn spawn_detached_app(
         Err(err) => {
             #[cfg(windows)]
             {
-                let mut retry = make_app_command(pm, script, cwd, kind);
+                let mut retry = make_app_command(pm, script, cwd, kind, target);
                 retry.creation_flags(detach_creation_flags_no_breakaway());
                 // The previous pipe writers were moved; we cannot retry with the same
                 // handles. Surface the original error instead of a broken retry.
                 let _ = detach_creation_flags();
                 let _ = retry;
             }
-            Err(format!("spawn {command}: {err}", command = match kind { SpawnKind::Script => format!("{pm} run {script}"), SpawnKind::Install => format!("{pm} install") }))
+            let command = match (kind, target) {
+                (SpawnKind::Install, _) => format!("{pm} install"),
+                (SpawnKind::Script, SpawnTarget::Ahk { exe, script }) => {
+                    ahk_command_label(exe, script)
+                }
+                (SpawnKind::Script, SpawnTarget::Npm) => format!("{pm} run {script}"),
+            };
+            Err(format!("spawn {command}: {err}"))
         }
     }
 }

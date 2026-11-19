@@ -314,6 +314,7 @@ function withOverrides(next: {
   ignoredProjects?: string[];
   openIn?: import("./types").OpenInTargets;
   modelsIncludeDocs?: boolean;
+  ahkPlugin?: boolean;
 }) {
   return {
     roots: next.roots,
@@ -332,6 +333,7 @@ function withOverrides(next: {
       explorer: true,
     },
     modelsIncludeDocs: next.modelsIncludeDocs ?? dash.config?.modelsIncludeDocs ?? false,
+    ahkPlugin: next.ahkPlugin ?? dash.config?.ahkPlugin ?? true,
   };
 }
 
@@ -353,6 +355,7 @@ function applySavedConfig(
     ignoredProjects?: string[];
     openIn?: import("./types").OpenInTargets;
     modelsIncludeDocs?: boolean;
+    ahkPlugin?: boolean;
   },
   saved: AppConfig,
 ): AppConfig {
@@ -374,6 +377,13 @@ function applySavedConfig(
     (!Object.prototype.hasOwnProperty.call(saved, "modelsIncludeDocs") || saved.modelsIncludeDocs == null)
   ) {
     next = { ...next, modelsIncludeDocs: payload.modelsIncludeDocs };
+  }
+  // ahkPlugin=true is omitted from the saved file; keep the value we wrote.
+  if (
+    payload.ahkPlugin != null &&
+    (!Object.prototype.hasOwnProperty.call(saved, "ahkPlugin") || saved.ahkPlugin == null)
+  ) {
+    next = { ...next, ahkPlugin: payload.ahkPlugin };
   }
   return next;
 }
@@ -400,6 +410,7 @@ export async function persist(next: {
   ignoredProjects?: string[];
   openIn?: import("./types").OpenInTargets;
   modelsIncludeDocs?: boolean;
+  ahkPlugin?: boolean;
 }) {
   dash.error = null;
   const refreshProjects = shouldRefreshProjects(next);
@@ -498,6 +509,15 @@ export async function setModelsIncludeDocs(enabled: boolean) {
     roots: dash.config.roots,
     scriptPatterns: dash.config.scriptPatterns,
     modelsIncludeDocs: enabled,
+  });
+}
+
+export async function setAhkPlugin(enabled: boolean) {
+  if (!dash.config) return;
+  await persist({
+    roots: dash.config.roots,
+    scriptPatterns: dash.config.scriptPatterns,
+    ahkPlugin: enabled,
   });
 }
 

@@ -5,6 +5,17 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-11-19
+
+### Added
+
+- AutoHotkey plugin (Windows): detects the interpreter via registry and Program Files, treats top-level `*.ahk` files as runnable scripts (v1/v2 from `#Requires`), and runs them with `CREATE_NO_WINDOW`. Listed as unavailable on non-Windows hosts. Toggle lives under Settings → Plugins (default on when usable). Scan cache version bumped.
+- Plugin cards under Settings → Plugins: Node.js (former config bridge) and AutoHotkey, each with status, framework chips, and a short list of what they read.
+
+### Changed
+
+- Config bridge is presented as the Node.js plugin. The existing `configBridge` setting is unchanged for older configs. package.json scripts remain a core scan, not part of the Node.js plugin.
+
 ## [0.13.0] - 2026-11-19
 
 ### Added

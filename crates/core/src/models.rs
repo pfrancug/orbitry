@@ -9,13 +9,15 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{config_path, display_path, normalize_path_str, paths_equal, Config};
+use crate::config::{
+    canonical, config_path, display_path, normalize_path_str, paths_equal, Config,
+};
 use crate::git::find_git_root;
 use crate::group::RepoGroup;
 use crate::scan_cache::now_ms;
 
 /// Bump when the inventory shape or detection rules change.
-pub const MODELS_SCANNER_VERSION: u32 = 3;
+pub const MODELS_SCANNER_VERSION: u32 = 4;
 
 const OLLAMA_PORT: u16 = 11434;
 const OLLAMA_HOST: [u8; 4] = [127, 0, 0, 1];
@@ -1003,37 +1005,59 @@ fn project_for(path: &Path, groups: &[RepoGroup], roots: &[String]) -> (String, 
         );
     }
     if let Some(git_root) = find_git_root(path) {
+        let git_disp = display_path(&canonical(&git_root));
+        if let Some(group) = groups.iter().find(|group| {
+            paths_equal(&group.path, &git_disp) || paths_equal(&group.id, &git_disp)
+        }) {
+            return (
+                group.id.clone(),
+                group.name.clone(),
+                display_path(Path::new(&group.path)),
+            );
+        }
         let name = file_name(&git_root);
-        return (display_path(&git_root), name, display_path(&git_root));
+        return (git_disp.clone(), name, git_disp);
     }
     for root in roots {
         let root_path = PathBuf::from(root);
-        if let Ok(rel) = path.strip_prefix(&root_path) {
+        if !path_is_within(path, &root_path) {
+            continue;
+        }
+        let root_c = canonical(&root_path);
+        let path_c = canonical(path);
+        if let Ok(rel) = path_c.strip_prefix(&root_c).or_else(|_| path.strip_prefix(&root_path)) {
             if let Some(first) = rel.iter().next() {
                 let folder = root_path.join(first);
                 if folder.is_dir() {
+                    let folder_disp = display_path(&canonical(&folder));
+                    if let Some(group) = groups.iter().find(|group| {
+                        paths_equal(&group.path, &folder_disp) || paths_equal(&group.id, &folder_disp)
+                    }) {
+                        return (
+                            group.id.clone(),
+                            group.name.clone(),
+                            display_path(Path::new(&group.path)),
+                        );
+                    }
                     let name = first.to_string_lossy().to_string();
-                    return (display_path(&folder), name, display_path(&folder));
+                    return (folder_disp.clone(), name, folder_disp);
                 }
             }
-            return (display_path(&root_path), file_name(&root_path), display_path(&root_path));
+            let root_disp = display_path(&root_c);
+            return (root_disp.clone(), file_name(&root_c), root_disp);
         }
     }
+    // Last resort: nearest folder name, not every path segment.
     let parent = path.parent().unwrap_or(path);
     (display_path(parent), file_name(parent), display_path(parent))
 }
 
 fn path_is_within(path: &Path, root: &Path) -> bool {
-    if paths_equal(&display_path(path), &display_path(root)) {
-        return true;
-    }
-    path.strip_prefix(root).is_ok()
-        || normalize_path_str(&display_path(path))
-            .to_ascii_lowercase()
-            .starts_with(
-                &(normalize_path_str(&display_path(root)).to_ascii_lowercase()
-                    + if cfg!(windows) { "\\" } else { "/" }),
-            )
+    let path_n = normalize_path_str(&display_path(&canonical(path)));
+    let root_n = normalize_path_str(&display_path(&canonical(root)));
+    let path_l = path_n.to_ascii_lowercase();
+    let root_l = root_n.to_ascii_lowercase();
+    path_l == root_l || path_l.starts_with(&(root_l + "\\"))
 }
 
 fn attribute_usages(

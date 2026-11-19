@@ -5,6 +5,18 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-11-19
+
+### Fixed
+
+- The same SQLite (or other file) database no longer appears twice when a monorepo root and a nested app both detect it. Entries are deduped by canonical absolute path for files and by engine + host + port for server databases, keeping the richer entry. The same rules apply on the Databases page, project tags, and the details panel.
+- Databases and Models pages use real tables with a shared column layout and a sticky header so headers and cells stay aligned, including indented database rows under each project.
+- Models "Used by" shows the owning scanned project name only (deduped), not parent or nested folder path segments. Paths outside any scanned project still fall back to the nearest folder name. The models scan cache version is bumped so attribution refreshes.
+
+### Changed
+
+- The README describes the product and where to download it. Development and build instructions were removed.
+
 ## [0.12.0] - 2026-11-19
 
 ### Added

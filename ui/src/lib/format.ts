@@ -1,4 +1,4 @@
-import type { AppConfig, AppWarning, DatabaseInfo, DetectedScript, HealthInfo, OpenInKind, OpenInTargets, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run, ScanChange, ScanDiff } from "./types";
+import type { AppConfig, AppWarning, DatabaseInfo, DetectedScript, HealthInfo, ModelUsage, OpenInKind, OpenInTargets, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run, ScanChange, ScanDiff } from "./types";
 
 export function formatAgeMs(ms: number | null | undefined): string {
   if (!ms) return "just now";
@@ -467,21 +467,166 @@ export function installCommand(part: ProjectPart | null | undefined): string {
 }
 
 export function partDatabases(part: ProjectPart | null | undefined): DatabaseInfo[] {
-  return Array.isArray(part?.databases) ? part.databases : [];
+  if (!part) return [];
+  return dedupeDatabases(
+    (Array.isArray(part.databases) ? part.databases : []).map((db) => ({
+      db,
+      basePath: part.path,
+    })),
+    part.path,
+  );
 }
 
 export function groupDatabases(group: RepoGroup | null | undefined): DatabaseInfo[] {
-  const seen = new Set<string>();
-  const out: DatabaseInfo[] = [];
-  for (const part of group?.parts ?? []) {
-    for (const db of partDatabases(part)) {
-      const key = `${(db.engine || "").toLowerCase()}|${db.port ?? ""}|${(db.path || "").toLowerCase()}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(db);
+  if (!group) return [];
+  const items: { db: DatabaseInfo; basePath: string }[] = [];
+  for (const part of group.parts ?? []) {
+    for (const db of Array.isArray(part.databases) ? part.databases : []) {
+      items.push({ db, basePath: part.path });
     }
   }
+  return dedupeDatabases(items, group.path);
+}
+
+/** Normalize path separators for comparison (case-insensitive on Windows). */
+export function normalizePathKey(path: string): string {
+  return path
+    .replace(/^\\\\\?\\/, "")
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/\/$/, "")
+    .toLowerCase();
+}
+
+function isAbsolutePath(path: string): boolean {
+  return /^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(path);
+}
+
+function joinPaths(base: string, rel: string): string {
+  if (!rel) return base;
+  if (isAbsolutePath(rel)) return rel;
+  const sep = base.includes("\\") && !base.includes("/") ? "\\" : "/";
+  return `${base.replace(/[\\/]+$/, "")}${sep}${rel.replace(/^[\\/]+/, "")}`;
+}
+
+function pathWithin(child: string, parent: string): boolean {
+  const c = normalizePathKey(child);
+  const p = normalizePathKey(parent);
+  return c === p || c.startsWith(`${p}/`);
+}
+
+function relativizeTo(abs: string, root: string): string | null {
+  const a = normalizePathKey(abs);
+  const r = normalizePathKey(root);
+  if (a === r) return "";
+  if (!a.startsWith(`${r}/`)) return null;
+  // Preserve forward slashes for display.
+  return abs
+    .replace(/\\/g, "/")
+    .slice(root.replace(/\\/g, "/").replace(/\/$/, "").length)
+    .replace(/^\//, "");
+}
+
+function dbContextScore(db: DatabaseInfo): number {
+  let score = 0;
+  if (db.path) score += 2 + db.path.length;
+  if (db.port != null) score += 3;
+  if (db.host) score += 1;
+  if (db.detail) score += 1;
+  if (db.sizeBytes != null) score += 1;
+  const source = String(db.source || "");
+  if (source === "file" || source === "env" || source === "compose" || source === "prisma") score += 2;
+  if (source === "dependency") score -= 1;
+  return score;
+}
+
+function preferDatabase(a: DatabaseInfo, b: DatabaseInfo): DatabaseInfo {
+  const sa = dbContextScore(a);
+  const sb = dbContextScore(b);
+  if (sa !== sb) return sa >= sb ? a : b;
+  const ap = a.path?.length ?? 0;
+  const bp = b.path?.length ?? 0;
+  return ap >= bp ? a : b;
+}
+
+/**
+ * Dedupe databases by canonical absolute file path, or by engine+host+port for
+ * server DBs. Keeps the entry with the most context and prefers a path relative
+ * to `displayRoot` when one can be derived.
+ */
+export function dedupeDatabases(
+  items: { db: DatabaseInfo; basePath: string }[],
+  displayRoot?: string | null,
+): DatabaseInfo[] {
+  type Slot = { db: DatabaseInfo; abs?: string };
+  const byKey = new Map<string, Slot>();
+
+  for (const { db, basePath } of items) {
+    const engine = (db.engine || "").toLowerCase();
+    let key: string;
+    let abs: string | undefined;
+    if (db.path) {
+      abs = joinPaths(basePath, db.path);
+      key = `file:${normalizePathKey(abs)}`;
+    } else {
+      const host = (db.host || "localhost").toLowerCase();
+      key = `server:${engine}|${host}|${db.port ?? ""}`;
+    }
+
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, { db: { ...db }, abs });
+      continue;
+    }
+    const winner = preferDatabase(existing.db, db);
+    byKey.set(key, { db: { ...winner }, abs: existing.abs ?? abs });
+  }
+
+  const out: DatabaseInfo[] = [];
+  for (const slot of byKey.values()) {
+    const db = { ...slot.db };
+    if (slot.abs && displayRoot) {
+      const rel = relativizeTo(slot.abs, displayRoot);
+      if (rel != null && rel.length) db.path = rel;
+    }
+    out.push(db);
+  }
+
+  out.sort((a, b) => {
+    const ae = (a.engine || "").toLowerCase();
+    const be = (b.engine || "").toLowerCase();
+    return ae.localeCompare(be) || (a.port ?? 0) - (b.port ?? 0) || (a.path || "").localeCompare(b.path || "");
+  });
   return out;
+}
+
+/** Map a model usage to the scanned project that owns it, when one exists. */
+export function scannedProjectNameForUsage(
+  usage: ModelUsage,
+  groups: RepoGroup[] | null | undefined,
+): string {
+  const candidates = [usage.projectPath, usage.projectId, ...(usage.files ?? [])]
+    .map((item) => (item ?? "").trim())
+    .filter(Boolean);
+
+  let best: { name: string; len: number } | null = null;
+  for (const group of groups ?? []) {
+    const roots = [group.path, group.id].filter(Boolean);
+    for (const candidate of candidates) {
+      for (const root of roots) {
+        if (pathsEqual(candidate, root) || pathWithin(candidate, root)) {
+          const len = normalizePathKey(root).length;
+          if (!best || len > best.len) best = { name: group.name, len };
+        }
+      }
+    }
+  }
+  if (best?.name) return best.name;
+
+  const fallback = (usage.projectPath || usage.projectId || usage.projectName || "").trim();
+  if (!fallback) return "";
+  const parts = fallback.replace(/\\/g, "/").split("/").filter(Boolean);
+  return parts[parts.length - 1] || fallback;
 }
 
 export function databaseEngineLabel(engine: string | null | undefined): string {

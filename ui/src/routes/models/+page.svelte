@@ -1,6 +1,7 @@
 <script lang="ts">
   import Icon from "$lib/components/Icon.svelte";
-  import { fmtBytes, formatCheckedAt, shortPath } from "$lib/format";
+  import { dash } from "$lib/dashboard.svelte";
+  import { fmtBytes, formatCheckedAt, scannedProjectNameForUsage, shortPath } from "$lib/format";
   import { i18n, t } from "$lib/i18n.svelte";
   import { models, modelsScanning, rescanModels } from "$lib/models.svelte";
   import type { ModelUsage, ModelsInventory } from "$lib/types";
@@ -70,7 +71,7 @@
   function usageNames(usages: ModelUsage[] | undefined): string[] {
     const names: string[] = [];
     for (const usage of usages ?? []) {
-      const name = (usage.projectName ?? "").trim();
+      const name = scannedProjectNameForUsage(usage, dash.groups).trim();
       if (name && !names.includes(name)) names.push(name);
     }
     return names;
@@ -209,84 +210,104 @@
     </section>
 
     {#if rows.length}
-      <div class="model-table">
-        <div class="model-head" role="row">
-          <button type="button" class="sort-btn" class:active={sortKey === "name"} onclick={() => toggleSort("name")}>
-            {t("models.col.model")}{sortIndicator("name")}
-          </button>
-          <button type="button" class="sort-btn num" class:active={sortKey === "size"} onclick={() => toggleSort("size")}>
-            {t("models.col.size")}{sortIndicator("size")}
-          </button>
-          <button type="button" class="sort-btn" class:active={sortKey === "location"} onclick={() => toggleSort("location")}>
-            {t("models.col.location")}{sortIndicator("location")}
-          </button>
-          <button type="button" class="sort-btn" class:active={sortKey === "usedBy"} onclick={() => toggleSort("usedBy")}>
-            {t("models.col.usedBy")}{sortIndicator("usedBy")}
-          </button>
-        </div>
-      <ul class="model-list">
-        {#each rows as row (row.key)}
-          {@const open = expanded.has(row.key)}
-          {@const names = usageNames(row.usedBy)}
-          {@const paths = usagePaths(row.usedBy)}
-          <li class="model-item" class:open>
-            <button
-              class="model-line"
-              type="button"
-              aria-expanded={open}
-              title={open ? t("models.collapse") : t("models.expand")}
-              onclick={() => toggle(row.key)}
-            >
-              <span class="model-name" title={row.name}>{row.name}</span>
-              <span class="num tabular">{fmtBytes(row.sizeBytes)}</span>
-              <span class="muted loc" title={row.path ?? ""}>{row.location}</span>
-              <span class="used">
-                {#if names.length}
-                  {#each names as name (name)}
-                    <span class="path-chip" title={name}>{name}</span>
-                  {/each}
-                {:else}
-                  <span class="muted">{t("models.usedByNone")}</span>
-                {/if}
-              </span>
-            </button>
-            {#if open}
-              <dl class="model-details">
-                {#if row.path}
-                  <div>
-                    <dt>{t("models.location")}</dt>
-                    <dd class="mono" title={row.path}>{row.path}</dd>
-                  </div>
-                {/if}
-                {#if paths.length}
-                  <div>
-                    <dt>{t("models.usedPaths")}</dt>
-                    <dd>
-                      <ul class="used-paths">
-                        {#each paths as path (path)}
-                          <li class="mono" title={path}>{path}</li>
-                        {/each}
-                      </ul>
-                    </dd>
-                  </div>
-                {/if}
-                {#if row.id}
-                  <div>
-                    <dt>{t("models.col.id")}</dt>
-                    <dd class="mono">{row.id}</dd>
-                  </div>
-                {/if}
-                {#if row.modifiedAt}
-                  <div>
-                    <dt>{t("models.col.modified")}</dt>
-                    <dd>{formatCheckedAt(row.modifiedAt)}</dd>
-                  </div>
-                {/if}
-              </dl>
-            {/if}
-          </li>
-        {/each}
-      </ul>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>
+                <button type="button" class="sort-btn" class:active={sortKey === "name"} onclick={() => toggleSort("name")}>
+                  {t("models.col.model")}{sortIndicator("name")}
+                </button>
+              </th>
+              <th class="num">
+                <button type="button" class="sort-btn num" class:active={sortKey === "size"} onclick={() => toggleSort("size")}>
+                  {t("models.col.size")}{sortIndicator("size")}
+                </button>
+              </th>
+              <th>
+                <button type="button" class="sort-btn" class:active={sortKey === "location"} onclick={() => toggleSort("location")}>
+                  {t("models.col.location")}{sortIndicator("location")}
+                </button>
+              </th>
+              <th>
+                <button type="button" class="sort-btn" class:active={sortKey === "usedBy"} onclick={() => toggleSort("usedBy")}>
+                  {t("models.col.usedBy")}{sortIndicator("usedBy")}
+                </button>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each rows as row (row.key)}
+              {@const open = expanded.has(row.key)}
+              {@const names = usageNames(row.usedBy)}
+              {@const paths = usagePaths(row.usedBy)}
+              <tr class="model-row" class:open>
+                <td>
+                  <button
+                    class="name-btn"
+                    type="button"
+                    aria-expanded={open}
+                    title={open ? t("models.collapse") : t("models.expand")}
+                    onclick={() => toggle(row.key)}
+                  >
+                    <span class="model-name" title={row.name}>{row.name}</span>
+                  </button>
+                </td>
+                <td class="num tabular">{fmtBytes(row.sizeBytes)}</td>
+                <td class="muted loc" title={row.path ?? ""}>{row.location}</td>
+                <td>
+                  <span class="used">
+                    {#if names.length}
+                      {#each names as name (name)}
+                        <span class="path-chip" title={name}>{name}</span>
+                      {/each}
+                    {:else}
+                      <span class="muted">{t("models.usedByNone")}</span>
+                    {/if}
+                  </span>
+                </td>
+              </tr>
+              {#if open}
+                <tr class="details-row">
+                  <td colspan="4">
+                    <dl class="model-details">
+                      {#if row.path}
+                        <div>
+                          <dt>{t("models.location")}</dt>
+                          <dd class="mono" title={row.path}>{row.path}</dd>
+                        </div>
+                      {/if}
+                      {#if paths.length}
+                        <div>
+                          <dt>{t("models.usedPaths")}</dt>
+                          <dd>
+                            <ul class="used-paths">
+                              {#each paths as path (path)}
+                                <li class="mono" title={path}>{path}</li>
+                              {/each}
+                            </ul>
+                          </dd>
+                        </div>
+                      {/if}
+                      {#if row.id}
+                        <div>
+                          <dt>{t("models.col.id")}</dt>
+                          <dd class="mono">{row.id}</dd>
+                        </div>
+                      {/if}
+                      {#if row.modifiedAt}
+                        <div>
+                          <dt>{t("models.col.modified")}</dt>
+                          <dd>{formatCheckedAt(row.modifiedAt)}</dd>
+                        </div>
+                      {/if}
+                    </dl>
+                  </td>
+                </tr>
+              {/if}
+            {/each}
+          </tbody>
+        </table>
       </div>
     {:else}
       <p class="muted">{t("models.empty")}</p>
@@ -324,33 +345,40 @@
     text-transform: lowercase;
   }
   .muted { color: var(--muted); font-size: 12px; }
-  .model-table {
+  .table-wrap {
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--card);
-    overflow: visible;
+    overflow: auto;
+    max-height: min(70vh, 40rem);
   }
-  .model-head,
-  .model-line {
-    display: grid;
-    grid-template-columns: minmax(8rem, 1.4fr) max-content minmax(6rem, 1fr) minmax(7rem, 1.2fr);
-    gap: 10px;
-    align-items: center;
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
   }
-  .model-head {
-    padding: 4px 6px;
+  .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 8px 12px;
+    background: color-mix(in srgb, var(--card) 92%, #000);
     border-bottom: 1px solid var(--line);
     color: var(--muted);
     font-size: 11px;
     font-weight: 650;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+    text-align: left;
   }
+  .data-table thead th:nth-child(1) { width: 32%; }
+  .data-table thead th:nth-child(2) { width: 7.5rem; }
+  .data-table thead th:nth-child(3) { width: 28%; }
+  .data-table thead th:nth-child(4) { width: auto; }
   .sort-btn {
     margin: 0;
-    padding: 4px 6px;
+    padding: 0;
     border: 0;
-    border-radius: 4px;
     background: transparent;
     color: inherit;
     font: inherit;
@@ -358,37 +386,48 @@
     font-weight: 650;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    text-align: left;
     cursor: pointer;
   }
-  .sort-btn.num { text-align: right; }
+  .sort-btn.num { width: 100%; text-align: right; }
   .sort-btn:hover,
-  .sort-btn.active { color: var(--text); background: rgba(255, 255, 255, 0.04); }
-  .model-list {
-    list-style: none;
+  .sort-btn.active { color: var(--text); }
+  .data-table tbody td {
+    padding: 8px 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .model-row:first-child td { border-top: 0; }
+  .name-btn {
+    display: block;
+    width: 100%;
     margin: 0;
     padding: 0;
-    overflow: visible;
-  }
-  .model-item + .model-item { border-top: 1px solid rgba(255, 255, 255, 0.04); }
-  .model-line {
-    width: 100%;
-    padding: 9px 12px;
-    background: transparent;
     border: 0;
+    background: transparent;
     color: inherit;
+    font: inherit;
     text-align: left;
     cursor: pointer;
+    min-width: 0;
   }
   .model-name {
+    display: block;
     font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .num { text-align: right; white-space: nowrap; }
+  .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .loc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .used { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; min-width: 0; }
+  .details-row td {
+    white-space: normal;
+    border-top: 0;
+    padding-top: 0;
+  }
   .path-chip {
     display: block;
     max-width: 100%;
@@ -427,8 +466,8 @@
   .models-skel { height: 8rem; }
   .error { color: var(--danger); }
   @media (max-width: 800px) {
-    .models-summary, .model-head, .model-line { grid-template-columns: 1fr 1fr; }
-    .model-head { display: none; }
+    .models-summary { grid-template-columns: 1fr 1fr; }
+    .data-table thead { display: none; }
     .model-details div { grid-template-columns: 1fr; }
   }
 </style>

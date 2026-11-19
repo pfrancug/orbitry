@@ -27,7 +27,7 @@
   let sortDir = $state<SortDir>("asc");
 
   function dbKey(db: DatabaseInfo, index: number): string {
-    return `${(db.engine || "").toLowerCase()}|${db.port ?? ""}|${(db.path || "").toLowerCase()}|${index}`;
+    return `${(db.engine || "").toLowerCase()}|${db.port ?? ""}|${(db.path || "").toLowerCase()}|${db.host ?? ""}|${index}`;
   }
 
   function sizeOf(db: DatabaseInfo): number | null {
@@ -121,39 +121,43 @@
       </div>
     </section>
 
-    <div class="db-table">
-      <div class="db-head" role="row">
-        <button type="button" class="sort-btn" class:active={sortKey === "project"} onclick={() => toggleSort("project")}>
-          {t("databases.col.project")}{sortIndicator("project")}
-        </button>
-        <button type="button" class="sort-btn num" class:active={sortKey === "size"} onclick={() => toggleSort("size")}>
-          {t("databases.col.size")}{sortIndicator("size")}
-        </button>
-        <span>{t("databases.col.detail")}</span>
-      </div>
-      <ul class="db-list">
-        {#each buckets as bucket (bucket.id)}
-          <li class="db-group">
-            <div class="db-project">
-              <span class="project-name" title={bucket.path}>{bucket.name}</span>
-              <span class="num tabular">{formatSize(bucket.totalBytes)}</span>
-              <span class="muted">{bucket.databases.length}</span>
-            </div>
-            <ul class="db-children">
-              {#each bucket.databases as db (db.key)}
-                <li class="db-child">
-                  <span class="engine">{databaseEngineLabel(db.engine)}</span>
-                  <span class="num tabular">{formatSize(sizeOf(db))}</span>
-                  <span class="detail muted" title={detailFor(db)}>
-                    <em>{databaseSourceLabel(db.source)}</em>
-                    {detailFor(db)}
-                  </span>
-                </li>
-              {/each}
-            </ul>
-          </li>
-        {/each}
-      </ul>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>
+              <button type="button" class="sort-btn" class:active={sortKey === "project"} onclick={() => toggleSort("project")}>
+                {t("databases.col.project")}{sortIndicator("project")}
+              </button>
+            </th>
+            <th class="num">
+              <button type="button" class="sort-btn num" class:active={sortKey === "size"} onclick={() => toggleSort("size")}>
+                {t("databases.col.size")}{sortIndicator("size")}
+              </button>
+            </th>
+            <th>{t("databases.col.detail")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each buckets as bucket (bucket.id)}
+            <tr class="project-row">
+              <td class="project-name" title={bucket.path}>{bucket.name}</td>
+              <td class="num tabular">{formatSize(bucket.totalBytes)}</td>
+              <td class="muted">{bucket.databases.length}</td>
+            </tr>
+            {#each bucket.databases as db (db.key)}
+              <tr class="child-row">
+                <td class="engine">{databaseEngineLabel(db.engine)}</td>
+                <td class="num tabular">{formatSize(sizeOf(db))}</td>
+                <td class="detail muted" title={detailFor(db)}>
+                  <em>{databaseSourceLabel(db.source)}</em>
+                  <span>{detailFor(db)}</span>
+                </td>
+              </tr>
+            {/each}
+          {/each}
+        </tbody>
+      </table>
     </div>
   </div>
 {/if}
@@ -188,21 +192,38 @@
     text-transform: lowercase;
   }
   .muted { color: var(--muted); font-size: 12px; }
-  .db-table {
+  .table-wrap {
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--card);
+    overflow: auto;
+    max-height: min(70vh, 40rem);
   }
-  .db-head,
-  .db-project,
-  .db-child {
-    display: grid;
-    grid-template-columns: minmax(8rem, 1.6fr) max-content minmax(8rem, 1.4fr);
-    gap: 10px;
-    align-items: center;
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
   }
-  .db-head {
-    padding: 4px 6px;
+  .data-table th,
+  .data-table td {
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .data-table th:nth-child(1),
+  .data-table td:nth-child(1) { width: 42%; }
+  .data-table th:nth-child(2),
+  .data-table td:nth-child(2) { width: 7.5rem; }
+  .data-table th:nth-child(3),
+  .data-table td:nth-child(3) { width: auto; }
+  .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: color-mix(in srgb, var(--card) 92%, #000);
     border-bottom: 1px solid var(--line);
     color: var(--muted);
     font-size: 11px;
@@ -212,9 +233,8 @@
   }
   .sort-btn {
     margin: 0;
-    padding: 4px 6px;
+    padding: 0;
     border: 0;
-    border-radius: 4px;
     background: transparent;
     color: inherit;
     font: inherit;
@@ -222,41 +242,27 @@
     font-weight: 650;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    text-align: left;
     cursor: pointer;
   }
-  .sort-btn.num { text-align: right; }
+  .sort-btn.num { width: 100%; text-align: right; }
   .sort-btn:hover,
-  .sort-btn.active { color: var(--text); background: rgba(255, 255, 255, 0.04); }
-  .db-list, .db-children {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .db-group + .db-group { border-top: 1px solid rgba(255, 255, 255, 0.04); }
-  .db-project {
-    width: 100%;
-    padding: 9px 12px;
-    color: inherit;
-  }
-  .project-name {
+  .sort-btn.active { color: var(--text); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .project-row td {
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
     font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
-  .num { text-align: right; white-space: nowrap; }
-  .db-children { padding: 0 12px 8px 28px; }
-  .db-child {
-    padding: 5px 0;
+  .project-row:first-child td { border-top: 0; }
+  .child-row td {
     border-top: 1px solid rgba(255, 255, 255, 0.03);
     font-size: 12px;
+    font-weight: 400;
+  }
+  .child-row td:first-child {
+    padding-left: 28px;
   }
   .engine { font-weight: 600; }
   .detail {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     display: flex;
     gap: 8px;
     min-width: 0;
@@ -266,10 +272,13 @@
     color: var(--muted);
     flex: none;
   }
+  .detail span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .db-skel { height: 8rem; }
   @media (max-width: 800px) {
-    .db-head { display: none; }
-    .db-project, .db-child { grid-template-columns: 1fr auto; }
-    .detail { grid-column: 1 / -1; }
+    .data-table th:nth-child(3),
+    .data-table td:nth-child(3) { display: none; }
   }
 </style>

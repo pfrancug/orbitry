@@ -27,11 +27,6 @@
       (run) => run.status === "running" && (group.parts ?? []).some((part) => part.id === run.partId),
     ),
   );
-  const failed = $derived(
-    (group.parts ?? []).some((part) =>
-      runState.runs.some((run) => run.status === "failed" && run.partId === part.id),
-    ),
-  );
   const needsInstall = $derived(
     (group.parts ?? []).some((item) => isJsLike(item.kind) && !item.nodeModules),
   );
@@ -61,8 +56,6 @@
         {#if running.length > 0}
           <span class="pulse" title={t("projects.runningLabel")} aria-label={t("projects.runningLabel")}></span>
           <span class="run-count">{running.length}</span>
-        {:else if failed}
-          <span class="dot fail" title={t("projects.failed")}></span>
         {/if}
         <!-- Tag order: AI → DB → deps → warning (last). -->
         <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">

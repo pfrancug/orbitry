@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, addIgnoredProject, removeIgnoredProject, setDesktopNotifications, setOpenInTarget, setStartWithSystem } from "$lib/dashboard.svelte";
+  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, addIgnoredProject, removeIgnoredProject, setDesktopNotifications, setModelsIncludeDocs, setOpenInTarget, setStartWithSystem } from "$lib/dashboard.svelte";
   import { desktopOs, formatCheckedAt, pathsEqual, resolveOpenIn, shortPath } from "$lib/format";
   import { i18n, setLocale, t, type Locale } from "$lib/i18n.svelte";
   import { checkForUpdate, installUpdate, update } from "$lib/update.svelte";
@@ -8,7 +8,7 @@
 
   const CHANGELOG_URL = "https://github.com/pfrancug/orbitry/blob/main/CHANGELOG.md";
 
-  type SettingsCategory = "general" | "openin" | "scanning" | "plugins" | "about";
+  type SettingsCategory = "general" | "appearance" | "openin" | "scanning" | "plugins" | "about";
 
   const locale = $derived(i18n.locale);
 
@@ -21,6 +21,7 @@
   const categories = $derived(
     [
       { id: "general" as const, label: t("settings.cat.general") },
+      { id: "appearance" as const, label: t("settings.cat.appearance") },
       { id: "openin" as const, label: t("settings.cat.openIn") },
       { id: "scanning" as const, label: t("settings.cat.scanning") },
       { id: "plugins" as const, label: t("settings.cat.plugins") },
@@ -96,22 +97,6 @@
 
     <div class="settings-panels">
       {#if category === "general"}
-        <section class="settings-card">
-          <h2 class="settings-heading">{t("settings.language")}</h2>
-          <p class="settings-hint">{t("settings.languageHint")}</p>
-          <div class="segmented">
-            {#each ([["en", "settings.lang.en"], ["pl", "settings.lang.pl"]] as const) as option (option[0])}
-              <button
-                type="button"
-                class:active={locale === option[0]}
-                onclick={() => setLocale(option[0] as Locale)}
-              >
-                {t(option[1])}
-              </button>
-            {/each}
-          </div>
-        </section>
-
         <section class="settings-card">
           <h2 class="settings-heading">{t("settings.folders")}</h2>
           <p class="settings-hint">{t("settings.foldersHint")}</p>
@@ -223,6 +208,22 @@
             </select>
           </label>
         </section>
+      {:else if category === "appearance"}
+        <section class="settings-card">
+          <h2 class="settings-heading">{t("settings.language")}</h2>
+          <p class="settings-hint">{t("settings.languageHint")}</p>
+          <div class="segmented">
+            {#each ([["en", "settings.lang.en"], ["pl", "settings.lang.pl"]] as const) as option (option[0])}
+              <button
+                type="button"
+                class:active={locale === option[0]}
+                onclick={() => setLocale(option[0] as Locale)}
+              >
+                {t(option[1])}
+              </button>
+            {/each}
+          </div>
+        </section>
       {:else if category === "openin"}
         <section class="settings-card">
           <h2 class="settings-heading">{t("settings.openIn")}</h2>
@@ -283,6 +284,20 @@
               {/each}
             {/if}
           </div>
+        </section>
+
+        <section class="settings-card">
+          <h2 class="settings-heading">{t("settings.modelsScan")}</h2>
+          <p class="settings-hint">{t("settings.modelsScanHint")}</p>
+          <label class="check-row autostart-row">
+            <input
+              type="checkbox"
+              checked={dash.config.modelsIncludeDocs === true}
+              disabled={dash.saving}
+              onchange={(event) => setModelsIncludeDocs(event.currentTarget.checked)}
+            />
+            {t("settings.modelsIncludeDocs")}
+          </label>
         </section>
       {:else if category === "plugins"}
         <section class="settings-card">

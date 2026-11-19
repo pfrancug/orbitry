@@ -8,8 +8,12 @@ export type RecentScript = {
 
 const RECENT_KEY = "orbitry.recent";
 const FAVORITES_KEY = "orbitry.favorites";
-const MAX_RECENT = 8;
 const DISMISSED_DONE_KEY = "orbitry.recentDoneDismissed";
+
+/** Hard cap for recently-run and recently-stopped lists. */
+export const MAX_RECENT = 10;
+/** Rows shown before "Show more". */
+export const RECENT_PREVIEW = 3;
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -23,7 +27,8 @@ function readJson<T>(key: string, fallback: T): T {
 
 export function loadRecent(): RecentScript[] {
   const items = readJson<RecentScript[]>(RECENT_KEY, []);
-  return Array.isArray(items) ? items : [];
+  if (!Array.isArray(items)) return [];
+  return items.slice(0, MAX_RECENT);
 }
 
 export function rememberRecent(entry: Omit<RecentScript, "at">): RecentScript[] {
@@ -33,27 +38,6 @@ export function rememberRecent(entry: Omit<RecentScript, "at">): RecentScript[] 
   ].slice(0, MAX_RECENT);
   try {
     localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-  } catch {
-    // Private mode can block storage.
-  }
-  return next;
-}
-
-export function favoriteKey(partId: string, script: string): string {
-  return `${partId}::${script}`;
-}
-
-export function loadFavorites(): string[] {
-  const items = readJson<string[]>(FAVORITES_KEY, []);
-  return Array.isArray(items) ? items : [];
-}
-
-export function toggleFavorite(partId: string, script: string): string[] {
-  const key = favoriteKey(partId, script);
-  const current = loadFavorites();
-  const next = current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
-  try {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
   } catch {
     // Private mode can block storage.
   }
@@ -77,6 +61,15 @@ export function clearAllRecent(): RecentScript[] {
     // Private mode can block storage.
   }
   return [];
+}
+
+/** Drop legacy favorites key; older clients may still write it until they upgrade. */
+export function clearLegacyFavorites(): void {
+  try {
+    localStorage.removeItem(FAVORITES_KEY);
+  } catch {
+    // Private mode can block storage.
+  }
 }
 
 export function doneKey(partId: string, script: string, endedAt?: number | null, runId?: string | null): string {

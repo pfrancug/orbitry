@@ -38,6 +38,10 @@ pub struct Run {
     pub log_path: Option<String>,
     pub status: RunStatus,
     pub exit_code: Option<i32>,
+    /// True when the user asked Orbitry to stop this run. Present from 0.13.0;
+    /// older clients ignore the field.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub stop_requested: bool,
     pub started_at: i64,
     pub ended_at: Option<i64>,
     pub ports: Vec<PortInfo>,
@@ -48,6 +52,10 @@ pub struct Run {
     pub warnings: Vec<Warning>,
     #[serde(default, skip_serializing)]
     pub log_ports: Vec<PortInfo>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 impl Run {
@@ -301,6 +309,7 @@ mod tests {
             log_path: None,
             status: RunStatus::Running,
             exit_code: None,
+            stop_requested: false,
             started_at: 0,
             ended_at: None,
             ports: Vec::new(),

@@ -46,7 +46,7 @@
 {#if items.length}
   <HoverPopover>
     {#snippet children()}
-      <span class="tag-badge db-badge" role="note" {title} aria-label={title}>
+      <span class="tag-badge db-badge" role="note" aria-label={title}>
         <Icon name="db" size={11} />
         {label}
       </span>

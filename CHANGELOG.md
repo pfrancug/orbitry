@@ -5,6 +5,24 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-11-19
+
+### Added
+
+- Settings uses a left-side category nav (General, Appearance, Open in, Scanning, Plugins, About). Config bridge lives under Plugins and documents that it reads Vite/Next/Astro config ports only (not package.json scripts).
+- Setting to include documentation Markdown (`README*.md`, `docs/`) in the AI models attribution scan (off by default). Models scan cache version bumped.
+- Closable log tabs, including tabs opened from recently stopped runs.
+- Meaningful exit labels on the dashboard (stopped / finished / crashed with code), English and Polish.
+- Unified recently-run and recently-stopped lists (preview 3 + show more, hard cap 10).
+
+### Changed
+
+- Tag hover popups no longer show a native browser tooltip on top, and stay open while the pointer moves into the popup.
+- Projects page shows only a running indicator; crash/exit status belongs on the Overview.
+- Favorites are removed. Older `orbitry.favorites` localStorage is ignored and cleared on migrate (storage version 5).
+- Databases project group headers are visually distinct from indented database rows.
+- Run payloads may include optional `stopRequested` for stopped-by-user labeling; older clients ignore it.
+
 ## [0.12.4] - 2026-11-19
 
 ### Fixed

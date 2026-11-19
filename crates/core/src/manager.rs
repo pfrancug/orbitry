@@ -250,6 +250,7 @@ impl ProcessManager {
             log_path: Some(log_path.display().to_string()),
             status: RunStatus::Running,
             exit_code: None,
+            stop_requested: false,
             started_at: now_ms(),
             ended_at: None,
             ports: Vec::new(),
@@ -426,6 +427,7 @@ impl ProcessManager {
             }
             rec.info.exit_code = exit_code;
             rec.info.ended_at = Some(now_ms());
+            rec.info.stop_requested = rec.stop_requested;
             rec.info.status = if rec.stop_requested || exit_code == Some(0) {
                 RunStatus::Exited
             } else {

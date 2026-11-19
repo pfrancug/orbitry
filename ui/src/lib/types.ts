@@ -177,6 +177,8 @@ export type AppConfig = {
   ignoredProjects?: string[];
   /** Present from 0.11.0. Older configs omit it; every target stays visible. */
   openIn?: OpenInTargets;
+  /** Present from 0.13.0. Older configs omit it (treated as false). */
+  modelsIncludeDocs?: boolean;
   bridgeStatus?: BridgeStatus;
   autostart?: AutostartStatus;
 };
@@ -219,6 +221,8 @@ export type Run = {
   logPath?: string | null;
   status: RunStatus;
   exitCode: number | null;
+  /** Present from 0.13.0 when the user stopped the run. Older payloads omit it. */
+  stopRequested?: boolean;
   startedAt: number;
   endedAt: number | null;
   ports: PortInfo[];

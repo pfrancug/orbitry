@@ -21,9 +21,6 @@
   const selected = $derived(runState.selectedPartId === part.id && runState.panelOpen);
   const live = $derived(runningFor(part.id));
   const ports = $derived(displayPorts(part, runState.runs));
-  const failed = $derived(
-    !live && runState.runs.some((run) => run.partId === part.id && run.status === "failed"),
-  );
   const warnings = $derived(
     visibleWarnings(warningsForPart(part.id, runState.runs, [...(runState.warnings ?? []), ...(dash.warnings ?? [])])),
   );
@@ -69,7 +66,12 @@
   >
     <div class="app-id">
       <div class="app-name">
-        <span class="status-dot" class:on={Boolean(live)} class:fail={failed}></span>
+        <span
+          class="status-dot"
+          class:on={Boolean(live)}
+          title={live ? t("projects.runningLabel") : undefined}
+          aria-label={live ? t("projects.runningLabel") : undefined}
+        ></span>
         <strong title={part.name}>{partTitle(part)}</strong>
         {#if part.framework}
           <span class="muted framework-tag">{part.framework}</span>

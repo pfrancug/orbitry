@@ -1,6 +1,6 @@
 /** Versioned, backward-compatible helpers for Orbitry's localStorage keys. */
 
-export const STORAGE_VERSION = 4;
+export const STORAGE_VERSION = 5;
 const VERSION_KEY = "orbitry.storageVersion";
 const PREFIX = "orbitry.";
 
@@ -70,6 +70,21 @@ export function migrateClientStorage(): void {
     if (from < 4) {
       // 0.11.0: Open-in visibility lives in server config (openIn), not localStorage.
       // Bump the client version so older clients re-run migrations cleanly.
+    }
+    if (from < 5) {
+      // 0.13.0: favorites removed; recently-run capped at 10.
+      localStorage.removeItem("orbitry.favorites");
+      try {
+        const recentRaw = localStorage.getItem("orbitry.recent");
+        if (recentRaw) {
+          const parsed = JSON.parse(recentRaw);
+          if (Array.isArray(parsed) && parsed.length > 10) {
+            localStorage.setItem("orbitry.recent", JSON.stringify(parsed.slice(0, 10)));
+          }
+        }
+      } catch {
+        localStorage.removeItem("orbitry.recent");
+      }
     }
     if (from !== STORAGE_VERSION) {
       localStorage.setItem(VERSION_KEY, String(STORAGE_VERSION));

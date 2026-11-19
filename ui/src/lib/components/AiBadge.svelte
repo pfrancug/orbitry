@@ -31,7 +31,7 @@
 {#if items.length}
   <HoverPopover>
     {#snippet children()}
-      <span class="tag-badge ai-badge" role="note" {title} aria-label={title}>
+      <span class="tag-badge ai-badge" role="note" aria-label={title}>
         <Icon name="models" size={11} />
         {t("ai.badge")}
       </span>

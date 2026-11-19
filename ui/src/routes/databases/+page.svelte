@@ -138,13 +138,17 @@
       </div>
       {#each buckets as bucket (bucket.id)}
         <div class="grid-row project" role="row">
-          <div class="cell name" role="cell" title={bucket.path}>{bucket.name}</div>
+          <div class="cell name project-name" role="cell" title={bucket.path}>
+            <span class="project-icon" aria-hidden="true">▦</span>
+            <strong>{bucket.name}</strong>
+            <span class="project-count">
+              {bucket.databases.length}
+              {bucket.databases.length === 1 ? t("databases.card.database") : t("databases.card.databases")}
+            </span>
+          </div>
           <div class="cell num tabular" role="cell">{formatSize(bucket.totalBytes)}</div>
           <div class="cell muted" role="cell">—</div>
-          <div class="cell muted" role="cell">
-            {bucket.databases.length}
-            {bucket.databases.length === 1 ? t("databases.card.database") : t("databases.card.databases")}
-          </div>
+          <div class="cell muted" role="cell">—</div>
         </div>
         {#each bucket.databases as db (db.key)}
           <div class="grid-row child" role="row">
@@ -222,19 +226,54 @@
     min-height: 34px;
     border-top: 1px solid rgba(255, 255, 255, 0.04);
   }
-  .grid-row.project { border-top-color: rgba(255, 255, 255, 0.07); }
+  .grid-row.project {
+    min-height: 38px;
+    border-top-color: rgba(255, 255, 255, 0.1);
+    background: color-mix(in srgb, var(--panel, #15161c) 72%, #000);
+  }
   .grid-row.project:first-of-type,
   .grid-head + .grid-row { border-top: 0; }
+  .grid-row.child {
+    background: transparent;
+  }
   .cell {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .cell.name { font-weight: 600; }
+  .cell.name { font-weight: 500; }
+  .project-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .project-name strong {
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .project-icon {
+    flex: none;
+    width: 1.1rem;
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1;
+  }
+  .project-count {
+    flex: none;
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 550;
+  }
   .child-name {
-    font-weight: 600;
-    padding-left: 1.1rem;
+    font-weight: 500;
+    padding-left: 1.85rem;
+    color: var(--text);
   }
   .num {
     text-align: right;

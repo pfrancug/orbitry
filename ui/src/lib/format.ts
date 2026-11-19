@@ -63,6 +63,21 @@ export function formatUptime(startedAt: number | null | undefined, now = Date.no
   return `${rest}s`;
 }
 
+/** Human-readable exit / stop label for Overview and the details panel. */
+export function runExitLabel(
+  run: Pick<Run, "status" | "exitCode" | "stopRequested">,
+  translate: (key: string, vars?: Record<string, string | number>) => string,
+): string {
+  if (run.status === "running") return translate("run.running");
+  if (run.stopRequested) return translate("run.stopped");
+  if (run.status === "failed") {
+    if (run.exitCode == null) return translate("run.crashed");
+    return translate("run.crashedCode", { code: run.exitCode });
+  }
+  if (run.exitCode === 0 || run.exitCode == null) return translate("run.finished");
+  return translate("run.exitedCode", { code: run.exitCode });
+}
+
 export function shortPath(path: string): string {
   const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
   if (parts.length <= 3) return path;

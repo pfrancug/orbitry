@@ -363,6 +363,9 @@ struct ConfigBody {
     /// Replaces Open-in visibility when present. Omitted keeps the saved prefs.
     #[serde(default)]
     open_in: Option<OpenInTargets>,
+    /// When set, controls whether models attribution scans documentation Markdown.
+    #[serde(default)]
+    models_include_docs: Option<bool>,
 }
 
 async fn put_config(
@@ -392,6 +395,9 @@ async fn put_config(
             .ignored_projects
             .unwrap_or_else(|| existing.ignored_projects.clone()),
         open_in: body.open_in.unwrap_or_else(|| existing.open_in.clone()),
+        models_include_docs: body
+            .models_include_docs
+            .unwrap_or(existing.models_include_docs),
     };
     config.normalize_autostart_apps();
     config.normalize_ignored_projects();
@@ -408,6 +414,7 @@ async fn put_config(
         config.roots != existing.roots || config.script_patterns != existing.script_patterns;
     let bridge_changed = config.config_bridge != existing.config_bridge;
     let overrides_changed = config.port_overrides != existing.port_overrides;
+    let models_docs_changed = config.models_include_docs != existing.models_include_docs;
     save_config(&state.config_path, &config).map_err(internal)?;
     if overrides_changed {
         state
@@ -423,7 +430,7 @@ async fn put_config(
             manager.set_log_limit_mb(limit).await;
         });
     }
-    if config.roots != existing.roots {
+    if config.roots != existing.roots || models_docs_changed {
         start_models_scan(Arc::clone(&state));
     }
     if roots_or_patterns_changed || bridge_changed {

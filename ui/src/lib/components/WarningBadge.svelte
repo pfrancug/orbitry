@@ -25,7 +25,6 @@
         class="tag-badge warn-badge"
         class:danger
         class:info={!issues.length}
-        {title}
         aria-label={title}
       >
         <Icon name="alert" size={11} />

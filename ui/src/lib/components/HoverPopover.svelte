@@ -15,6 +15,7 @@
   let layer = $state<HTMLDivElement | undefined>(undefined);
   let open = $state(false);
   let placed = $state({ top: 0, left: 0, maxHeight: 240 });
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
 
   function place() {
     if (!trigger || !layer) return;
@@ -24,7 +25,6 @@
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    // Measure with current styles.
     const pop = layer.getBoundingClientRect();
     const width = pop.width || 240;
     const height = Math.min(pop.height || 160, 240);
@@ -47,22 +47,27 @@
     placed = { top, left, maxHeight };
   }
 
+  function cancelHide() {
+    if (hideTimer != null) {
+      clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+  }
+
   function show() {
     if (disabled) return;
+    cancelHide();
     open = true;
     queueMicrotask(place);
     requestAnimationFrame(place);
   }
 
-  function hide() {
-    open = false;
-  }
-
-  function onLeave(event: MouseEvent) {
-    const next = event.relatedTarget as Node | null;
-    if (layer && next && layer.contains(next)) return;
-    if (trigger && next && trigger.contains(next)) return;
-    hide();
+  function hideSoon() {
+    cancelHide();
+    hideTimer = setTimeout(() => {
+      open = false;
+      hideTimer = null;
+    }, 160);
   }
 
   $effect(() => {
@@ -77,18 +82,20 @@
       window.removeEventListener("resize", onResize);
     };
   });
+
+  $effect(() => () => cancelHide());
 </script>
 
 <span
   class="hover-popover-trigger"
   bind:this={trigger}
   onmouseenter={show}
-  onmouseleave={onLeave}
+  onmouseleave={hideSoon}
   onfocusin={show}
   onfocusout={(event) => {
     const next = event.relatedTarget as Node | null;
     if (layer && next && layer.contains(next)) return;
-    hide();
+    hideSoon();
   }}
   role="presentation"
 >
@@ -101,7 +108,7 @@
     bind:this={layer}
     style={`top:${placed.top}px;left:${placed.left}px;max-height:${placed.maxHeight}px`}
     onmouseenter={show}
-    onmouseleave={onLeave}
+    onmouseleave={hideSoon}
     role="tooltip"
   >
     {@render content()}
@@ -121,7 +128,9 @@
     max-width: min(360px, calc(100vw - 16px));
     overflow: auto;
     overscroll-behavior: contain;
-    padding: 8px;
+    /* Bridge the gap so moving from the trigger into the popup keeps hover. */
+    padding: 10px 8px 8px;
+    margin-top: -4px;
     border-radius: 10px;
     border: 1px solid var(--line-strong);
     background: rgba(14, 14, 19, 0.98);

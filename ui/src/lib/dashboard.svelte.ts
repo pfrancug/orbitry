@@ -313,6 +313,7 @@ function withOverrides(next: {
   desktopNotifications?: boolean;
   ignoredProjects?: string[];
   openIn?: import("./types").OpenInTargets;
+  modelsIncludeDocs?: boolean;
 }) {
   return {
     roots: next.roots,
@@ -330,6 +331,7 @@ function withOverrides(next: {
       cursor: true,
       explorer: true,
     },
+    modelsIncludeDocs: next.modelsIncludeDocs ?? dash.config?.modelsIncludeDocs ?? false,
   };
 }
 
@@ -347,7 +349,11 @@ function cloneConfig(): AppConfig | null {
 }
 
 function applySavedConfig(
-  payload: { ignoredProjects?: string[]; openIn?: import("./types").OpenInTargets },
+  payload: {
+    ignoredProjects?: string[];
+    openIn?: import("./types").OpenInTargets;
+    modelsIncludeDocs?: boolean;
+  },
   saved: AppConfig,
 ): AppConfig {
   let next = saved;
@@ -361,6 +367,13 @@ function applySavedConfig(
   // when the user has an all-default object in memory.
   if (payload.openIn && (!Object.prototype.hasOwnProperty.call(saved, "openIn") || saved.openIn == null)) {
     next = { ...next, openIn: payload.openIn };
+  }
+  // modelsIncludeDocs=false is omitted from the saved file; keep the value we wrote.
+  if (
+    payload.modelsIncludeDocs != null &&
+    (!Object.prototype.hasOwnProperty.call(saved, "modelsIncludeDocs") || saved.modelsIncludeDocs == null)
+  ) {
+    next = { ...next, modelsIncludeDocs: payload.modelsIncludeDocs };
   }
   return next;
 }
@@ -386,6 +399,7 @@ export async function persist(next: {
   desktopNotifications?: boolean;
   ignoredProjects?: string[];
   openIn?: import("./types").OpenInTargets;
+  modelsIncludeDocs?: boolean;
 }) {
   dash.error = null;
   const refreshProjects = shouldRefreshProjects(next);
@@ -475,6 +489,15 @@ export async function setConfigBridge(mode: ConfigBridgeMode) {
     roots: dash.config.roots,
     scriptPatterns: dash.config.scriptPatterns,
     configBridge: mode,
+  });
+}
+
+export async function setModelsIncludeDocs(enabled: boolean) {
+  if (!dash.config) return;
+  await persist({
+    roots: dash.config.roots,
+    scriptPatterns: dash.config.scriptPatterns,
+    modelsIncludeDocs: enabled,
   });
 }
 

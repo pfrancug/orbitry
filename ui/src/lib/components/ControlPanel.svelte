@@ -16,6 +16,7 @@
     partDatabases,
     partTitle,
     roleLabel,
+    runExitLabel,
     scriptLabel,
     scriptSourceDiffers,
     shortPath,
@@ -139,8 +140,7 @@
   function statusLabel(run: typeof current): string {
     if (!run) return t("panel.status.idle");
     if (run.status === "running") return t("panel.status.running");
-    if (run.status === "failed") return run.exitCode == null ? t("panel.status.failed") : t("panel.status.failedCode", { code: run.exitCode });
-    return run.exitCode == null ? t("panel.status.exited") : t("panel.status.exitedCode", { code: run.exitCode });
+    return runExitLabel(run, t);
   }
 </script>
 

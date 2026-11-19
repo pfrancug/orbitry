@@ -47,6 +47,7 @@ export function saveConfig(config: {
   desktopNotifications?: boolean;
   ignoredProjects?: string[];
   openIn?: import("./types").OpenInTargets;
+  modelsIncludeDocs?: boolean;
 }): Promise<AppConfig> {
   return request("/api/config", {
     method: "PUT",

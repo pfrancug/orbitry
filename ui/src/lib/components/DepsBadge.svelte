@@ -17,7 +17,7 @@
 
 <HoverPopover>
   {#snippet children()}
-    <span class="tag-badge deps-badge" role="note" {title} aria-label={title}>
+    <span class="tag-badge deps-badge" role="note" aria-label={title}>
       <Icon name="alert" size={11} />
       {t("deps.badge")}
     </span>

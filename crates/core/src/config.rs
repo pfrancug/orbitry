@@ -147,6 +147,11 @@ pub struct Config {
     /// every target visible so older configs and first runs look unchanged.
     #[serde(default, skip_serializing_if = "OpenInTargets::is_default")]
     pub open_in: OpenInTargets,
+    /// When true, models attribution also scans documentation Markdown
+    /// (`README*.md`, `docs/**/*.md`). Default false so docs mentions do not
+    /// attribute models. Older configs omit the field and keep the default.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub models_include_docs: bool,
 }
 
 impl Default for Config {
@@ -162,6 +167,7 @@ impl Default for Config {
             desktop_notifications: false,
             ignored_projects: Vec::new(),
             open_in: OpenInTargets::default(),
+            models_include_docs: false,
         }
     }
 }

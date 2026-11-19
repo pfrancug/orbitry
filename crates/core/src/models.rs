@@ -17,7 +17,7 @@ use crate::group::RepoGroup;
 use crate::scan_cache::now_ms;
 
 /// Bump when the inventory shape or detection rules change.
-pub const MODELS_SCANNER_VERSION: u32 = 5;
+pub const MODELS_SCANNER_VERSION: u32 = 6;
 
 const OLLAMA_PORT: u16 = 11434;
 const OLLAMA_HOST: [u8; 4] = [127, 0, 0, 1];
@@ -252,7 +252,11 @@ pub fn models_fingerprint(config: &Config) -> String {
         .collect();
     roots.sort();
     roots.dedup();
-    serde_json::to_string(&serde_json::json!({ "roots": roots })).unwrap_or_default()
+    serde_json::to_string(&serde_json::json!({
+        "roots": roots,
+        "includeDocs": config.models_include_docs,
+    }))
+    .unwrap_or_default()
 }
 
 pub fn load_models_cache(path: &Path, config: &Config) -> Option<ModelsInventory> {
@@ -333,7 +337,15 @@ where
     );
     sink(&mid);
 
-    attribute_usages(&mut ollama, &mut caches, &mut project_files, &config.roots, groups, &mut index);
+    attribute_usages(
+        &mut ollama,
+        &mut caches,
+        &mut project_files,
+        &config.roots,
+        groups,
+        &mut index,
+        config.models_include_docs,
+    );
     let _ = save_models_index(&models_index_path(), &index);
     assemble_inventory(
         config,
@@ -1073,6 +1085,7 @@ fn attribute_usages(
     roots: &[String],
     groups: &[RepoGroup],
     index: &mut ModelsIndex,
+    include_docs: bool,
 ) {
     let mut needles: Vec<AttribNeedle> = Vec::new();
     for model in &ollama.models {
@@ -1123,6 +1136,9 @@ fn attribute_usages(
         let mut read = 0_usize;
         for (path, size) in files {
             if size == 0 || size > ATTRIB_MAX_FILE_BYTES || !is_text_file(&path) {
+                continue;
+            }
+            if !include_docs && is_docs_markdown(&path) {
                 continue;
             }
             if read >= ATTRIB_MAX_FILES {
@@ -1337,6 +1353,24 @@ fn is_text_file(path: &Path) -> bool {
         }
     }
     has_ext(path, TEXT_EXTS)
+}
+
+/// README*.md and anything under a docs/ folder — skipped unless include_docs.
+fn is_docs_markdown(path: &Path) -> bool {
+    if !has_ext(path, &["md"]) {
+        return false;
+    }
+    if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+        let lower = name.to_ascii_lowercase();
+        if lower == "readme.md" || lower.starts_with("readme.") {
+            return true;
+        }
+    }
+    path.components().any(|comp| {
+        comp.as_os_str()
+            .to_str()
+            .is_some_and(|name| name.eq_ignore_ascii_case("docs"))
+    })
 }
 
 fn has_ext(path: &Path, exts: &[&str]) -> bool {

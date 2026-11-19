@@ -15,6 +15,8 @@ export const runState = $state({
   error: null as string | null,
   pending: {} as Record<string, boolean>,
   stoppingAll: false,
+  /** Finished (or explicitly opened) log tabs the user has not closed yet. */
+  pinnedLogIds: [] as string[],
 });
 
 function keyOf(partId: string, script: string): string {
@@ -101,6 +103,39 @@ export function openRun(id: string, openPanel = true) {
     runState.selectedScript = run.script;
   }
   if (openPanel) runState.panelOpen = true;
+  pinLogTab(id);
+}
+
+/** Keep a finished run visible as a closable Logs tab. */
+export function pinLogTab(id: string) {
+  if (!id) return;
+  if (!runState.pinnedLogIds.includes(id)) {
+    runState.pinnedLogIds = [...runState.pinnedLogIds, id];
+  }
+}
+
+export function closeLogTab(id: string) {
+  runState.pinnedLogIds = runState.pinnedLogIds.filter((item) => item !== id);
+  if (runState.selectedId === id) {
+    const remaining = logTabRuns();
+    runState.selectedId = remaining[0]?.id ?? null;
+  }
+}
+
+/** Running tabs plus any pinned finished tabs that still exist. */
+export function logTabRuns(): Run[] {
+  const running = runState.runs.filter((run) => run.status === "running");
+  const pinned = runState.pinnedLogIds
+    .map((id) => runState.runs.find((run) => run.id === id))
+    .filter((run): run is Run => Boolean(run) && run.status !== "running");
+  const seen = new Set<string>();
+  const tabs: Run[] = [];
+  for (const run of [...running, ...pinned]) {
+    if (seen.has(run.id)) continue;
+    seen.add(run.id);
+    tabs.push(run);
+  }
+  return tabs;
 }
 
 export function isPending(partId: string, script: string): boolean {

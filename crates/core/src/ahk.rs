@@ -74,7 +74,7 @@ pub fn ahk_status(config: &Config) -> AhkStatus {
         } else {
             let summary = interpreters
                 .iter()
-                .map(|item| item.version.as_str())
+                .map(|(version, _)| version.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
             (

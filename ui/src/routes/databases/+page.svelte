@@ -196,8 +196,7 @@
     border: 1px solid var(--line);
     border-radius: var(--radius);
     background: var(--card);
-    overflow: auto;
-    max-height: min(70vh, 40rem);
+    overflow: visible;
   }
   .data-table {
     width: 100%;

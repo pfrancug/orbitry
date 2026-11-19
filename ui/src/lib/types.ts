@@ -150,6 +150,16 @@ export type AutostartStatus = {
   stale: boolean;
 };
 
+/** Which Open-in actions appear in the details panel. Missing fields default to true. */
+export type OpenInTargets = {
+  terminal?: boolean;
+  vscode?: boolean;
+  cursor?: boolean;
+  explorer?: boolean;
+};
+
+export type OpenInKind = "terminal" | "vscode" | "cursor" | "explorer";
+
 export type AppConfig = {
   roots: string[];
   scriptPatterns: ScriptPattern[];
@@ -161,6 +171,8 @@ export type AppConfig = {
   autostartApps?: string[];
   desktopNotifications?: boolean;
   ignoredProjects?: string[];
+  /** Present from 0.11.0. Older configs omit it; every target stays visible. */
+  openIn?: OpenInTargets;
   bridgeStatus?: BridgeStatus;
   autostart?: AutostartStatus;
 };
@@ -314,6 +326,8 @@ export type MetricsSnapshot = {
 
 export type ToolsInfo = {
   vscodeInstalled: boolean;
+  /** Present from 0.11.0; older servers omit it. */
+  cursorInstalled?: boolean;
 };
 
 export type UpdateResponse = VersionInfo & {

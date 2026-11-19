@@ -1,4 +1,4 @@
-//! User-triggered helpers: native folder picker, terminal, VS Code, and the file manager.
+//! User-triggered helpers: native folder picker, terminal, VS Code, Cursor, and the file manager.
 //!
 //! These spawn visible UI only in response to an explicit API call from the
 //! dashboard. Verification must never invoke them.
@@ -86,6 +86,94 @@ pub fn open_in_vscode(path: &Path) -> Result<(), String> {
     }
     #[allow(unreachable_code)]
     Err("opening VS Code is not supported on this platform".into())
+}
+
+pub fn cursor_installed() -> bool {
+    #[cfg(windows)]
+    {
+        return windows_cursor_exe().is_some();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if look_on_path(&["cursor"]).is_some() {
+            return true;
+        }
+        return Path::new("/Applications/Cursor.app").exists();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        return look_on_path(&["cursor"]).is_some()
+            || Path::new("/usr/share/cursor/cursor").exists()
+            || Path::new("/opt/Cursor/cursor").exists()
+            || Path::new("/opt/cursor/cursor").exists();
+    }
+    #[allow(unreachable_code)]
+    false
+}
+
+/// Open a folder in the Cursor IDE editor window (not the Agents window).
+///
+/// Uses `--classic`, which Cursor documents as always opening the classic
+/// editor and bypassing Agents Window routing.
+pub fn open_in_cursor(path: &Path) -> Result<(), String> {
+    let path = require_dir(path)?;
+    let dir = display_path(path);
+    #[cfg(windows)]
+    {
+        return open_cursor_windows(path, &dir);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(exe) = look_on_path(&["cursor"]) {
+            return spawn_detached(&exe, &["--classic", &dir], Some(path), false);
+        }
+        if Path::new("/Applications/Cursor.app").exists() {
+            return spawn_visible(
+                "open",
+                &["-a", "Cursor", "--args", "--classic", &dir],
+                Some(path),
+            );
+        }
+        return Err("Cursor was not found on this machine".into());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(exe) = look_on_path(&["cursor"]) {
+            return spawn_detached(&exe, &["--classic", &dir], Some(path), false);
+        }
+        for candidate in [
+            "/usr/share/cursor/cursor",
+            "/opt/Cursor/cursor",
+            "/opt/cursor/cursor",
+        ] {
+            let exe = Path::new(candidate);
+            if exe.is_file() {
+                return spawn_detached(exe, &["--classic", &dir], Some(path), false);
+            }
+        }
+        return Err("Cursor was not found on PATH".into());
+    }
+    #[allow(unreachable_code)]
+    Err("opening Cursor is not supported on this platform".into())
+}
+
+#[cfg(windows)]
+fn windows_cursor_exe() -> Option<PathBuf> {
+    look_on_path(&["Cursor.exe", "cursor.exe"])
+        .or_else(|| windows_home_bin(r"Programs\cursor\Cursor.exe"))
+        .or_else(|| windows_home_bin(r"Programs\Cursor\Cursor.exe"))
+        .or_else(|| program_files(r"Cursor\Cursor.exe"))
+        .or_else(|| look_on_path(&["cursor.cmd", "cursor"]))
+}
+
+#[cfg(windows)]
+fn open_cursor_windows(path: &Path, dir: &str) -> Result<(), String> {
+    let exe = windows_cursor_exe().ok_or_else(|| "Cursor was not found on this machine".to_string())?;
+    let hide_shim = exe
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("bat"));
+    spawn_detached(&exe, &["--classic", dir], Some(path), hide_shim)
 }
 
 pub fn open_in_explorer(path: &Path) -> Result<(), String> {

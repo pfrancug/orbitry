@@ -312,6 +312,7 @@ function withOverrides(next: {
   autostartApps?: string[];
   desktopNotifications?: boolean;
   ignoredProjects?: string[];
+  openIn?: import("./types").OpenInTargets;
 }) {
   return {
     roots: next.roots,
@@ -323,6 +324,12 @@ function withOverrides(next: {
     autostartApps: next.autostartApps ?? dash.config?.autostartApps ?? [],
     desktopNotifications: next.desktopNotifications ?? dash.config?.desktopNotifications ?? false,
     ignoredProjects: next.ignoredProjects ?? dash.config?.ignoredProjects ?? [],
+    openIn: next.openIn ?? dash.config?.openIn ?? {
+      terminal: true,
+      vscode: true,
+      cursor: true,
+      explorer: true,
+    },
   };
 }
 
@@ -340,15 +347,22 @@ function cloneConfig(): AppConfig | null {
 }
 
 function applySavedConfig(
-  payload: { ignoredProjects?: string[] },
+  payload: { ignoredProjects?: string[]; openIn?: import("./types").OpenInTargets },
   saved: AppConfig,
 ): AppConfig {
+  let next = saved;
   // The API omits an empty ignoredProjects list. Keep the list we just saved
   // so a successful clear is not treated as "field missing, leave as-is".
   if (!Object.prototype.hasOwnProperty.call(saved, "ignoredProjects") || saved.ignoredProjects == null) {
-    return { ...saved, ignoredProjects: payload.ignoredProjects ?? [] };
+    next = { ...next, ignoredProjects: payload.ignoredProjects ?? [] };
   }
-  return saved;
+  // Default Open-in prefs are omitted from the saved file. Keep the values we
+  // just wrote so the UI does not flicker back to "missing = all on" incorrectly
+  // when the user has an all-default object in memory.
+  if (payload.openIn && (!Object.prototype.hasOwnProperty.call(saved, "openIn") || saved.openIn == null)) {
+    next = { ...next, openIn: payload.openIn };
+  }
+  return next;
 }
 
 function shouldRefreshProjects(next: { roots: string[]; scriptPatterns: ScriptPattern[] }): boolean {
@@ -371,6 +385,7 @@ export async function persist(next: {
   autostartApps?: string[];
   desktopNotifications?: boolean;
   ignoredProjects?: string[];
+  openIn?: import("./types").OpenInTargets;
 }) {
   dash.error = null;
   const refreshProjects = shouldRefreshProjects(next);
@@ -482,6 +497,21 @@ export async function setDesktopNotifications(enabled: boolean) {
     roots: dash.config.roots,
     scriptPatterns: dash.config.scriptPatterns,
     desktopNotifications: enabled,
+  });
+}
+
+export async function setOpenInTarget(kind: import("./types").OpenInKind, enabled: boolean) {
+  if (!dash.config) return;
+  const current = {
+    terminal: dash.config.openIn?.terminal !== false,
+    vscode: dash.config.openIn?.vscode !== false,
+    cursor: dash.config.openIn?.cursor !== false,
+    explorer: dash.config.openIn?.explorer !== false,
+  };
+  await persist({
+    roots: dash.config.roots,
+    scriptPatterns: dash.config.scriptPatterns,
+    openIn: { ...current, [kind]: enabled },
   });
 }
 

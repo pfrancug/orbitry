@@ -1,4 +1,4 @@
-import type { AppWarning, DatabaseInfo, DetectedScript, HealthInfo, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run, ScanChange, ScanDiff } from "./types";
+import type { AppConfig, AppWarning, DatabaseInfo, DetectedScript, HealthInfo, OpenInKind, OpenInTargets, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run, ScanChange, ScanDiff } from "./types";
 
 export function formatAgeMs(ms: number | null | undefined): string {
   if (!ms) return "just now";
@@ -536,4 +536,24 @@ export function databaseSummary(db: DatabaseInfo): string {
   if (db.port) bits.push(`:${db.port}`);
   else if (db.path) bits.push(db.path);
   return bits.join(" ");
+}
+
+/** Resolve Open-in visibility; missing config or fields default to visible. */
+export function resolveOpenIn(config?: AppConfig | null): Required<OpenInTargets> {
+  const prefs = config?.openIn;
+  return {
+    terminal: prefs?.terminal !== false,
+    vscode: prefs?.vscode !== false,
+    cursor: prefs?.cursor !== false,
+    explorer: prefs?.explorer !== false,
+  };
+}
+
+export function openInEnabled(config: AppConfig | null | undefined, kind: OpenInKind): boolean {
+  return resolveOpenIn(config)[kind];
+}
+
+export function anyOpenInEnabled(config?: AppConfig | null): boolean {
+  const prefs = resolveOpenIn(config);
+  return prefs.terminal || prefs.vscode || prefs.cursor || prefs.explorer;
 }

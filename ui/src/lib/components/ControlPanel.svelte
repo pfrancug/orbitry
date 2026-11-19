@@ -3,6 +3,7 @@
   import { openPath } from "$lib/api";
   import {
     allScripts,
+    anyOpenInEnabled,
     databaseEngineLabel,
     databaseSourceLabel,
     desktopOs,
@@ -11,6 +12,7 @@
     healthLabel,
     installCommand,
     isJsLike,
+    openInEnabled,
     partDatabases,
     partTitle,
     roleLabel,
@@ -113,10 +115,15 @@
   const explorerTitle = $derived(
     os === "windows" ? t("panel.explorerTitle.windows") : os === "mac" ? t("panel.explorerTitle.mac") : t("panel.explorerTitle.linux"),
   );
+  const showOpenIn = $derived(anyOpenInEnabled(dash.config));
+  const showTerminal = $derived(openInEnabled(dash.config, "terminal"));
+  const showVscode = $derived(openInEnabled(dash.config, "vscode"));
+  const showCursor = $derived(openInEnabled(dash.config, "cursor"));
+  const showExplorer = $derived(openInEnabled(dash.config, "explorer"));
 
   let opening = $state<string | null>(null);
 
-  async function openWith(kind: "terminal" | "vscode" | "explorer") {
+  async function openWith(kind: "terminal" | "vscode" | "cursor" | "explorer") {
     if (!part) return;
     opening = kind;
     dash.error = null;
@@ -362,40 +369,60 @@
       </div>
     {/if}
 
-    <footer class="panel-footer">
-      <div class="open-actions">
-        <button
-          class="btn"
-          type="button"
-          disabled={opening !== null}
-          title={t("panel.terminalTitle")}
-          onclick={() => openWith("terminal")}
-        >
-          <Icon name="terminal" size={14} />
-          {opening === "terminal" ? t("panel.opening") : t("panel.terminal")}
-        </button>
-        <button
-          class="btn"
-          type="button"
-          disabled={opening !== null || tools.vscodeInstalled === false}
-          title={tools.vscodeInstalled === false ? t("panel.vscodeMissing") : t("panel.vscodeTitle")}
-          onclick={() => openWith("vscode")}
-        >
-          <Icon name="code" size={14} />
-          {opening === "vscode" ? t("panel.opening") : "VS Code"}
-        </button>
-        <button
-          class="btn"
-          type="button"
-          disabled={opening !== null}
-          title={explorerTitle}
-          onclick={() => openWith("explorer")}
-        >
-          <Icon name="folder" size={14} />
-          {opening === "explorer" ? t("panel.opening") : explorerLabel}
-        </button>
-      </div>
-    </footer>
+    {#if showOpenIn}
+      <footer class="panel-footer">
+        <div class="open-actions">
+          {#if showTerminal}
+            <button
+              class="btn"
+              type="button"
+              disabled={opening !== null}
+              title={t("panel.terminalTitle")}
+              onclick={() => openWith("terminal")}
+            >
+              <Icon name="terminal" size={14} />
+              {opening === "terminal" ? t("panel.opening") : t("panel.terminal")}
+            </button>
+          {/if}
+          {#if showVscode}
+            <button
+              class="btn"
+              type="button"
+              disabled={opening !== null || tools.vscodeInstalled === false}
+              title={tools.vscodeInstalled === false ? t("panel.vscodeMissing") : t("panel.vscodeTitle")}
+              onclick={() => openWith("vscode")}
+            >
+              <Icon name="code" size={14} />
+              {opening === "vscode" ? t("panel.opening") : "VS Code"}
+            </button>
+          {/if}
+          {#if showCursor}
+            <button
+              class="btn"
+              type="button"
+              disabled={opening !== null || tools.cursorInstalled === false}
+              title={tools.cursorInstalled === false ? t("panel.cursorMissing") : t("panel.cursorTitle")}
+              onclick={() => openWith("cursor")}
+            >
+              <Icon name="cursor" size={14} />
+              {opening === "cursor" ? t("panel.opening") : t("panel.cursor")}
+            </button>
+          {/if}
+          {#if showExplorer}
+            <button
+              class="btn"
+              type="button"
+              disabled={opening !== null}
+              title={explorerTitle}
+              onclick={() => openWith("explorer")}
+            >
+              <Icon name="folder" size={14} />
+              {opening === "explorer" ? t("panel.opening") : explorerLabel}
+            </button>
+          {/if}
+        </div>
+      </footer>
+    {/if}
   {/if}
 </aside>
 

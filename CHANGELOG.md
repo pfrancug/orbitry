@@ -5,6 +5,13 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-11-19
+
+### Added
+
+- The details panel can open a project folder in Cursor next to the existing VS Code action. Orbitry launches the Cursor editor window (not the Agents view) via `--classic`, detects whether Cursor is installed, and disables the action with a tooltip when it is missing. On Windows the launcher uses `CREATE_NO_WINDOW`. The tools API gains an optional `cursorInstalled` field so older clients keep working.
+- Settings include an Open in checklist for Terminal, VS Code, Cursor, and the system file manager. Choices persist in config (with defaults that keep every action visible, including Cursor). Older configs load without changes. If every target is unchecked, the Open in footer hides. Client storage version is bumped for a clean migration.
+
 ## [0.10.0] - 2026-11-19
 
 ### Added

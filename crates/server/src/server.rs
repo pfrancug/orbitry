@@ -18,6 +18,7 @@ use orbitry_core::{
     set_autostart_enabled, static_compose_projects, AppAutostartReport, AutostartStatus,
     BridgeStatus, ComposeAction, ComposeProject, Config,
     ConfigBridgeMode, ListeningSnapshot, MetricsHub, MetricsSnapshot, ModelsInventory,
+    OpenInTargets,
     ModelsScanState, PortOverride, ProcessManager, Project, RepoGroup, Run, RunStatus,
     SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
 };
@@ -352,6 +353,9 @@ struct ConfigBody {
     /// Replaces the ignored-project list when present. Omitted keeps the saved list.
     #[serde(default)]
     ignored_projects: Option<Vec<String>>,
+    /// Replaces Open-in visibility when present. Omitted keeps the saved prefs.
+    #[serde(default)]
+    open_in: Option<OpenInTargets>,
 }
 
 async fn put_config(
@@ -380,6 +384,7 @@ async fn put_config(
         ignored_projects: body
             .ignored_projects
             .unwrap_or_else(|| existing.ignored_projects.clone()),
+        open_in: body.open_in.unwrap_or_else(|| existing.open_in.clone()),
     };
     config.normalize_autostart_apps();
     config.normalize_ignored_projects();
@@ -656,6 +661,7 @@ async fn post_open(
     let result = tokio::task::spawn_blocking(move || match body.kind.as_str() {
         "terminal" => crate::open::open_in_terminal(&path),
         "vscode" => crate::open::open_in_vscode(&path),
+        "cursor" => crate::open::open_in_cursor(&path),
         "explorer" => crate::open::open_in_explorer(&path),
         other => Err(format!("unknown open kind: {other}")),
     })
@@ -962,6 +968,9 @@ async fn get_update_status(
 #[serde(rename_all = "camelCase")]
 struct ToolsInfo {
     vscode_installed: bool,
+    /// Present from 0.11.0. Older servers omit it; the UI treats missing as unknown/absent.
+    #[serde(default)]
+    cursor_installed: bool,
 }
 
 async fn get_metrics(State(state): State<Arc<AppState>>) -> Json<MetricsSnapshot> {
@@ -1047,6 +1056,7 @@ fn start_models_scan(state: Arc<AppState>) {
 async fn get_tools() -> Json<ToolsInfo> {
     Json(ToolsInfo {
         vscode_installed: crate::open::vscode_installed(),
+        cursor_installed: crate::open::cursor_installed(),
     })
 }
 

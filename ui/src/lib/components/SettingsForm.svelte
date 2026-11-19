@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, addIgnoredProject, removeIgnoredProject, setDesktopNotifications, setStartWithSystem } from "$lib/dashboard.svelte";
-  import { formatCheckedAt, pathsEqual, shortPath } from "$lib/format";
+  import { addPattern, addRoot, browseFolder, dash, removePattern, removeRoot, setAutoCheckUpdates, setConfigBridge, setLogLimitMb, addIgnoredProject, removeIgnoredProject, setDesktopNotifications, setOpenInTarget, setStartWithSystem } from "$lib/dashboard.svelte";
+  import { desktopOs, formatCheckedAt, pathsEqual, resolveOpenIn, shortPath } from "$lib/format";
   import { i18n, setLocale, t, type Locale } from "$lib/i18n.svelte";
   import { checkForUpdate, installUpdate, update } from "$lib/update.svelte";
-  import type { ConfigBridgeMode, ScriptKind, ScriptScope } from "$lib/types";
+  import type { ConfigBridgeMode, OpenInKind, ScriptKind, ScriptScope } from "$lib/types";
 
   const locale = $derived(i18n.locale);
 
@@ -20,6 +20,22 @@
     pattern = "";
   }
 
+  const openIn = $derived(resolveOpenIn(dash.config));
+  const explorerSettingLabel = $derived(
+    desktopOs() === "windows"
+      ? t("panel.explorer.windows")
+      : desktopOs() === "mac"
+        ? t("panel.explorer.mac")
+        : t("panel.explorer.linux"),
+  );
+  const openInOptions = $derived(
+    [
+      { kind: "terminal" as OpenInKind, label: t("panel.terminal"), checked: openIn.terminal },
+      { kind: "vscode" as OpenInKind, label: "VS Code", checked: openIn.vscode },
+      { kind: "cursor" as OpenInKind, label: t("panel.cursor"), checked: openIn.cursor },
+      { kind: "explorer" as OpenInKind, label: explorerSettingLabel, checked: openIn.explorer },
+    ] as const,
+  );
   const ignored = $derived(dash.config?.ignoredProjects ?? []);
   const ignorable = $derived(
     (dash.groups ?? []).filter(
@@ -209,6 +225,24 @@
   </section>
 
   <section class="settings-card">
+    <h2 class="settings-heading">{t("settings.openIn")}</h2>
+    <p class="settings-hint">{t("settings.openInHint")}</p>
+    <div class="open-in-list">
+      {#each openInOptions as option (option.kind)}
+        <label class="check-row autostart-row">
+          <input
+            type="checkbox"
+            checked={option.checked}
+            disabled={dash.saving}
+            onchange={(event) => setOpenInTarget(option.kind, event.currentTarget.checked)}
+          />
+          {option.label}
+        </label>
+      {/each}
+    </div>
+  </section>
+
+  <section class="settings-card">
     <h2 class="settings-heading">{t("settings.ignore")}</h2>
     <p class="settings-hint">{t("settings.ignoreHint")}</p>
     <form class="root-form" onsubmit={submitIgnore}>
@@ -309,6 +343,15 @@
     font-size: 0.88rem;
   }
   .autostart-row { margin: 0 0 0.45rem; }
+  .open-in-list {
+    display: grid;
+    gap: 2px;
+    margin-top: 0.35rem;
+  }
+  .open-in-list .check-row {
+    margin: 0;
+    min-height: 28px;
+  }
   .log-limit-row { margin-top: 0.55rem; }
   .log-limit-row select { min-width: 8rem; }
   .update-check-row {

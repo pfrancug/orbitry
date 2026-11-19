@@ -38,7 +38,8 @@ pub use docker::{
 };
 pub use config::{
     canonical, config_path, default_kind_patterns, display_path, instance_path, load_config,
-    paths_equal, save_config, Config, ConfigBridgeMode, PortOverride, ScriptKind, ScriptPattern, ScriptScope,
+    paths_equal, save_config, Config, ConfigBridgeMode, OpenInTargets, PortOverride, ScriptKind,
+    ScriptPattern, ScriptScope,
 };
 pub use databases::{detect_databases, DatabaseInfo, DatabaseSource};
 pub use git::{find_git_root, GitInfo};

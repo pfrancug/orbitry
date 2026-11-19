@@ -77,6 +77,42 @@ fn is_true(value: &bool) -> bool {
     *value
 }
 
+/// Which "Open in …" actions appear in the details panel.
+/// Missing fields (and missing `openIn` entirely) default to visible.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenInTargets {
+    #[serde(default = "default_true")]
+    pub terminal: bool,
+    #[serde(default = "default_true")]
+    pub vscode: bool,
+    #[serde(default = "default_true")]
+    pub cursor: bool,
+    #[serde(default = "default_true")]
+    pub explorer: bool,
+}
+
+impl Default for OpenInTargets {
+    fn default() -> Self {
+        Self {
+            terminal: true,
+            vscode: true,
+            cursor: true,
+            explorer: true,
+        }
+    }
+}
+
+impl OpenInTargets {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub fn any_enabled(&self) -> bool {
+        self.terminal || self.vscode || self.cursor || self.explorer
+    }
+}
+
 fn default_log_limit_mb() -> u32 {
     crate::logs::DEFAULT_LOG_LIMIT_MB
 }
@@ -107,6 +143,10 @@ pub struct Config {
     /// no notices or warnings in the dashboard or as desktop notifications.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ignored_projects: Vec<String>,
+    /// Which Open-in actions are shown in the details panel. Defaults keep
+    /// every target visible so older configs and first runs look unchanged.
+    #[serde(default, skip_serializing_if = "OpenInTargets::is_default")]
+    pub open_in: OpenInTargets,
 }
 
 impl Default for Config {
@@ -121,6 +161,7 @@ impl Default for Config {
             autostart_apps: Vec::new(),
             desktop_notifications: false,
             ignored_projects: Vec::new(),
+            open_in: OpenInTargets::default(),
         }
     }
 }

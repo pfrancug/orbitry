@@ -313,13 +313,13 @@ async function runSmoke(base) {
     }
 
     await page.goto(`${base}/models`, { waitUntil: "networkidle" });
-    await page.waitForSelector(".model-list", { timeout: 10_000 });
+    await page.waitForSelector(".data-table tbody", { timeout: 10_000 });
     const before = await page.locator("[data-main-scroll]").evaluate((el) => el.scrollTop);
-    await page.locator(".model-list").hover();
+    await page.locator(".data-table").hover();
     await page.mouse.wheel(0, 800);
     const after = await page.locator("[data-main-scroll]").evaluate((el) => el.scrollTop);
     if (after <= before) {
-      errors.push(`wheel over models list did not scroll .list-pane (scrollTop ${before} -> ${after})`);
+      errors.push(`wheel over models table did not scroll .list-pane (scrollTop ${before} -> ${after})`);
     }
 
     await page.goto(`${base}/`, { waitUntil: "networkidle" });

@@ -1,12 +1,13 @@
 <script lang="ts">
   import { dash, partMarker, startBlockReason, startWarnReason, visibleWarnings } from "$lib/dashboard.svelte";
-  import { allScripts, displayPorts, isJsLike, partTitle, primaryScript, roleLabel, scriptEachKey, scriptLabel, scriptSourceDiffers, warningsForPart } from "$lib/format";
+  import { allScripts, displayPorts, isJsLike, partDatabases, partTitle, primaryScript, roleLabel, scriptEachKey, scriptLabel, scriptSourceDiffers, warningsForPart } from "$lib/format";
   import { i18n, t } from "$lib/i18n.svelte";
   import { isPending, runningFor, runState, togglePart, toggleScript } from "$lib/runs.svelte";
   import type { ProjectPart } from "$lib/types";
   import PortChips from "./PortChips.svelte";
   import WarningBadge from "./WarningBadge.svelte";
   import DepsBadge from "./DepsBadge.svelte";
+  import DbBadge from "./DbBadge.svelte";
   import ResourceChip from "./ResourceChip.svelte";
   import { runMetrics } from "$lib/metrics.svelte";
 
@@ -30,6 +31,7 @@
   const activeName = $derived(live?.script ?? primary?.name ?? null);
   const activeScript = $derived(scripts.find((script) => script.name === activeName) ?? primary);
   const missingDeps = $derived(isJsLike(part.kind) && !part.nodeModules);
+  const databases = $derived(partDatabases(part));
   const run = $derived(activeName ? runningFor(part.id, activeName) : undefined);
   const pending = $derived(activeName ? isPending(part.id, activeName) : false);
   const blocked = $derived(activeName && !run ? startBlockReason(part.id, activeName) : null);
@@ -75,6 +77,11 @@
         {#if missingDeps}
           <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
             <DepsBadge {part} />
+          </span>
+        {/if}
+        {#if databases.length}
+          <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
+            <DbBadge {part} {databases} />
           </span>
         {/if}
         {#if flag === "new"}<span class="marker new">{t("common.new")}</span>{/if}

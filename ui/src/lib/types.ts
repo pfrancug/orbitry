@@ -3,6 +3,7 @@ export type ScriptScope = "fe" | "be" | "shared";
 export type ProjectKind = "javascript" | "rust" | "python" | "go" | "docker" | "mixed";
 export type PartRole = "root" | "fe" | "be" | "shared" | "lib";
 export type PortSource = "default" | "config" | "env" | "flag" | "bridge" | "log" | "process";
+export type DatabaseSource = "env" | "prisma" | "compose" | "dependency" | "file";
 export type ConfigBridgeMode = "auto" | "on" | "off";
 
 export type BridgeState = "available" | "node-missing" | "plugin-missing" | "disabled" | "error";
@@ -72,6 +73,16 @@ export type PortInfo = {
   ignored?: boolean;
 };
 
+/** Local database detected during project scan. Optional on older payloads. */
+export type DatabaseInfo = {
+  engine: string;
+  source: DatabaseSource | string;
+  detail?: string | null;
+  host?: string | null;
+  port?: number | null;
+  path?: string | null;
+};
+
 export type PortOverride = {
   partId: string;
   port: number;
@@ -110,6 +121,7 @@ export type ProjectPart = {
   relativePath: string;
   ports: PortInfo[];
   packageManager?: string | null;
+  databases?: DatabaseInfo[];
 };
 
 export type RepoGroup = {

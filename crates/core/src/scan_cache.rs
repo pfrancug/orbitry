@@ -6,12 +6,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{config_path, normalize_path_str, paths_equal, Config};
+use crate::databases::DatabaseInfo;
 use crate::group::{ProjectPart, RepoGroup};
 use crate::ports::{PortInfo, PortSource};
 
 /// Bump this when the scan result shape or detection rules change in a way
 /// that would make a previously stored snapshot misleading.
-pub const SCANNER_VERSION: u32 = 2;
+pub const SCANNER_VERSION: u32 = 3;
 
 pub fn scan_cache_path() -> PathBuf {
     config_path().with_file_name("scan-cache.json")
@@ -297,6 +298,32 @@ fn diff_part(
             Some("configured ports changed".to_string()),
         ));
     }
+    if database_set(&old_part.databases) != database_set(&new_part.databases) {
+        diff.changed.push(part_change(
+            group,
+            new_part,
+            Some("local databases changed".to_string()),
+        ));
+    }
+}
+
+fn database_set(databases: &[DatabaseInfo]) -> Vec<(String, Option<u16>, Option<String>, String)> {
+    let mut set: Vec<(String, Option<u16>, Option<String>, String)> = databases
+        .iter()
+        .map(|db| {
+            (
+                db.engine.to_ascii_lowercase(),
+                db.port,
+                db.path
+                    .as_ref()
+                    .map(|path| path.replace('\\', "/").to_ascii_lowercase()),
+                format!("{:?}", db.source).to_ascii_lowercase(),
+            )
+        })
+        .collect();
+    set.sort();
+    set.dedup();
+    set
 }
 
 fn static_port_set(ports: &[PortInfo]) -> Vec<(u16, &'static str, Option<&str>)> {

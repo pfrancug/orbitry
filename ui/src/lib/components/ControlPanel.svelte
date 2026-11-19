@@ -3,12 +3,15 @@
   import { openPath } from "$lib/api";
   import {
     allScripts,
+    databaseEngineLabel,
+    databaseSourceLabel,
     desktopOs,
     displayPorts,
     formatUptime,
     healthLabel,
     installCommand,
     isJsLike,
+    partDatabases,
     partTitle,
     roleLabel,
     scriptLabel,
@@ -80,6 +83,7 @@
   const startBlocked = $derived(part && scriptName && !live ? startBlockReason(part.id, scriptName) : null);
   const startWarned = $derived(part && scriptName && !live ? startWarnReason(part.id, scriptName) : null);
   const ports = $derived(part ? displayPorts(part, runState.runs) : []);
+  const databases = $derived(part ? partDatabases(part) : []);
   const health = $derived(live?.health ?? current?.health);
   const expected = $derived(!live);
   const warnings = $derived(
@@ -321,6 +325,30 @@
           </div>
         </section>
 
+        {#if databases.length}
+          <section class="panel-section">
+            <h3>{t("panel.databases")}</h3>
+            <ul class="db-panel-list">
+              {#each databases as db, index (`${db.engine}-${db.port ?? ""}-${db.path ?? ""}-${index}`)}
+                <li>
+                  <span class="db-engine">{databaseEngineLabel(db.engine)}</span>
+                  {#if db.port != null}
+                    <span class="db-meta">:{db.port}</span>
+                  {:else if db.path}
+                    <span class="db-meta path" title={db.path}>{db.path}</span>
+                  {/if}
+                  {#if db.host}
+                    <span class="db-meta">{db.host}</span>
+                  {/if}
+                  <span class="db-source" title={db.detail ?? undefined}>
+                    {databaseSourceLabel(db.source)}{#if db.detail} · {db.detail}{/if}
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/if}
+
         {#if warnings.length}
           <section class="panel-section">
             <h3>{t("panel.warnings")}</h3>
@@ -496,5 +524,38 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+  }
+  .db-panel-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 6px;
+  }
+  .db-panel-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 10px;
+    font-size: 12px;
+    min-width: 0;
+  }
+  .db-engine {
+    font-weight: 650;
+  }
+  .db-meta {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .db-meta.path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  .db-source {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 11px;
   }
 </style>

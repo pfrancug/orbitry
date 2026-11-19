@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { isJsLike, shortPath, warningsForPart } from "$lib/format";
+  import { groupDatabases, isJsLike, shortPath, warningsForPart } from "$lib/format";
   import { composeFor, dash, groupMarker as markerForGroup, removedPartsFor, visibleWarnings } from "$lib/dashboard.svelte";
   import { t } from "$lib/i18n.svelte";
   import { runState } from "$lib/runs.svelte";
@@ -7,6 +7,7 @@
   import AppRow from "./AppRow.svelte";
   import ComposeSection from "./ComposeSection.svelte";
   import DepsBadge from "./DepsBadge.svelte";
+  import DbBadge from "./DbBadge.svelte";
   import WarningBadge from "./WarningBadge.svelte";
 
   let {
@@ -45,6 +46,7 @@
     ),
   );
   const compose = $derived(composeFor(group.id));
+  const databases = $derived(groupDatabases(group));
 </script>
 
 <section class="project" class:open class:live={running.length > 0} class:removed={groupMarker === "removed"}>
@@ -87,6 +89,11 @@
             <DepsBadge part={missing} />
           </span>
         {/if}
+      {/if}
+      {#if databases.length}
+        <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
+          <DbBadge {databases} />
+        </span>
       {/if}
     </div>
   </button>

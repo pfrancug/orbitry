@@ -1,4 +1,4 @@
-import type { AppWarning, DetectedScript, HealthInfo, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run, ScanChange, ScanDiff } from "./types";
+import type { AppWarning, DatabaseInfo, DetectedScript, HealthInfo, PartRole, PortInfo, ProjectKind, ProjectPart, RepoGroup, Run, ScanChange, ScanDiff } from "./types";
 
 export function formatAgeMs(ms: number | null | undefined): string {
   if (!ms) return "just now";
@@ -335,6 +335,11 @@ export function groupSearchText(group: RepoGroup): string {
       part.role,
       ...(part.scripts ?? []).map((script) => script.name),
       ...(part.ports ?? []).map((item) => String(item.port)),
+      ...(part.databases ?? []).flatMap((db) => [
+        db.engine,
+        db.path ?? "",
+        db.port != null ? String(db.port) : "",
+      ]),
     ]),
   ]
     .join(" ")
@@ -459,4 +464,76 @@ export function scriptEachKey(script: DetectedScript, prefix = ""): string {
 
 export function installCommand(part: ProjectPart | null | undefined): string {
   return `${part?.packageManager || "npm"} install`;
+}
+
+export function partDatabases(part: ProjectPart | null | undefined): DatabaseInfo[] {
+  return Array.isArray(part?.databases) ? part.databases : [];
+}
+
+export function groupDatabases(group: RepoGroup | null | undefined): DatabaseInfo[] {
+  const seen = new Set<string>();
+  const out: DatabaseInfo[] = [];
+  for (const part of group?.parts ?? []) {
+    for (const db of partDatabases(part)) {
+      const key = `${(db.engine || "").toLowerCase()}|${db.port ?? ""}|${(db.path || "").toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(db);
+    }
+  }
+  return out;
+}
+
+export function databaseEngineLabel(engine: string | null | undefined): string {
+  const value = (engine || "").toLowerCase();
+  switch (value) {
+    case "postgres":
+    case "postgresql":
+      return "Postgres";
+    case "mysql":
+      return "MySQL";
+    case "mariadb":
+      return "MariaDB";
+    case "mongodb":
+    case "mongo":
+      return "MongoDB";
+    case "redis":
+      return "Redis";
+    case "sqlite":
+      return "SQLite";
+    case "sqlserver":
+      return "SQL Server";
+    case "cockroachdb":
+      return "CockroachDB";
+    case "clickhouse":
+      return "ClickHouse";
+    case "elasticsearch":
+      return "Elasticsearch";
+    default:
+      return engine?.trim() || "DB";
+  }
+}
+
+export function databaseSourceLabel(source: DatabaseInfo["source"] | null | undefined): string {
+  switch (source) {
+    case "env":
+      return "env";
+    case "prisma":
+      return "prisma";
+    case "compose":
+      return "compose";
+    case "dependency":
+      return "deps";
+    case "file":
+      return "file";
+    default:
+      return source ? String(source) : "";
+  }
+}
+
+export function databaseSummary(db: DatabaseInfo): string {
+  const bits = [databaseEngineLabel(db.engine)];
+  if (db.port) bits.push(`:${db.port}`);
+  else if (db.path) bits.push(db.path);
+  return bits.join(" ");
 }

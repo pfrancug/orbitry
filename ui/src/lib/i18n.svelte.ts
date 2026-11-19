@@ -144,6 +144,9 @@ const en: Record<string, string> = {
   "deps.install": "Install dependencies",
   "deps.installing": "Installing…",
 
+  "db.badge": "db",
+  "db.title": "Local databases",
+
   "build.ready": "Built {time}",
   "build.missing": "Not built",
   "build.stale": "Build is out of date",
@@ -201,6 +204,7 @@ const en: Record<string, string> = {
   "panel.about": "App",
   "panel.logs": "Logs",
   "panel.ports": "Ports",
+  "panel.databases": "Databases",
   "panel.openFailed": "Could not open the folder.",
   "panel.status.idle": "idle",
   "panel.status.running": "running",
@@ -526,6 +530,9 @@ const pl: Record<string, string> = {
   "deps.install": "Zainstaluj zależności",
   "deps.installing": "Instalowanie…",
 
+  "db.badge": "db",
+  "db.title": "Lokalne bazy danych",
+
   "build.ready": "Zbudowano {time}",
   "build.missing": "Brak buildu",
   "build.stale": "Build jest nieaktualny",
@@ -583,6 +590,7 @@ const pl: Record<string, string> = {
   "panel.about": "Aplikacja",
   "panel.logs": "Logi",
   "panel.ports": "Porty",
+  "panel.databases": "Bazy danych",
   "panel.openFailed": "Nie udało się otworzyć folderu.",
   "panel.status.idle": "bezczynny",
   "panel.status.running": "działa",

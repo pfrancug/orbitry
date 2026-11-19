@@ -5,6 +5,7 @@ mod artifacts;
 mod autostart;
 mod bridge;
 mod config;
+mod databases;
 mod docker;
 mod git;
 mod group;
@@ -39,6 +40,7 @@ pub use config::{
     canonical, config_path, default_kind_patterns, display_path, instance_path, load_config,
     paths_equal, save_config, Config, ConfigBridgeMode, PortOverride, ScriptKind, ScriptPattern, ScriptScope,
 };
+pub use databases::{detect_databases, DatabaseInfo, DatabaseSource};
 pub use git::{find_git_root, GitInfo};
 pub use health::{check_health, HealthInfo, HealthStatus};
 pub use group::{group_projects, PartRole, ProjectPart, RepoGroup};

@@ -5,6 +5,13 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-11-19
+
+### Added
+
+- Project scan detects local databases and shows them on project and app rows, with details in the side panel. Signals include SQLite files, Prisma schema providers, Docker Compose database services and host ports, local `DATABASE_URL` / similar env values, and common database client dependencies. Each entry shows the engine, where it was found, and a port or file path when known. Passwords in connection strings are never kept. Scanning stays file-based and does not open or connect to databases.
+- Optional `databases` field on scanned project parts. Older clients and empty results stay compatible; the scan cache version is bumped so previous snapshots are refreshed.
+
 ## [0.9.4] - 2026-11-17
 
 ### Fixed

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::artifacts::BuildInfo;
 use crate::config::{canonical, display_path, normalize_path_str, paths_equal};
+use crate::databases::DatabaseInfo;
 use crate::git::find_git_root;
 use crate::scan::{Project, ProjectKind};
 use crate::ports::PortInfo;
@@ -41,6 +42,8 @@ pub struct ProjectPart {
     pub ports: Vec<PortInfo>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_manager: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub databases: Vec<DatabaseInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -185,6 +188,7 @@ fn build_group(id: String, members: Vec<Project>) -> RepoGroup {
                 relative_path,
                 ports: project.ports,
                 package_manager,
+                databases: project.databases,
             }
         })
         .collect();

@@ -30,7 +30,7 @@ Frontends, APIs, tools, experiments — each with its own window, its own port, 
 Point Orbitry at any folder of projects — on any machine. Nothing is hardcoded. Your workspace, your map.
 
 **See the whole constellation**  
-Every app at a glance: version, branch, whether it's built, whether it's running, and on which ports.
+Every app at a glance: version, branch, whether it's built, whether it's running, on which ports, and which local databases it uses.
 
 **Launch without the clutter**  
 Start and stop frontends, backends, and shared dev servers from one surface. Live logs stream in place — no forest of leftover terminals.

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { armAutoDismiss } from "$lib/autoDismiss.svelte";
   import { dash, dismissAppAutostartToast } from "$lib/dashboard.svelte";
   import { t } from "$lib/i18n.svelte";
   import type { AppAutostartEvent } from "$lib/types";
@@ -14,13 +15,16 @@
   });
   const sticky = $derived((report?.blocked?.length ?? 0) > 0 || (report?.failed?.length ?? 0) > 0);
 
+  let el = $state<HTMLElement | undefined>(undefined);
   $effect(() => {
-    if (!visible || sticky) return;
+    if (!visible) return;
     const completedAt = report?.completedAt ?? null;
-    const timer = setTimeout(() => {
-      if (dash.appAutostart?.completedAt === completedAt) dismissAppAutostartToast();
-    }, 10_000);
-    return () => clearTimeout(timer);
+    return armAutoDismiss(el, {
+      ms: sticky ? 10_000 : 6_000,
+      dismiss: () => {
+        if (dash.appAutostart?.completedAt === completedAt) dismissAppAutostartToast();
+      },
+    });
   });
 
   function names(events: AppAutostartEvent[] | undefined): string {
@@ -43,7 +47,7 @@
 </script>
 
 {#if visible}
-  <aside class="autostart-toast" class:alert={sticky} role="status">
+  <aside class="autostart-toast" class:alert={sticky} role="status" bind:this={el}>
     <div class="copy">
       <p><strong>{t("toast.autostart.title")}</strong></p>
       {#if report?.started?.length}

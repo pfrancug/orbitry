@@ -25,19 +25,23 @@
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") open = false;
     };
-    const onClick = (event: MouseEvent) => {
-      event.stopPropagation();
-      open = false;
-    };
+    // Do NOT stopPropagation on menu clicks: Svelte 5 delegates `onclick` via
+    // document bubbling, so stopping here swallowed Stop/Restart and never hit
+    // the API (Stop all still worked because it is not inside ActionMenu).
     document.addEventListener("pointerdown", onPointer);
     document.addEventListener("keydown", onKey);
-    root?.addEventListener("click", onClick);
     return () => {
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
-      root?.removeEventListener("click", onClick);
     };
   });
+
+  function onMenuClick() {
+    // Close after the item's delegated onclick has been scheduled.
+    queueMicrotask(() => {
+      open = false;
+    });
+  }
 </script>
 
 <div class="action-menu" class:open bind:this={root}>
@@ -59,7 +63,13 @@
     <Icon name="more" />
   </button>
   {#if open}
-    <div class="menu-list" class:align-start={align === "start"} role="menu" tabindex="-1">
+    <div
+      class="menu-list"
+      class:align-start={align === "start"}
+      role="menu"
+      tabindex="-1"
+      onclick={onMenuClick}
+    >
       {@render children()}
     </div>
   {/if}

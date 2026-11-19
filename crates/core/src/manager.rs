@@ -300,6 +300,20 @@ impl ProcessManager {
             .unwrap_or(info))
     }
 
+    /// Locate a live run the same way `stop_all` does (status + part + script).
+    pub async fn running_id_for(&self, part_id: &str, script: &str) -> Option<String> {
+        let inner = self.inner.lock().await;
+        inner
+            .runs
+            .values()
+            .find(|rec| {
+                rec.info.status == RunStatus::Running
+                    && rec.info.part_id == part_id
+                    && rec.info.script == script
+            })
+            .map(|rec| rec.info.id.clone())
+    }
+
     pub async fn stop(&self, id: &str) -> Result<Run, String> {
         let pid = {
             let mut inner = self.inner.lock().await;

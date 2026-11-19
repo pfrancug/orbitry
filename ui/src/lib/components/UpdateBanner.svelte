@@ -1,14 +1,25 @@
 <script lang="ts">
+  import { armAutoDismiss } from "$lib/autoDismiss.svelte";
   import { t } from "$lib/i18n.svelte";
   import { dismissUpdateToast, installUpdate, update } from "$lib/update.svelte";
 
   const visible = $derived(
     Boolean(update.toast) && !update.installing && !update.dev,
   );
+  const kind = $derived(update.toast?.kind ?? null);
+
+  let el = $state<HTMLElement | undefined>(undefined);
+  $effect(() => {
+    if (!visible || !kind) return;
+    return armAutoDismiss(el, {
+      ms: kind === "error" ? 10_000 : 6_000,
+      dismiss: () => dismissUpdateToast(),
+    });
+  });
 </script>
 
 {#if visible && update.toast}
-  <div class="update-toast" class:error={update.toast.kind === "error"} role="status">
+  <div class="update-toast" class:error={update.toast.kind === "error"} role="status" bind:this={el}>
     <div class="copy">
       {#if update.toast.kind === "available"}
         <p>{t("toast.update.available", { latest: update.latest, current: update.current })}</p>

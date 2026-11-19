@@ -5,6 +5,13 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.4] - 2026-11-19
+
+### Fixed
+
+- Per-app Stop and Restart from the Overview menu work again. ActionMenu was calling `stopPropagation` on clicks, which blocked Svelte 5's delegated `onclick` handlers so the stop API never ran (Stop all still worked). Single-app stop now also resolves the live run by part + script on the server the same way Stop all discovers targets.
+- Overlay toasts and banners auto-dismiss after about 6 seconds (about 10 seconds for errors), stay closable with X, and pause while hovered.
+
 ## [0.12.3] - 2026-11-19
 
 ### Changed

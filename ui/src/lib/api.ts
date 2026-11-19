@@ -103,10 +103,17 @@ export function startInstall(partId: string): Promise<Run> {
   });
 }
 
-export function stopRun(runId: string): Promise<Run> {
+export function stopRun(
+  runId: string | null | undefined,
+  opts?: { partId?: string; script?: string },
+): Promise<Run> {
+  const body: { runId?: string; partId?: string; script?: string } = {};
+  if (runId) body.runId = runId;
+  if (opts?.partId) body.partId = opts.partId;
+  if (opts?.script) body.script = opts.script;
   return request("/api/stop", {
     method: "POST",
-    body: JSON.stringify({ runId }),
+    body: JSON.stringify(body),
   });
 }
 

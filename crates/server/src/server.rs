@@ -111,7 +111,14 @@ struct RunRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StopRequest {
-    run_id: String,
+    /// Preferred: stop this exact run id (same path Stop all uses per id).
+    #[serde(default)]
+    run_id: Option<String>,
+    /// Fallback: find a running run by part + script (matches Stop all discovery).
+    #[serde(default)]
+    part_id: Option<String>,
+    #[serde(default)]
+    script: Option<String>,
 }
 
 pub fn run_blocking(
@@ -533,7 +540,29 @@ async fn post_stop(
     State(state): State<Arc<AppState>>,
     Json(body): Json<StopRequest>,
 ) -> Result<Json<Run>, (StatusCode, String)> {
-    match state.manager.stop(&body.run_id).await {
+    let run_id = if let Some(id) = body.run_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        id.to_string()
+    } else {
+        let part_id = body
+            .part_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or((StatusCode::BAD_REQUEST, "runId or partId required".into()))?;
+        let script = body
+            .script
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or((StatusCode::BAD_REQUEST, "script required when stopping by partId".into()))?;
+        // Same discovery model as stop_all: ask the manager for the live run.
+        state
+            .manager
+            .running_id_for(part_id, script)
+            .await
+            .ok_or((StatusCode::NOT_FOUND, "run not found".into()))?
+    };
+    match state.manager.stop(&run_id).await {
         Ok(run) => Ok(Json(run)),
         Err(err) if err == "run not found" => Err((StatusCode::NOT_FOUND, "run not found".into())),
         Err(err) => Err(internal(err)),

@@ -143,7 +143,7 @@ export async function toggleScript(partId: string, script: string, groups: RepoG
   }
   await withPending(partId, script, async () => {
     if (existing) {
-      const run = await stopRun(existing.id);
+      const run = await stopRun(existing.id, { partId, script });
       upsertRun(run);
       selectPart(partId, script, runState.panelOpen);
     } else {
@@ -185,26 +185,32 @@ export async function startScript(partId: string, script: string, groups: RepoGr
 
 export async function stopScript(partId: string, script: string) {
   const existing = runningFor(partId, script);
-  if (!existing) return;
+  // Always ask the server (like Stop all): even if the client list is stale,
+  // partId+script resolves the live run the same way stop_all discovers ids.
   await withPending(partId, script, async () => {
-    const run = await stopRun(existing.id);
+    const run = await stopRun(existing?.id, { partId, script });
     upsertRun(run);
     selectPart(partId, script, runState.panelOpen);
   });
 }
 
 export async function restartScript(partId: string, script: string, groups: RepoGroup[] = []) {
-  const blocked = startBlockReason(partId, script);
-  if (blocked) {
-    runState.error = blocked;
-    return;
+  const existing = runningFor(partId, script);
+  // Only gate start-only blocks when nothing is running yet.
+  if (!existing) {
+    const blocked = startBlockReason(partId, script);
+    if (blocked) {
+      runState.error = blocked;
+      return;
+    }
   }
   await withPending(partId, script, async () => {
-    const existing = runningFor(partId, script);
-    if (existing) {
-      const stopped = await stopRun(existing.id);
-      upsertRun(stopped);
-    }
+    const stopped = await stopRun(existing?.id, { partId, script }).catch((err: unknown) => {
+      // No live run is fine for restart-from-idle; other errors still fail.
+      if (err instanceof Error && /run not found/i.test(err.message)) return null;
+      throw err;
+    });
+    if (stopped) upsertRun(stopped);
     const run = await startRun(partId, script);
     upsertRun(run);
     remember(partId, script, groups);
@@ -220,7 +226,7 @@ export async function stopSelected() {
   if (!current || current.status !== "running") return;
   runState.error = null;
   try {
-    const run = await stopRun(id);
+    const run = await stopRun(id, { partId: current.partId, script: current.script });
     upsertRun(run);
   } catch (err: unknown) {
     runState.error = err instanceof Error ? err.message : "Could not stop the process.";

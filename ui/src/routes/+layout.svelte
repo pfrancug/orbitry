@@ -10,6 +10,7 @@
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import UpdateOverlay from "$lib/components/UpdateOverlay.svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
+  import { armAutoDismiss } from "$lib/autoDismiss.svelte";
   import { bannerMessage, dash, dismissBanner, refreshAll } from "$lib/dashboard.svelte";
   import { refreshModels } from "$lib/models.svelte";
   import { refreshTools } from "$lib/tools.svelte";
@@ -22,6 +23,15 @@
 
   let { children } = $props();
   let sidebarCollapsed = $state(false);
+  let bannerEl = $state<HTMLElement | undefined>(undefined);
+  const bannerText = $derived(bannerMessage());
+  $effect(() => {
+    if (!bannerText) return;
+    return armAutoDismiss(bannerEl, {
+      ms: 10_000,
+      dismiss: () => dismissBanner(),
+    });
+  });
 
   const selectedPart = $derived(
     runState.selectedPartId ? findPart(runState.selectedPartId, dash.groups) ?? null : null,
@@ -143,9 +153,9 @@
     </header>
 
     <div class="notice-layer">
-      {#if bannerMessage()}
-        <div class="banner" role="status">
-          <span>{bannerMessage()}</span>
+      {#if bannerText}
+        <div class="banner" role="status" bind:this={bannerEl}>
+          <span>{bannerText}</span>
           <button class="icon-btn ghost" type="button" title={t("common.close")} onclick={dismissBanner}>
             <Icon name="close" size={14} />
           </button>

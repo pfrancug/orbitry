@@ -5,6 +5,17 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.2] - 2026-11-19
+
+### Fixed
+
+- The AI tag shows again on projects that use local models or AI tooling. Attribution matches model `usedBy` and weight-file ownership with normalized paths (including Windows separators and case), and also marks projects that declare AI dependencies such as `openai`, `@anthropic-ai/sdk`, `ai`, `langchain`, `transformers`, `torch`, `diffusers`, `ollama`, or `comfyui`. The tag tooltip lists the models and dependencies that triggered it. A failed models inventory fetch no longer breaks the Projects page.
+- Databases and Models tables use a shared CSS grid so project rows, indented database rows, and model columns stay aligned, with ellipsis truncation, sticky headers, and sorting. Layout is verified in the UI smoke path with mock data.
+
+### Changed
+
+- Project scan records optional `aiDependencies` on each part (scan cache version bumped). Older clients ignore the field.
+
 ## [0.12.1] - 2026-11-19
 
 ### Fixed

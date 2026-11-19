@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use crate::artifacts::{detect_build, has_node_modules, BuildInfo};
 use crate::config::{canonical, display_path, Config};
+use crate::ai::detect_ai_dependencies;
 use crate::databases::{detect_databases, DatabaseInfo};
 use crate::git::{detect_git, GitInfo};
 use crate::ports::{apply_port_overrides, detect_static_ports, PortInfo};
@@ -57,6 +58,9 @@ pub struct Project {
     /// Local databases detected for this package (optional; empty when none).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub databases: Vec<DatabaseInfo>,
+    /// AI SDKs / tooling detected from manifests (optional; empty when none).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ai_dependencies: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -242,6 +246,7 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
 
     let ports = detect_static_ports(dir, &scripts, None, framework.as_deref());
     let databases = detect_databases(dir);
+    let ai_dependencies = detect_ai_dependencies(dir);
     Some(Project {
         id: path.clone(),
         path,
@@ -256,6 +261,7 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
         parent,
         ports,
         databases,
+        ai_dependencies,
     })
 }
 

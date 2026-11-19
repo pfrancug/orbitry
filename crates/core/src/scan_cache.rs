@@ -12,7 +12,7 @@ use crate::ports::{PortInfo, PortSource};
 
 /// Bump this when the scan result shape or detection rules change in a way
 /// that would make a previously stored snapshot misleading.
-pub const SCANNER_VERSION: u32 = 4;
+pub const SCANNER_VERSION: u32 = 5;
 
 pub fn scan_cache_path() -> PathBuf {
     config_path().with_file_name("scan-cache.json")

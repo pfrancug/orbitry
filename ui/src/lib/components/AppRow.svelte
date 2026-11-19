@@ -11,7 +11,7 @@
   import DbBadge from "./DbBadge.svelte";
   import ResourceChip from "./ResourceChip.svelte";
   import { runMetrics } from "$lib/metrics.svelte";
-  import { modelsForProject } from "$lib/models.svelte";
+  import { aiSignalsForProject } from "$lib/models.svelte";
 
   let { part, marker = null }: { part: ProjectPart; marker?: "new" | "changed" | "removed" | null } = $props();
 
@@ -34,14 +34,7 @@
   const activeScript = $derived(scripts.find((script) => script.name === activeName) ?? primary);
   const missingDeps = $derived(isJsLike(part.kind) && !part.nodeModules);
   const databases = $derived(partDatabases(part));
-  const aiModels = $derived(
-    modelsForProject({
-      projectId: part.id,
-      projectPath: part.path,
-      partIds: [part.id],
-      partPaths: [part.path],
-    }),
-  );
+  const aiSignals = $derived(aiSignalsForProject({ part }));
   const run = $derived(activeName ? runningFor(part.id, activeName) : undefined);
   const pending = $derived(activeName ? isPending(part.id, activeName) : false);
   const blocked = $derived(activeName && !run ? startBlockReason(part.id, activeName) : null);
@@ -83,7 +76,7 @@
         {/if}
         <!-- Tag order: AI → DB → deps → warning (last). -->
         <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
-          <AiBadge models={aiModels} />
+          <AiBadge signals={aiSignals} />
         </span>
         {#if databases.length}
           <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">

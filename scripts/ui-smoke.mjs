@@ -13,7 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(ROOT, "ui", "dist");
-const ROUTES = ["/", "/projects", "/models", "/logs", "/settings"];
+const ROUTES = ["/", "/projects", "/databases", "/models", "/logs", "/settings"];
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -49,7 +49,25 @@ for (let i = 0; i < 24; i += 1) {
     id: `sha256:${"ab".repeat(8)}${i}`,
     sizeBytes: (24 - i) * 1024 * 1024 * 80,
     modifiedAt: 1_700_000_000_000 - i * 86_400_000,
-    usedBy: i % 3 === 0 ? [{ projectId: "demo-app", projectName: "demo-app", projectPath: "/path/to/projects/demo-app" }] : [],
+    usedBy:
+      i % 4 === 0
+        ? [
+            {
+              projectId: "demo-app",
+              projectName: "demo-app",
+              projectPath: "/path/to/projects/demo-app",
+              files: ["/path/to/projects/demo-app/src/lib/models.ts"],
+            },
+          ]
+        : i % 4 === 1
+          ? [
+              {
+                projectId: "analytics-pipeline-service",
+                projectName: "analytics-pipeline-service-with-a-very-long-name",
+                projectPath: "/path/to/projects/analytics-pipeline-service",
+              },
+            ]
+          : [],
   });
 }
 
@@ -93,6 +111,23 @@ function applyConfigPut(body) {
   }
 }
 
+function part(base) {
+  return {
+    version: "1.0.0",
+    nodeModules: true,
+    parent: null,
+    relativePath: ".",
+    git: { branch: "main", commit: "abc1234", dirty: false },
+    build: { built: true, dir: "dist", stale: false, lastBuiltAt: 1_700_000_000_000 },
+    scripts: [
+      { name: "dev", kind: "dev", scope: "fe", command: "npm run dev", cwd: base.path },
+    ],
+    ports: [],
+    databases: [],
+    ...base,
+  };
+}
+
 const mocks = {
   "GET /api/projects": {
     groups: [
@@ -108,25 +143,164 @@ const mocks = {
         build: { built: true, dir: "dist", stale: false, lastBuiltAt: 1_700_000_000_000 },
         nodeModules: true,
         parts: [
-          {
+          part({
             id: "demo-app/web",
             name: "web",
             path: "/path/to/projects/demo-app",
             role: "fe",
             kind: "node",
             framework: "sveltekit",
-            version: "1.0.0",
-            nodeModules: true,
-            parent: null,
-            relativePath: ".",
-            git: { branch: "main", commit: "abc1234", dirty: false },
-            build: { built: true, dir: "dist", stale: false, lastBuiltAt: 1_700_000_000_000 },
-            scripts: [
-              { name: "dev", kind: "dev", scope: "fe", command: "npm run dev", cwd: "/path/to/projects/demo-app" },
-              { name: "build", kind: "build", scope: "fe", command: "npm run build", cwd: "/path/to/projects/demo-app" },
+            aiDependencies: ["ai", "@ai-sdk/openai", "openai"],
+            databases: [
+              { engine: "sqlite", source: "file", path: "prisma/dev.db", sizeBytes: 2_458_624 },
+              { engine: "postgres", source: "compose", host: "localhost", port: 5432, detail: "compose.yml:db" },
+              { engine: "redis", source: "env", host: "localhost", port: 6379 },
             ],
-            ports: [],
-          },
+          }),
+        ],
+      },
+      {
+        id: "analytics-pipeline-service",
+        path: "/path/to/projects/analytics-pipeline-service",
+        name: "analytics-pipeline-service-with-a-very-long-name",
+        folder: "analytics-pipeline-service",
+        version: "2.4.1",
+        kind: "node",
+        framework: "next",
+        git: { branch: "main", commit: "def5678", dirty: true },
+        build: { built: true, dir: ".next", stale: false, lastBuiltAt: 1_700_000_000_000 },
+        nodeModules: true,
+        parts: [
+          part({
+            id: "analytics-pipeline-service",
+            name: "analytics-pipeline-service-with-a-very-long-name",
+            path: "/path/to/projects/analytics-pipeline-service",
+            role: "root",
+            kind: "node",
+            framework: "next",
+            aiDependencies: ["langchain", "@anthropic-ai/sdk"],
+            databases: [
+              {
+                engine: "sqlite",
+                source: "file",
+                path: "server/data/tracker.db",
+                sizeBytes: 21 * 1024 * 1024,
+              },
+              {
+                engine: "postgres",
+                source: "env",
+                host: "localhost",
+                port: 5433,
+                detail: ".env",
+              },
+              {
+                engine: "mongodb",
+                source: "compose",
+                host: "localhost",
+                port: 27017,
+                detail: "docker-compose.yml:mongo",
+              },
+            ],
+          }),
+          part({
+            id: "analytics-pipeline-service/server",
+            name: "server",
+            path: "/path/to/projects/analytics-pipeline-service/server",
+            role: "be",
+            kind: "node",
+            framework: null,
+            relativePath: "server",
+            databases: [
+              {
+                engine: "sqlite",
+                source: "file",
+                path: "data/tracker.db",
+                sizeBytes: 21 * 1024 * 1024,
+              },
+            ],
+          }),
+        ],
+      },
+      {
+        id: "inventory-api",
+        path: "/path/to/projects/inventory-api",
+        name: "inventory-api",
+        folder: "inventory-api",
+        version: "0.9.0",
+        kind: "rust",
+        framework: "rust",
+        git: { branch: "develop", commit: "cafe001", dirty: false },
+        build: { built: true, dir: "target", stale: false, lastBuiltAt: 1_700_000_000_000 },
+        nodeModules: false,
+        parts: [
+          part({
+            id: "inventory-api",
+            name: "inventory-api",
+            path: "/path/to/projects/inventory-api",
+            role: "be",
+            kind: "rust",
+            framework: "rust",
+            databases: [
+              {
+                engine: "sqlite",
+                source: "file",
+                path: "storage/very/deeply/nested/path/to/production-mirror.sqlite3",
+                sizeBytes: 180 * 1024 * 1024,
+              },
+              { engine: "mysql", source: "env", host: "localhost", port: 3306 },
+            ],
+          }),
+        ],
+      },
+      {
+        id: "notes-desktop",
+        path: "/path/to/projects/notes-desktop",
+        name: "notes-desktop",
+        folder: "notes-desktop",
+        version: "3.1.0",
+        kind: "node",
+        framework: "electron",
+        git: { branch: "main", commit: "bead222", dirty: false },
+        build: { built: false, dir: "dist", stale: true, lastBuiltAt: null },
+        nodeModules: true,
+        parts: [
+          part({
+            id: "notes-desktop",
+            name: "notes-desktop",
+            path: "/path/to/projects/notes-desktop",
+            role: "root",
+            kind: "node",
+            framework: "electron",
+            databases: [
+              { engine: "sqlite", source: "file", path: "app.db", sizeBytes: 512_000 },
+            ],
+          }),
+        ],
+      },
+      {
+        id: "ComfyUI",
+        path: "C:\\Users\\Piotr\\Projects\\ComfyUI",
+        name: "ComfyUI",
+        folder: "ComfyUI",
+        version: null,
+        kind: "python",
+        framework: null,
+        git: { branch: "master", commit: "c0ffee1", dirty: true },
+        build: { built: false, dir: null, stale: false, lastBuiltAt: null },
+        nodeModules: false,
+        parts: [
+          part({
+            id: "ComfyUI",
+            name: "ComfyUI",
+            path: "C:\\Users\\Piotr\\Projects\\ComfyUI",
+            role: "root",
+            kind: "python",
+            framework: null,
+            nodeModules: false,
+            aiDependencies: ["comfyui", "torch", "diffusers", "transformers"],
+            databases: [],
+            scripts: [{ name: "main", kind: "dev", scope: "be", command: "python main.py", cwd: "C:\\Users\\Piotr\\Projects\\ComfyUI" }],
+          }),
         ],
       },
     ],
@@ -174,12 +348,40 @@ const mocks = {
       models,
     },
     caches: [],
-    projectFiles: [],
-    totals: [{ id: "ollama", label: "Ollama", path: "/path/to/models", bytes: models.reduce((sum, item) => sum + item.sizeBytes, 0) }],
-    grandTotalBytes: models.reduce((sum, item) => sum + item.sizeBytes, 0),
+    projectFiles: [
+      {
+        projectId: "ComfyUI",
+        projectName: "ComfyUI",
+        projectPath: "C:\\Users\\Piotr\\Projects\\ComfyUI",
+        totalBytes: 4_200_000_000,
+        files: [
+          {
+            name: "sd_xl_base_1.0.safetensors",
+            path: "C:\\Users\\Piotr\\Projects\\ComfyUI\\models\\checkpoints\\sd_xl_base_1.0.safetensors",
+            sizeBytes: 4_200_000_000,
+            usedBy: [],
+          },
+        ],
+      },
+    ],
+    totals: [
+      { id: "ollama", label: "Ollama", path: "/path/to/models", bytes: models.reduce((sum, item) => sum + item.sizeBytes, 0) },
+      {
+        id: "project-weights",
+        label: "Project weights",
+        path: "C:\\Users\\Piotr\\Projects\\ComfyUI",
+        bytes: 4_200_000_000,
+      },
+    ],
+    grandTotalBytes: models.reduce((sum, item) => sum + item.sizeBytes, 0) + 4_200_000_000,
   },
   "GET /api/docker": [],
 };
+
+/** When set, GET /api/models returns 500 so smoke can assert Projects still works. */
+let modelsFailOnce = false;
+/** Suppress expected console noise while probing models failure. */
+let expectingModelsFailure = false;
 
 function json(res, body, status = 200) {
   const data = JSON.stringify(body);
@@ -247,6 +449,11 @@ function handler(req, res) {
     }
   }
   if (url.pathname.startsWith("/api/")) {
+    if (url.pathname === "/api/models" && req.method === "GET" && modelsFailOnce) {
+      modelsFailOnce = false;
+      json(res, { error: "models unavailable" }, 500);
+      return;
+    }
     if (mocks[key] !== undefined && mocks[key] !== null) {
       json(res, mocks[key]);
       return;
@@ -289,7 +496,11 @@ async function runSmoke(base) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.on("pageerror", (err) => errors.push(`pageerror: ${err.message}`));
     page.on("console", (msg) => {
-      if (msg.type() === "error") errors.push(`console: ${msg.text()}`);
+      if (msg.type() !== "error") return;
+      const text = msg.text();
+      // Expected during the models-failure resilience check.
+      if (expectingModelsFailure && /500|Failed to load resource/i.test(text)) return;
+      errors.push(`console: ${text}`);
     });
 
     for (const route of ROUTES) {
@@ -313,13 +524,82 @@ async function runSmoke(base) {
     }
 
     await page.goto(`${base}/models`, { waitUntil: "networkidle" });
-    await page.waitForSelector(".data-table tbody", { timeout: 10_000 });
+    await page.waitForSelector(".data-table .grid-row", { timeout: 10_000 });
     const before = await page.locator("[data-main-scroll]").evaluate((el) => el.scrollTop);
     await page.locator(".data-table").hover();
     await page.mouse.wheel(0, 800);
     const after = await page.locator("[data-main-scroll]").evaluate((el) => el.scrollTop);
     if (after <= before) {
       errors.push(`wheel over models table did not scroll .list-pane (scrollTop ${before} -> ${after})`);
+    }
+
+    // AI tag: appears right after the project name for deps + model attribution.
+    await page.goto(`${base}/projects`, { waitUntil: "networkidle" });
+    await page.waitForSelector(".project-row .title-row", { timeout: 10_000 });
+    const aiPlacement = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll(".project-row .title-row")];
+      const findings = [];
+      for (const row of rows) {
+        const h2 = row.querySelector("h2");
+        const badge = row.querySelector(".ai-badge");
+        if (!h2 || !badge) continue;
+        const kids = [...row.children];
+        const nameIdx = kids.findIndex((el) => el === h2 || el.contains(h2));
+        const badgeWrap = badge.closest("[role='presentation']") ?? badge;
+        const badgeIdx = kids.findIndex((el) => el === badgeWrap || el.contains(badge));
+        findings.push({
+          name: h2.textContent?.trim() ?? "",
+          nameIdx,
+          badgeIdx,
+          title: badge.getAttribute("title") ?? "",
+        });
+      }
+      return findings;
+    });
+    if (!aiPlacement.length) {
+      errors.push("no AI badges rendered next to project names");
+    } else {
+      for (const item of aiPlacement) {
+        // Pulse/run-count may sit between the name and the AI tag; require badge after name.
+        if (item.nameIdx < 0 || item.badgeIdx < 0 || item.badgeIdx <= item.nameIdx) {
+          errors.push(
+            `AI badge for ${item.name} is not after the project name (nameIdx=${item.nameIdx} badgeIdx=${item.badgeIdx})`,
+          );
+        }
+        if (!item.title) {
+          errors.push(`AI badge for ${item.name} has empty tooltip`);
+        }
+      }
+      const demo = aiPlacement.find((item) => item.name === "demo-app");
+      if (!demo) errors.push("demo-app missing AI badge (expected model + dependency signals)");
+      else if (!/openai|ai|demo-model/i.test(demo.title)) {
+        errors.push(`demo-app AI tooltip missing expected reasons: ${demo.title}`);
+      }
+      const comfy = aiPlacement.find((item) => item.name === "ComfyUI");
+      if (!comfy) errors.push("ComfyUI missing AI badge (expected deps and/or local weights)");
+      else if (!/comfyui|torch|diffusers|safetensors/i.test(comfy.title)) {
+        errors.push(`ComfyUI AI tooltip missing expected reasons: ${comfy.title}`);
+      }
+    }
+
+    // Failed models fetch must not break the projects page.
+    expectingModelsFailure = true;
+    modelsFailOnce = true;
+    try {
+      await page.goto(`${base}/projects`, { waitUntil: "networkidle" });
+      await page.waitForSelector(".project-row", { timeout: 10_000 });
+      const projectsOk = await page.locator(".project-row").count();
+      const crashed = await page.locator("text=Internal Error").count().catch(() => 0);
+      if (!projectsOk) errors.push("projects page empty after models fetch failure");
+      if (crashed) errors.push("projects page crashed after models fetch failure");
+      // Still expect AI badges from aiDependencies even without models inventory.
+      const depOnly = await page.locator(".project-row .ai-badge").count();
+      if (!depOnly) {
+        errors.push("AI badges from aiDependencies missing after models fetch failure");
+      }
+    } finally {
+      expectingModelsFailure = false;
+      modelsFailOnce = false;
     }
 
     await page.goto(`${base}/`, { waitUntil: "networkidle" });
@@ -434,11 +714,19 @@ if (!fs.existsSync(path.join(DIST, "index.html"))) {
   process.exit(1);
 }
 
+const serveOnly = process.env.ORBITRY_SMOKE_SERVE_ONLY === "1";
+const preferredPort = Number(process.env.ORBITRY_SMOKE_PORT || "0") || 0;
 const server = http.createServer(handler);
-await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+await new Promise((resolve) => server.listen(preferredPort, "127.0.0.1", resolve));
 const { port } = server.address();
 const base = `http://127.0.0.1:${port}`;
 console.log(`UI smoke server on ${base}`);
+
+if (serveOnly) {
+  await new Promise(() => {
+    // Keep serving until the parent kills this process.
+  });
+}
 
 let errors;
 try {

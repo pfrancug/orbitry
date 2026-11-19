@@ -2,7 +2,7 @@
   import { groupDatabases, isJsLike, shortPath, warningsForPart } from "$lib/format";
   import { composeFor, dash, groupMarker as markerForGroup, removedPartsFor, visibleWarnings } from "$lib/dashboard.svelte";
   import { t } from "$lib/i18n.svelte";
-  import { modelsForProject } from "$lib/models.svelte";
+  import { aiSignalsForProject } from "$lib/models.svelte";
   import { runState } from "$lib/runs.svelte";
   import type { RepoGroup as RepoGroupType } from "$lib/types";
   import AppRow from "./AppRow.svelte";
@@ -49,14 +49,7 @@
   );
   const compose = $derived(composeFor(group.id));
   const databases = $derived(groupDatabases(group));
-  const aiModels = $derived(
-    modelsForProject({
-      projectId: group.id,
-      projectPath: group.path,
-      partIds: (group.parts ?? []).map((part) => part.id),
-      partPaths: (group.parts ?? []).map((part) => part.path),
-    }),
-  );
+  const aiSignals = $derived(aiSignalsForProject({ group }));
 </script>
 
 <section class="project" class:open class:live={running.length > 0} class:removed={groupMarker === "removed"}>
@@ -73,7 +66,7 @@
         {/if}
         <!-- Tag order: AI → DB → deps → warning (last). -->
         <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
-          <AiBadge models={aiModels} />
+          <AiBadge signals={aiSignals} />
         </span>
         {#if databases.length}
           <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">

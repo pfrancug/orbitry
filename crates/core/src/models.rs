@@ -17,7 +17,7 @@ use crate::group::RepoGroup;
 use crate::scan_cache::now_ms;
 
 /// Bump when the inventory shape or detection rules change.
-pub const MODELS_SCANNER_VERSION: u32 = 4;
+pub const MODELS_SCANNER_VERSION: u32 = 5;
 
 const OLLAMA_PORT: u16 = 11434;
 const OLLAMA_HOST: [u8; 4] = [127, 0, 0, 1];
@@ -1053,11 +1053,17 @@ fn project_for(path: &Path, groups: &[RepoGroup], roots: &[String]) -> (String, 
 }
 
 fn path_is_within(path: &Path, root: &Path) -> bool {
-    let path_n = normalize_path_str(&display_path(&canonical(path)));
-    let root_n = normalize_path_str(&display_path(&canonical(root)));
-    let path_l = path_n.to_ascii_lowercase();
-    let root_l = root_n.to_ascii_lowercase();
-    path_l == root_l || path_l.starts_with(&(root_l + "\\"))
+    // normalize_path_str rewrites separators to `\` on every platform, so the
+    // containment suffix must always be `\` (not the OS native separator).
+    let path_l = normalize_path_str(&display_path(&canonical(path))).to_ascii_lowercase();
+    let root_l = normalize_path_str(&display_path(&canonical(root))).to_ascii_lowercase();
+    if path_l == root_l {
+        return true;
+    }
+    if root_l.is_empty() {
+        return false;
+    }
+    path_l.starts_with(&(root_l + "\\"))
 }
 
 fn attribute_usages(

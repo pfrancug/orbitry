@@ -124,6 +124,8 @@ export type ProjectPart = {
   ports: PortInfo[];
   packageManager?: string | null;
   databases?: DatabaseInfo[];
+  /** AI SDKs / tooling from manifests. Present from 0.12.2; omitted on older servers. */
+  aiDependencies?: string[];
 };
 
 export type RepoGroup = {

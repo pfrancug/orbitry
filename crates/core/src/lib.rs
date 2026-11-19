@@ -1,5 +1,6 @@
 //! Orbitry core - scanner, process manager, port detection, and project metadata.
 
+mod ai;
 mod app_autostart;
 mod artifacts;
 mod autostart;
@@ -41,6 +42,7 @@ pub use config::{
     paths_equal, save_config, Config, ConfigBridgeMode, OpenInTargets, PortOverride, ScriptKind,
     ScriptPattern, ScriptScope,
 };
+pub use ai::detect_ai_dependencies;
 pub use databases::{detect_databases, DatabaseInfo, DatabaseSource};
 pub use git::{find_git_root, GitInfo};
 pub use health::{check_health, HealthInfo, HealthStatus};

@@ -44,6 +44,9 @@ pub struct ProjectPart {
     pub package_manager: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub databases: Vec<DatabaseInfo>,
+    /// AI SDKs / tooling from manifests. Optional for older caches.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ai_dependencies: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -189,6 +192,7 @@ fn build_group(id: String, members: Vec<Project>) -> RepoGroup {
                 ports: project.ports,
                 package_manager,
                 databases: project.databases,
+                ai_dependencies: project.ai_dependencies,
             }
         })
         .collect();

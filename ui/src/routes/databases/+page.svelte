@@ -227,14 +227,16 @@
     border-top: 1px solid rgba(255, 255, 255, 0.04);
   }
   .grid-row.project {
-    min-height: 38px;
-    border-top-color: rgba(255, 255, 255, 0.1);
-    background: color-mix(in srgb, var(--panel, #15161c) 72%, #000);
+    min-height: 40px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    background: color-mix(in srgb, var(--accent, #8aa4ff) 10%, #12131a 90%);
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent, #8aa4ff) 70%, transparent);
   }
   .grid-row.project:first-of-type,
   .grid-head + .grid-row { border-top: 0; }
   .grid-row.child {
     background: transparent;
+    min-height: 32px;
   }
   .cell {
     min-width: 0;
@@ -247,11 +249,12 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-weight: 700;
-    letter-spacing: -0.01em;
+    font-weight: 750;
+    letter-spacing: -0.015em;
   }
   .project-name strong {
-    font-weight: 700;
+    font-weight: 750;
+    font-size: 13.5px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -259,7 +262,7 @@
     flex: none;
     width: 1.1rem;
     text-align: center;
-    color: var(--muted);
+    color: color-mix(in srgb, var(--accent, #8aa4ff) 80%, var(--muted));
     font-size: 12px;
     line-height: 1;
   }
@@ -268,12 +271,14 @@
     margin-left: auto;
     color: var(--muted);
     font-size: 11px;
-    font-weight: 550;
+    font-weight: 600;
+    text-transform: lowercase;
   }
   .child-name {
     font-weight: 500;
-    padding-left: 1.85rem;
-    color: var(--text);
+    font-size: 12.5px;
+    padding-left: 2rem;
+    color: color-mix(in srgb, var(--text) 88%, var(--muted));
   }
   .num {
     text-align: right;

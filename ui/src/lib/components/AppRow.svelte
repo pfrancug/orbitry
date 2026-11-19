@@ -36,6 +36,13 @@
   const pending = $derived(activeName ? isPending(part.id, activeName) : false);
   const blocked = $derived(activeName && !run ? startBlockReason(part.id, activeName) : null);
   const warned = $derived(activeName && !run ? startWarnReason(part.id, activeName) : null);
+  const ahkProjectHint = $derived.by(() => {
+    const blockedAhk = scripts
+      .filter((script) => script.source === "ahk")
+      .map((script) => startBlockReason(part.id, script.name))
+      .find((reason) => Boolean(reason));
+    return blockedAhk ?? null;
+  });
   let menuOpen = $state(false);
   let menuRoot = $state<HTMLDivElement | undefined>(undefined);
 
@@ -75,6 +82,9 @@
         <strong title={part.name}>{partTitle(part)}</strong>
         {#if part.framework}
           <span class="muted framework-tag">{part.framework}</span>
+        {/if}
+        {#if ahkProjectHint}
+          <span class="muted framework-tag" title={ahkProjectHint}>{ahkProjectHint}</span>
         {/if}
         <!-- Tag order: AI → DB → deps → warning (last). -->
         <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
@@ -171,7 +181,9 @@
                   }}
                 >
                   <span>{scriptLabel(script)}</span>
-                  {#if script.source === "ahk"}
+                  {#if itemBlocked && script.source === "ahk"}
+                    <em class="blocked">{itemBlocked}</em>
+                  {:else if script.source === "ahk"}
                     <em>{script.sourceName || "AHK"}</em>
                   {:else if scriptSourceDiffers(script)}
                     <em>{t("script.viaRoot", { name: script.sourceName || t("script.workspace") })}</em>
@@ -259,5 +271,12 @@
     font-style: normal;
     color: var(--muted);
     font-size: 11px;
+  }
+  .script-menu em.blocked {
+    color: #f0ab8e;
+    max-width: 11rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

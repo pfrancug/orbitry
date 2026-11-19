@@ -46,22 +46,37 @@ impl PortOverride {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Node.js plugin toggle. Plain on/off from 0.14.1; older `"auto"` is migrated
+/// on load (on when Node + plugin were effectively available, otherwise off).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigBridgeMode {
     #[default]
-    Auto,
     On,
     Off,
 }
 
 impl ConfigBridgeMode {
-    pub fn is_auto(self) -> bool {
-        matches!(self, Self::Auto)
-    }
-
     pub fn is_off(self) -> bool {
         matches!(self, Self::Off)
+    }
+}
+
+impl<'de> Deserialize<'de> for ConfigBridgeMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "off" => Ok(Self::Off),
+            // "auto" is accepted so older configs parse; load_config rewrites it.
+            "on" | "auto" | "" => Ok(Self::On),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["on", "off"],
+            )),
+        }
     }
 }
 
@@ -164,7 +179,7 @@ impl Default for Config {
             roots: Vec::new(),
             script_patterns: Vec::new(),
             port_overrides: Vec::new(),
-            config_bridge: ConfigBridgeMode::Auto,
+            config_bridge: ConfigBridgeMode::On,
             auto_check_updates: true,
             log_limit_mb: default_log_limit_mb(),
             autostart_apps: Vec::new(),
@@ -241,7 +256,38 @@ pub fn load_config(path: &Path) -> Result<Config, String> {
     }
     let data = fs::read(path).map_err(|err| format!("read {}: {err}", path.display()))?;
     let data = strip_bom(&data);
-    serde_json::from_slice(data).map_err(|err| format!("parse {}: {err}", path.display()))
+    let mut value: serde_json::Value =
+        serde_json::from_slice(data).map_err(|err| format!("parse {}: {err}", path.display()))?;
+    let migrated = migrate_config_value(&mut value);
+    let config: Config =
+        serde_json::from_value(value).map_err(|err| format!("parse {}: {err}", path.display()))?;
+    if migrated {
+        // Persist on/off so older "auto" does not linger on disk.
+        let _ = save_config(path, &config);
+    }
+    Ok(config)
+}
+
+/// Rewrite legacy plugin values in a parsed config JSON object.
+/// Returns true when the value was changed and should be saved.
+fn migrate_config_value(value: &mut serde_json::Value) -> bool {
+    let Some(obj) = value.as_object_mut() else {
+        return false;
+    };
+    let mut changed = false;
+    let bridge = obj
+        .get("configBridge")
+        .and_then(|item| item.as_str())
+        .unwrap_or("");
+    if bridge.eq_ignore_ascii_case("auto") {
+        let on = crate::bridge::deps_available();
+        obj.insert(
+            "configBridge".to_string(),
+            serde_json::Value::String(if on { "on" } else { "off" }.to_string()),
+        );
+        changed = true;
+    }
+    changed
 }
 
 pub fn save_config(path: &Path, config: &Config) -> Result<(), String> {

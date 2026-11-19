@@ -26,6 +26,7 @@ pub struct AhkStatus {
     pub state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// Always includes v1 and v2 entries with installed/path status (from 0.14.1).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub interpreters: Vec<AhkInterpreter>,
 }
@@ -34,7 +35,9 @@ pub struct AhkStatus {
 #[serde(rename_all = "camelCase")]
 pub struct AhkInterpreter {
     pub version: String,
-    pub path: String,
+    pub installed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,14 +53,22 @@ impl AhkVersion {
             Self::V2 => "v2",
         }
     }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::V1 => "AutoHotkey v1",
+            Self::V2 => "AutoHotkey v2",
+        }
+    }
 }
 
 pub fn ahk_status(config: &Config) -> AhkStatus {
     let enabled = config.ahk_plugin;
     #[cfg(windows)]
     {
-        let interpreters = detect_interpreters();
-        let installed = !interpreters.is_empty();
+        let found = detect_interpreters();
+        let interpreters = version_entries(&found);
+        let installed = interpreters.iter().any(|item| item.installed);
         let available = enabled && installed;
         let (state, label, reason) = if !enabled {
             (
@@ -74,14 +85,11 @@ pub fn ahk_status(config: &Config) -> AhkStatus {
         } else {
             let summary = interpreters
                 .iter()
-                .map(|(version, _)| version.as_str())
+                .filter(|item| item.installed)
+                .map(|item| item.version.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            (
-                "available",
-                format!("available · {summary}"),
-                None,
-            )
+            ("available", format!("available · {summary}"), None)
         };
         AhkStatus {
             enabled,
@@ -91,13 +99,7 @@ pub fn ahk_status(config: &Config) -> AhkStatus {
             label,
             state: state.to_string(),
             reason,
-            interpreters: interpreters
-                .into_iter()
-                .map(|(version, path)| AhkInterpreter {
-                    version: version.as_str().to_string(),
-                    path: display_path(&path),
-                })
-                .collect(),
+            interpreters,
         }
     }
     #[cfg(not(windows))]
@@ -111,7 +113,7 @@ pub fn ahk_status(config: &Config) -> AhkStatus {
             label: "Windows only".to_string(),
             state: "windows-only".to_string(),
             reason: Some("AutoHotkey runs on Windows only.".to_string()),
-            interpreters: Vec::new(),
+            interpreters: version_entries(&[]),
         }
     }
 }
@@ -126,6 +128,7 @@ pub fn dir_has_ahk(dir: &Path) -> bool {
 }
 
 pub fn detect_ahk_scripts(dir: &Path, existing_names: &[String]) -> Vec<DetectedScript> {
+    let found = detect_interpreters();
     let mut taken: std::collections::BTreeSet<String> = existing_names
         .iter()
         .map(|name| name.to_ascii_lowercase())
@@ -144,6 +147,15 @@ pub fn detect_ahk_scripts(dir: &Path, existing_names: &[String]) -> Vec<Detected
         }
         taken.insert(key);
         let version = parse_requires(&path).unwrap_or(AhkVersion::V2);
+        let version_ok = found.iter().any(|(ver, _)| *ver == version);
+        let blocked_reason = if version_ok {
+            None
+        } else {
+            Some(format!(
+                "{} is not installed. Install it to run this script.",
+                version.label()
+            ))
+        };
         out.push(DetectedScript {
             name: stem.to_string(),
             command: display_path(&path),
@@ -151,23 +163,29 @@ pub fn detect_ahk_scripts(dir: &Path, existing_names: &[String]) -> Vec<Detected
             scope: ScriptScope::Shared,
             cwd: Some(display_path(dir)),
             source: ScriptSource::Ahk,
-            source_name: Some(format!("AutoHotkey {}", version.as_str())),
+            source_name: Some(version.label().to_string()),
             label: None,
+            ahk_version: Some(version.as_str().to_string()),
+            blocked_reason,
         });
     }
     out.sort_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()));
     out
 }
 
+/// Resolve the interpreter for an exact major version. No cross-major fallback.
 pub fn resolve_interpreter(version: AhkVersion) -> Option<PathBuf> {
     detect_interpreters()
         .into_iter()
         .find(|(ver, _)| *ver == version)
         .map(|(_, path)| path)
-        .or_else(|| {
-            // Prefer any installed interpreter if the exact major is missing.
-            detect_interpreters().into_iter().next().map(|(_, path)| path)
-        })
+}
+
+pub fn missing_version_message(version: AhkVersion) -> String {
+    format!(
+        "{} is not installed. Install it to run this script, or turn the AutoHotkey plugin off.",
+        version.label()
+    )
 }
 
 pub fn parse_requires(path: &Path) -> Option<AhkVersion> {
@@ -194,6 +212,24 @@ pub fn parse_requires(path: &Path) -> Option<AhkVersion> {
         }
     }
     None
+}
+
+fn version_entries(found: &[(AhkVersion, PathBuf)]) -> Vec<AhkInterpreter> {
+    [AhkVersion::V1, AhkVersion::V2]
+        .into_iter()
+        .map(|version| match found.iter().find(|(ver, _)| *ver == version) {
+            Some((_, path)) => AhkInterpreter {
+                version: version.as_str().to_string(),
+                installed: true,
+                path: Some(display_path(path)),
+            },
+            None => AhkInterpreter {
+                version: version.as_str().to_string(),
+                installed: false,
+                path: None,
+            },
+        })
+        .collect()
 }
 
 fn list_ahk_files(dir: &Path) -> impl Iterator<Item = PathBuf> {
@@ -225,7 +261,10 @@ fn detect_interpreters() -> Vec<(AhkVersion, PathBuf)> {
         if !path.is_file() {
             return;
         }
-        if found.iter().any(|(ver, existing)| *ver == version && existing == &path) {
+        if found
+            .iter()
+            .any(|(ver, existing)| *ver == version && existing == &path)
+        {
             return;
         }
         if found.iter().any(|(ver, _)| *ver == version) {
@@ -383,5 +422,15 @@ mod tests {
     #[test]
     fn requires_defaults_to_v2_when_absent() {
         assert!(parse_requires(Path::new("does-not-exist.ahk")).is_none());
+    }
+
+    #[test]
+    fn version_entries_always_list_v1_and_v2() {
+        let entries = version_entries(&[]);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].version, "v1");
+        assert!(!entries[0].installed);
+        assert_eq!(entries[1].version, "v2");
+        assert!(!entries[1].installed);
     }
 }

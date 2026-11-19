@@ -93,7 +93,10 @@ const configState = {
     label: "Windows only",
     state: "windows-only",
     reason: "AutoHotkey runs on Windows only.",
-    interpreters: [],
+    interpreters: [
+      { version: "v1", installed: false, path: null },
+      { version: "v2", installed: false, path: null },
+    ],
   },
   autostart: { enabled: false, stale: false },
 };
@@ -626,12 +629,25 @@ async function runSmoke(base) {
     if (!/Node\.js|Vite|Next|Astro|Ports/i.test(nodeCard || "")) {
       errors.push(`Node.js plugin card missing expected content: ${nodeCard}`);
     }
+    if (/\bAuto\b/.test(nodeCard || "") && /segmented/.test(await page.locator('[data-plugin="nodejs"]').innerHTML().catch(() => ""))) {
+      errors.push(`Node.js plugin card still exposes Auto mode: ${nodeCard}`);
+    }
+    const nodeToggle = await page.locator('[data-plugin="nodejs"] input[type="checkbox"]').count();
+    if (!nodeToggle) errors.push("Node.js plugin card missing on/off toggle");
     const ahkCard = await page.locator('[data-plugin="ahk"]').textContent().catch(() => "");
     if (!/AutoHotkey/i.test(ahkCard || "")) {
       errors.push(`AutoHotkey plugin card missing: ${ahkCard}`);
     }
-    if (!/Windows only|available|not installed|disabled/i.test(ahkCard || "")) {
+    if (!/Windows only|available|not installed|disabled|Not installed|Nie zainstalowany/i.test(ahkCard || "")) {
       errors.push(`AutoHotkey plugin card missing status: ${ahkCard}`);
+    }
+    if (!/AutoHotkey v1/i.test(ahkCard || "") || !/AutoHotkey v2/i.test(ahkCard || "")) {
+      errors.push(`AutoHotkey plugin card missing per-version rows: ${ahkCard}`);
+    }
+    const ahkToggle = page.locator('[data-plugin="ahk"] input[type="checkbox"]');
+    if (!(await ahkToggle.count())) errors.push("AutoHotkey plugin card missing on/off toggle");
+    else if (!(await ahkToggle.isDisabled())) {
+      errors.push("AutoHotkey toggle should be disabled on non-Windows smoke host");
     }
 
     // Databases project headers should be distinct from child rows.

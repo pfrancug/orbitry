@@ -182,10 +182,7 @@ impl ProcessManager {
                 }
                 let version = parse_requires(&script_path).unwrap_or(AhkVersion::V2);
                 let exe = resolve_interpreter(version).ok_or_else(|| {
-                    StartError::Message(
-                        "AutoHotkey was not found. Install AutoHotkey or turn the plugin off."
-                            .into(),
-                    )
+                    StartError::Message(crate::ahk::missing_version_message(version))
                 })?;
                 SpawnTarget::Ahk { exe, script: script_path }
             }

@@ -313,10 +313,10 @@
               <span
                 class="plugin-status"
                 class:ok={dash.config.bridgeStatus?.available}
-                class:off={(dash.config.configBridge ?? "auto") === "off" || dash.config.bridgeStatus?.state === "disabled"}
+                class:off={(dash.config.configBridge ?? "on") === "off" || dash.config.bridgeStatus?.state === "disabled"}
               >
                 {dash.config.bridgeStatus?.label
-                  ?? ((dash.config.configBridge ?? "auto") === "off" ? t("settings.bridgeOff") : t("settings.bridgeUnknown"))}
+                  ?? ((dash.config.configBridge ?? "on") === "off" ? t("settings.bridgeOff") : t("settings.bridgeUnknown"))}
               </span>
             </div>
           </header>
@@ -338,18 +338,16 @@
             <li>{t("settings.plugin.node.reads.ports")}</li>
             <li>{t("settings.plugin.node.reads.scripts")}</li>
           </ul>
-          <div class="segmented">
-            {#each ["auto", "on", "off"] as mode (mode)}
-              <button
-                type="button"
-                class:active={(dash.config.configBridge ?? "auto") === mode}
-                disabled={dash.saving}
-                onclick={() => setConfigBridge(mode as ConfigBridgeMode)}
-              >
-                {mode === "auto" ? t("settings.auto") : mode === "on" ? t("settings.on") : t("settings.off")}
-              </button>
-            {/each}
-          </div>
+          <label class="check-row autostart-row">
+            <input
+              type="checkbox"
+              checked={(dash.config.configBridge ?? "on") !== "off"}
+              disabled={dash.saving}
+              onchange={(event) =>
+                setConfigBridge((event.currentTarget.checked ? "on" : "off") as ConfigBridgeMode)}
+            />
+            {t("settings.plugin.node.enable")}
+          </label>
         </section>
 
         <section class="settings-card plugin-card" data-plugin="ahk">
@@ -369,22 +367,29 @@
           {#if dash.config.ahkStatus?.reason}
             <p class="plugin-reason">{dash.config.ahkStatus.reason}</p>
           {/if}
-          {#if dash.config.ahkStatus?.interpreters?.length}
-            <ul class="plugin-reads">
-              {#each dash.config.ahkStatus.interpreters as item (`${item.version}-${item.path}`)}
-                <li><code>{item.version}</code> · {item.path}</li>
-              {/each}
-            </ul>
-          {/if}
-          <div class="plugin-chips">
-            <span class="chip quiet">AutoHotkey v1</span>
-            <span class="chip quiet">AutoHotkey v2</span>
-          </div>
+          <ul class="plugin-versions">
+            {#each (dash.config.ahkStatus?.interpreters?.length
+              ? dash.config.ahkStatus.interpreters
+              : [{ version: "v1", installed: false }, { version: "v2", installed: false }]) as item (item.version)}
+              {@const installed = item.installed === true || (item.installed == null && Boolean(item.path))}
+              <li class:missing={!installed}>
+                <strong>AutoHotkey {item.version}</strong>
+                {#if installed}
+                  <span>{t("settings.plugin.ahk.installed")}</span>
+                  {#if item.path}
+                    <code title={item.path}>{item.path}</code>
+                  {/if}
+                {:else}
+                  <span>{t("settings.plugin.ahk.notInstalled")}</span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
           <ul class="plugin-reads">
             <li>{t("settings.plugin.ahk.reads.scripts")}</li>
             <li>{t("settings.plugin.ahk.reads.run")}</li>
           </ul>
-          <label class="check-row autostart-row">
+          <label class="check-row autostart-row" title={dash.config.ahkStatus?.windows === false ? (dash.config.ahkStatus?.reason ?? undefined) : undefined}>
             <input
               type="checkbox"
               checked={dash.config.ahkPlugin !== false}
@@ -560,6 +565,35 @@
     font-family: var(--mono);
     font-size: 11px;
     color: var(--text);
+  }
+  .plugin-versions {
+    list-style: none;
+    margin: 0 0 0.65rem;
+    padding: 0;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .plugin-versions li {
+    display: grid;
+    gap: 1px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+  .plugin-versions li strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .plugin-versions li.missing strong {
+    color: var(--muted);
+  }
+  .plugin-versions code {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .check-row {
     display: flex;

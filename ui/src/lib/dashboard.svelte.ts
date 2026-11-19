@@ -195,6 +195,21 @@ export function startBlockReason(partId?: string, script?: string): string | nul
     if (selected?.kind === "preview" && part && !part.build?.built) {
       return t("build.previewBlocked");
     }
+    if (selected?.source === "ahk") {
+      const version = (selected.ahkVersion || "v2").toLowerCase();
+      const entry = dash.config?.ahkStatus?.interpreters?.find(
+        (item) => item.version.toLowerCase() === version,
+      );
+      const installed =
+        entry?.installed === true ||
+        (entry?.installed == null && Boolean(entry?.path));
+      if (!installed) {
+        return selected.blockedReason?.trim() || t("script.ahkMissing", { version });
+      }
+    }
+    if (selected?.blockedReason?.trim()) {
+      return selected.blockedReason.trim();
+    }
   }
   return null;
 }
@@ -320,7 +335,7 @@ function withOverrides(next: {
     roots: next.roots,
     scriptPatterns: next.scriptPatterns,
     portOverrides: next.portOverrides ?? dash.config?.portOverrides ?? [],
-    configBridge: next.configBridge ?? dash.config?.configBridge ?? "auto",
+    configBridge: next.configBridge ?? dash.config?.configBridge ?? "on",
     autoCheckUpdates: next.autoCheckUpdates ?? dash.config?.autoCheckUpdates ?? true,
     logLimitMb: next.logLimitMb ?? dash.config?.logLimitMb ?? 10,
     autostartApps: next.autostartApps ?? dash.config?.autostartApps ?? [],

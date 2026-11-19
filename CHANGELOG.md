@@ -5,6 +5,13 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.1] - 2026-11-19
+
+### Changed
+
+- Plugins are plain on/off toggles (no Auto). Legacy `configBridge: "auto"` migrates on load to on when Node and the bridge plugin are available, otherwise off, and is rewritten in config.
+- AutoHotkey plugin card lists v1 and v2 separately as installed (with path) or not installed. Scripts that need a missing major show a clear block reason and cannot be started; the runner no longer falls back to another major.
+
 ## [0.14.0] - 2026-11-19
 
 ### Added

@@ -66,6 +66,12 @@ pub struct NodeInfo {
     pub version: Option<String>,
 }
 
+/// True when Node and the config-bridge plugin are present (ignores the toggle).
+/// Used to migrate legacy `configBridge: "auto"` to on/off.
+pub fn deps_available() -> bool {
+    find_node().is_some() && (locate_plugin().is_some() || ensure_plugin().is_some())
+}
+
 pub fn bridge_status(mode: ConfigBridgeMode) -> BridgeStatus {
     let plugin_error = match ensure_plugin() {
         Some(_) => None,
@@ -385,7 +391,6 @@ impl Session {
         let node = find_node();
         let enabled = match mode {
             ConfigBridgeMode::Off => false,
-            ConfigBridgeMode::Auto => node.is_some() && plugin.is_some(),
             ConfigBridgeMode::On => {
                 if node.is_none() {
                     eprintln!("orbitry: config-bridge: Node was not found on PATH");

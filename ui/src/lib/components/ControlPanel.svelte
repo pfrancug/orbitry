@@ -111,6 +111,9 @@
         ? t("script.viaRoot", { name: selectedScript.sourceName || t("script.workspace") })
         : null,
   );
+  const ahkBlockedHint = $derived(
+    selectedScript?.source === "ahk" && startBlocked ? startBlocked : null,
+  );
   const os = $derived(desktopOs());
   const explorerLabel = $derived(
     os === "windows" ? t("panel.explorer.windows") : os === "mac" ? t("panel.explorer.mac") : t("panel.explorer.linux"),
@@ -261,7 +264,9 @@
                 {/if}
               </div>
             {/if}
-            {#if startWarned && !startBlocked}
+            {#if ahkBlockedHint}
+              <p class="hint">{ahkBlockedHint}</p>
+            {:else if startWarned && !startBlocked}
               <p class="hint">{startWarned}</p>
             {/if}
             <div class="panel-actions">

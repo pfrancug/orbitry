@@ -32,6 +32,12 @@ pub struct DetectedScript {
     pub source_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Required AutoHotkey major (`v1` / `v2`) when `source` is Ahk. Present from 0.14.1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ahk_version: Option<String>,
+    /// Why this script cannot be started (e.g. required AHK major missing). Present from 0.14.1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_reason: Option<String>,
 }
 
 impl DetectedScript {
@@ -123,6 +129,8 @@ pub fn detect_scripts(
             source: ScriptSource::Package,
             source_name: None,
             label: None,
+            ahk_version: None,
+            blocked_reason: None,
         });
     }
     detected

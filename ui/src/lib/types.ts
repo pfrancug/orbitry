@@ -4,7 +4,8 @@ export type ProjectKind = "javascript" | "rust" | "python" | "go" | "docker" | "
 export type PartRole = "root" | "fe" | "be" | "shared" | "lib";
 export type PortSource = "default" | "config" | "env" | "flag" | "bridge" | "log" | "process";
 export type DatabaseSource = "env" | "prisma" | "compose" | "dependency" | "file";
-export type ConfigBridgeMode = "auto" | "on" | "off";
+/** Node.js plugin toggle. Legacy `"auto"` is migrated server-side to on/off. */
+export type ConfigBridgeMode = "on" | "off";
 
 export type BridgeState = "available" | "node-missing" | "plugin-missing" | "disabled" | "error";
 
@@ -22,7 +23,9 @@ export type BridgeStatus = {
 
 export type AhkInterpreter = {
   version: string;
-  path: string;
+  /** Present from 0.14.1. Older payloads omit it; treat missing as installed when path is set. */
+  installed?: boolean;
+  path?: string | null;
 };
 
 export type AhkStatus = {
@@ -33,6 +36,7 @@ export type AhkStatus = {
   label: string;
   state?: string;
   reason?: string | null;
+  /** Always lists v1 and v2 from 0.14.1. */
   interpreters?: AhkInterpreter[];
 };
 export type HealthStatus = "unknown" | "ok" | "fail" | "skipped";
@@ -48,6 +52,10 @@ export type DetectedScript = {
   source?: ScriptSource;
   sourceName?: string | null;
   label?: string | null;
+  /** Required AutoHotkey major (`v1` / `v2`). Present from 0.14.1. */
+  ahkVersion?: string | null;
+  /** Why this script cannot be started. Present from 0.14.1. */
+  blockedReason?: string | null;
 };
 
 export type GitInfo = {

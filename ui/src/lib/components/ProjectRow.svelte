@@ -2,10 +2,12 @@
   import { groupDatabases, isJsLike, shortPath, warningsForPart } from "$lib/format";
   import { composeFor, dash, groupMarker as markerForGroup, removedPartsFor, visibleWarnings } from "$lib/dashboard.svelte";
   import { t } from "$lib/i18n.svelte";
+  import { modelsForProject } from "$lib/models.svelte";
   import { runState } from "$lib/runs.svelte";
   import type { RepoGroup as RepoGroupType } from "$lib/types";
   import AppRow from "./AppRow.svelte";
   import ComposeSection from "./ComposeSection.svelte";
+  import AiBadge from "./AiBadge.svelte";
   import DepsBadge from "./DepsBadge.svelte";
   import DbBadge from "./DbBadge.svelte";
   import WarningBadge from "./WarningBadge.svelte";
@@ -47,6 +49,14 @@
   );
   const compose = $derived(composeFor(group.id));
   const databases = $derived(groupDatabases(group));
+  const aiModels = $derived(
+    modelsForProject({
+      projectId: group.id,
+      projectPath: group.path,
+      partIds: (group.parts ?? []).map((part) => part.id),
+      partPaths: (group.parts ?? []).map((part) => part.path),
+    }),
+  );
 </script>
 
 <section class="project" class:open class:live={running.length > 0} class:removed={groupMarker === "removed"}>
@@ -61,11 +71,27 @@
         {:else if failed}
           <span class="dot fail" title={t("projects.failed")}></span>
         {/if}
+        <!-- Tag order: AI → DB → deps → warning (last). -->
+        <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
+          <AiBadge models={aiModels} />
+        </span>
+        {#if databases.length}
+          <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
+            <DbBadge {databases} />
+          </span>
+        {/if}
+        {#if needsInstall}
+          {@const missing = (group.parts ?? []).find((item) => isJsLike(item.kind) && !item.nodeModules)}
+          {#if missing}
+            <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
+              <DepsBadge part={missing} />
+            </span>
+          {/if}
+        {/if}
         <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
           <WarningBadge {warnings} />
         </span>
         {#if groupMarker === "new"}<span class="marker new">{t("common.new")}</span>{/if}
-        {#if groupMarker === "changed"}<span class="marker changed">{t("common.changed")}</span>{/if}
         {#if groupMarker === "removed"}<span class="marker removed">{t("common.removed")}</span>{/if}
       </div>
       <p class="path" title={group.path}>{shortPath(group.path)}</p>
@@ -81,19 +107,6 @@
       {/if}
       {#if versions[0]}
         <span class="badge quiet">v{versions[0]}</span>
-      {/if}
-      {#if needsInstall}
-        {@const missing = (group.parts ?? []).find((item) => isJsLike(item.kind) && !item.nodeModules)}
-        {#if missing}
-          <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
-            <DepsBadge part={missing} />
-          </span>
-        {/if}
-      {/if}
-      {#if databases.length}
-        <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
-          <DbBadge {databases} />
-        </span>
       {/if}
     </div>
   </button>

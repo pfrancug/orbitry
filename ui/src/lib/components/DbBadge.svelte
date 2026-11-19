@@ -3,6 +3,7 @@
   import { t } from "$lib/i18n.svelte";
   import type { DatabaseInfo, ProjectPart } from "$lib/types";
   import Icon from "./Icon.svelte";
+  import HoverPopover from "./HoverPopover.svelte";
 
   let {
     part = null,
@@ -43,10 +44,14 @@
 </script>
 
 {#if items.length}
-  <span class="warn-badge info db-badge" role="note" {title} aria-label={title}>
-    <Icon name="db" size={11} />
-    {label}
-    <span class="warn-popover" role="tooltip">
+  <HoverPopover>
+    {#snippet children()}
+      <span class="tag-badge db-badge" role="note" {title} aria-label={title}>
+        <Icon name="db" size={11} />
+        {label}
+      </span>
+    {/snippet}
+    {#snippet content()}
       <strong>{t("db.title")}</strong>
       <ul class="db-list">
         {#each items as db, index (`${db.engine}-${db.port ?? ""}-${db.path ?? ""}-${index}`)}
@@ -61,19 +66,14 @@
           </li>
         {/each}
       </ul>
-    </span>
-  </span>
+    {/snippet}
+  </HoverPopover>
 {/if}
 
 <style>
-  .db-badge strong {
-    display: block;
-    font-size: 12px;
-    margin-bottom: 6px;
-  }
   .db-list {
     list-style: none;
-    margin: 0;
+    margin: 6px 0 0;
     padding: 0;
     display: grid;
     gap: 4px;
@@ -106,5 +106,9 @@
     color: var(--muted);
     font-size: 11px;
     flex: 0 0 auto;
+  }
+  :global(.hover-popover-layer) strong {
+    display: block;
+    font-size: 12px;
   }
 </style>

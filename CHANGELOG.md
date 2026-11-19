@@ -5,6 +5,20 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-11-19
+
+### Added
+
+- A Databases page lists local databases grouped by project, with file size for on-disk databases and "—" for server databases (Orbitry never connects). Columns are sortable; default sort is project name. The scan cache version is bumped so previous snapshots pick up sizes.
+- Project and app rows show an AI tag when models inventory attributes models to that project. Tag order is AI, database, deps, then warning last, each with a distinct color.
+- Settings shows a Changelog link next to the app version that opens the GitHub CHANGELOG in the default browser.
+- Hover tooltips for warning, deps, database, and AI tags render in a fixed overlay that flips and shifts to stay in the viewport, so they are no longer clipped by expanded project panels.
+
+### Changed
+
+- The "changed" markers on projects and apps are removed. The post-scan notice no longer lists change details; it only reports that the scan is complete.
+- The Models table columns are sortable (click a header to toggle ascending/descending). Default sort is model name ascending.
+
 ## [0.11.0] - 2026-11-19
 
 ### Added

@@ -85,6 +85,10 @@ pub struct DatabaseInfo {
     /// Relative SQLite (or other file) path when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    /// File size in bytes for on-disk databases. Omitted for server DBs
+    /// (compose/env) — Orbitry never connects to measure them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
 }
 
 impl DatabaseInfo {
@@ -107,7 +111,35 @@ pub fn detect_databases(dir: &Path) -> Vec<DatabaseInfo> {
     collect_compose_databases(dir, &mut found);
     collect_dependency_databases(dir, &mut found);
     collect_sqlite_files(dir, &mut found);
-    merge_databases(found)
+    let mut merged = merge_databases(found);
+    attach_file_sizes(dir, &mut merged);
+    merged
+}
+
+/// Fill `size_bytes` for on-disk DB files when the path resolves under the project.
+/// Server DBs (compose/env without a file) stay without a size — we never connect.
+fn attach_file_sizes(dir: &Path, dbs: &mut [DatabaseInfo]) {
+    for db in dbs {
+        if db.size_bytes.is_some() {
+            continue;
+        }
+        let Some(rel) = db.path.as_ref() else {
+            continue;
+        };
+        let candidate = {
+            let path = Path::new(rel);
+            if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                dir.join(path)
+            }
+        };
+        if let Ok(meta) = fs::metadata(&candidate) {
+            if meta.is_file() {
+                db.size_bytes = Some(meta.len());
+            }
+        }
+    }
 }
 
 fn merge_databases(items: Vec<DatabaseInfo>) -> Vec<DatabaseInfo> {
@@ -161,6 +193,9 @@ fn enrich(target: &mut DatabaseInfo, other: &DatabaseInfo) {
     }
     if target.path.is_none() {
         target.path = other.path.clone();
+    }
+    if target.size_bytes.is_none() {
+        target.size_bytes = other.size_bytes;
     }
     // Prefer a more specific source when the existing one is only a weak hint.
     let weak_sources = [DatabaseSource::Dependency, DatabaseSource::Prisma];
@@ -243,6 +278,7 @@ fn database_from_env_pair(key: &str, value: &str) -> Option<DatabaseInfo> {
             host: Some("localhost".into()),
             port: Some(port),
             path: None,
+            size_bytes: None,
         });
     }
     if key_l == "mysql_port" || key_l == "mariadb_port" {
@@ -259,6 +295,7 @@ fn database_from_env_pair(key: &str, value: &str) -> Option<DatabaseInfo> {
             host: Some("localhost".into()),
             port: Some(port),
             path: None,
+            size_bytes: None,
         });
     }
     if key_l == "redis_port" {
@@ -270,6 +307,7 @@ fn database_from_env_pair(key: &str, value: &str) -> Option<DatabaseInfo> {
             host: Some("localhost".into()),
             port: Some(port),
             path: None,
+            size_bytes: None,
         });
     }
     if key_l == "mongo_port" || key_l == "mongodb_port" {
@@ -281,6 +319,7 @@ fn database_from_env_pair(key: &str, value: &str) -> Option<DatabaseInfo> {
             host: Some("localhost".into()),
             port: Some(port),
             path: None,
+            size_bytes: None,
         });
     }
     if key_l == "sqlite_path"
@@ -299,6 +338,7 @@ fn database_from_env_pair(key: &str, value: &str) -> Option<DatabaseInfo> {
             host: None,
             port: None,
             path: Some(shorten_path(value)),
+            size_bytes: None,
         });
     }
     // Host-only hints that clearly point at a local DB engine.
@@ -325,6 +365,7 @@ fn database_from_env_pair(key: &str, value: &str) -> Option<DatabaseInfo> {
             host: Some(normalize_host(value)),
             port: None,
             path: None,
+            size_bytes: None,
         });
     }
     None
@@ -374,6 +415,7 @@ fn parse_connection_url(raw: &str) -> Option<DatabaseInfo> {
             host: None,
             port: None,
             path: Some(path),
+            size_bytes: None,
         });
     }
 
@@ -397,6 +439,7 @@ fn parse_connection_url(raw: &str) -> Option<DatabaseInfo> {
         host: Some(normalize_host(&host)),
         port,
         path: None,
+        size_bytes: None,
     })
 }
 
@@ -636,6 +679,7 @@ fn database_from_prisma(text: &str) -> Option<DatabaseInfo> {
         host,
         port,
         path,
+        size_bytes: None,
     })
 }
 
@@ -686,6 +730,7 @@ fn collect_compose_databases(dir: &Path, out: &mut Vec<DatabaseInfo>) {
             host: Some("localhost".into()),
             port: service.port,
             path: None,
+            size_bytes: None,
         });
     }
 }
@@ -946,6 +991,7 @@ fn collect_dependency_databases(dir: &Path, out: &mut Vec<DatabaseInfo>) {
             host: None,
             port: None,
             path: None,
+            size_bytes: None,
         });
     }
 }
@@ -1118,7 +1164,7 @@ fn engine_from_go_dep(name: &str) -> Option<&'static str> {
 fn collect_sqlite_files(dir: &Path, out: &mut Vec<DatabaseInfo>) {
     let mut files = Vec::new();
     walk_sqlite(dir, dir, 0, &mut files);
-    for rel in files {
+    for (rel, size) in files {
         out.push(DatabaseInfo {
             engine: "sqlite".into(),
             source: DatabaseSource::File,
@@ -1126,11 +1172,12 @@ fn collect_sqlite_files(dir: &Path, out: &mut Vec<DatabaseInfo>) {
             host: None,
             port: None,
             path: Some(rel),
+            size_bytes: size,
         });
     }
 }
 
-fn walk_sqlite(root: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
+fn walk_sqlite(root: &Path, dir: &Path, depth: usize, out: &mut Vec<(String, Option<u64>)>) {
     if out.len() >= MAX_SQLITE_FILES || depth > MAX_SQLITE_DEPTH {
         return;
     }
@@ -1170,9 +1217,11 @@ fn walk_sqlite(root: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
             .map(|p| display_path(p))
             .unwrap_or_else(|_| display_path(&path));
         let rel = rel.replace('\\', "/");
-        if !out.iter().any(|existing| existing == &rel) {
-            out.push(rel);
+        if out.iter().any(|(existing, _)| existing == &rel) {
+            continue;
         }
+        let size = fs::metadata(&path).ok().map(|meta| meta.len());
+        out.push((rel, size));
     }
 }
 

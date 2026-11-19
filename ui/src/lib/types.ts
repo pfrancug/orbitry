@@ -81,6 +81,8 @@ export type DatabaseInfo = {
   host?: string | null;
   port?: number | null;
   path?: string | null;
+  /** File size for on-disk DBs. Omitted for server DBs (never connected). */
+  sizeBytes?: number | null;
 };
 
 export type PortOverride = {

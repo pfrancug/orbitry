@@ -5,6 +5,7 @@
   import { dash } from "$lib/dashboard.svelte";
   import type { ProjectPart } from "$lib/types";
   import Icon from "./Icon.svelte";
+  import HoverPopover from "./HoverPopover.svelte";
 
   let { part }: { part: ProjectPart } = $props();
 
@@ -14,15 +15,14 @@
   const installPending = $derived(isPending(part.id, "install"));
 </script>
 
-<span
-  class="warn-badge deps-badge"
-  role="note"
-  {title}
-  aria-label={title}
->
-  <Icon name="alert" size={11} />
-  {t("deps.badge")}
-  <span class="warn-popover" role="tooltip">
+<HoverPopover>
+  {#snippet children()}
+    <span class="tag-badge deps-badge" role="note" {title} aria-label={title}>
+      <Icon name="alert" size={11} />
+      {t("deps.badge")}
+    </span>
+  {/snippet}
+  {#snippet content()}
     <strong>{t("deps.status")}</strong>
     <span class="hint">{t("deps.statusHint", { command })}</span>
     <button
@@ -37,18 +37,18 @@
     >
       {installLive || installPending ? t("deps.installing") : t("deps.install")}
     </button>
-  </span>
-</span>
+  {/snippet}
+</HoverPopover>
 
 <style>
-  .deps-badge .hint {
+  .hint {
     display: block;
     margin: 4px 0 8px;
     color: var(--muted);
     font-size: 12px;
     font-weight: 400;
   }
-  .deps-badge strong {
+  :global(.hover-popover-layer) strong {
     display: block;
     font-size: 12px;
   }

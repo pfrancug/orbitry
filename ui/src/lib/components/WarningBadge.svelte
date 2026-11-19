@@ -3,6 +3,7 @@
   import { issueWarnings, warningSummaryLabel } from "$lib/format";
   import Icon from "./Icon.svelte";
   import WarningList from "./WarningList.svelte";
+  import HoverPopover from "./HoverPopover.svelte";
 
   let { warnings = [] }: { warnings?: AppWarning[] } = $props();
 
@@ -18,17 +19,21 @@
 </script>
 
 {#if count}
-  <span
-    class="warn-badge"
-    class:danger
-    class:info={!issues.length}
-    {title}
-    aria-label={title}
-  >
-    <Icon name="alert" size={11} />
-    {count}
-    <span class="warn-popover" role="tooltip">
+  <HoverPopover>
+    {#snippet children()}
+      <span
+        class="tag-badge warn-badge"
+        class:danger
+        class:info={!issues.length}
+        {title}
+        aria-label={title}
+      >
+        <Icon name="alert" size={11} />
+        {count}
+      </span>
+    {/snippet}
+    {#snippet content()}
       <WarningList {warnings} compact />
-    </span>
-  </span>
+    {/snippet}
+  </HoverPopover>
 {/if}

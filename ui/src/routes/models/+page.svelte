@@ -20,6 +20,12 @@
     usedBy?: ModelUsage[];
   };
 
+  type SortKey = "name" | "size" | "location" | "usedBy";
+  type SortDir = "asc" | "desc";
+
+  let sortKey = $state<SortKey>("name");
+  let sortDir = $state<SortDir>("asc");
+
   function flatten(inv: ModelsInventory): FlatModel[] {
     const rows: FlatModel[] = [];
     for (const model of inv.ollama?.models ?? []) {
@@ -58,32 +64,8 @@
         });
       }
     }
-    return rows.sort((a, b) => b.sizeBytes - a.sizeBytes || a.name.localeCompare(b.name));
+    return rows;
   }
-
-  const rows = $derived(inventory ? flatten(inventory) : []);
-  const sourceCount = $derived.by(() => {
-    if (!inventory) return 0;
-    const labels = new Set<string>();
-    if (inventory.ollama?.models?.length) labels.add("ollama");
-    for (const cache of inventory.caches ?? []) {
-      if (cache.models?.length) labels.add(cache.id);
-    }
-    for (const project of inventory.projectFiles ?? []) {
-      if (project.files?.length) labels.add(project.projectId);
-    }
-    return labels.size;
-  });
-
-  let expanded = $state(new Set<string>());
-
-  function toggle(key: string) {
-    const next = new Set(expanded);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    expanded = next;
-  }
-
 
   function usageNames(usages: ModelUsage[] | undefined): string[] {
     const names: string[] = [];
@@ -107,6 +89,59 @@
       }
     }
     return paths;
+  }
+
+  function compare(a: FlatModel, b: FlatModel): number {
+    const dir = sortDir === "asc" ? 1 : -1;
+    if (sortKey === "size") {
+      return (a.sizeBytes - b.sizeBytes) * dir || a.name.localeCompare(b.name);
+    }
+    if (sortKey === "location") {
+      return a.location.localeCompare(b.location) * dir || a.name.localeCompare(b.name);
+    }
+    if (sortKey === "usedBy") {
+      const an = usageNames(a.usedBy).join(", ");
+      const bn = usageNames(b.usedBy).join(", ");
+      return an.localeCompare(bn) * dir || a.name.localeCompare(b.name);
+    }
+    return a.name.localeCompare(b.name) * dir || b.sizeBytes - a.sizeBytes;
+  }
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      sortDir = sortDir === "asc" ? "desc" : "asc";
+    } else {
+      sortKey = key;
+      sortDir = key === "size" ? "desc" : "asc";
+    }
+  }
+
+  function sortIndicator(key: SortKey): string {
+    if (sortKey !== key) return "";
+    return sortDir === "asc" ? " ↑" : " ↓";
+  }
+
+  const rows = $derived(inventory ? flatten(inventory).sort(compare) : []);
+  const sourceCount = $derived.by(() => {
+    if (!inventory) return 0;
+    const labels = new Set<string>();
+    if (inventory.ollama?.models?.length) labels.add("ollama");
+    for (const cache of inventory.caches ?? []) {
+      if (cache.models?.length) labels.add(cache.id);
+    }
+    for (const project of inventory.projectFiles ?? []) {
+      if (project.files?.length) labels.add(project.projectId);
+    }
+    return labels.size;
+  });
+
+  let expanded = $state(new Set<string>());
+
+  function toggle(key: string) {
+    const next = new Set(expanded);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    expanded = next;
   }
 
   function scanLine(): string {
@@ -176,10 +211,18 @@
     {#if rows.length}
       <div class="model-table">
         <div class="model-head" role="row">
-          <span>{t("models.col.model")}</span>
-          <span>{t("models.col.size")}</span>
-          <span>{t("models.col.location")}</span>
-          <span>{t("models.col.usedBy")}</span>
+          <button type="button" class="sort-btn" class:active={sortKey === "name"} onclick={() => toggleSort("name")}>
+            {t("models.col.model")}{sortIndicator("name")}
+          </button>
+          <button type="button" class="sort-btn num" class:active={sortKey === "size"} onclick={() => toggleSort("size")}>
+            {t("models.col.size")}{sortIndicator("size")}
+          </button>
+          <button type="button" class="sort-btn" class:active={sortKey === "location"} onclick={() => toggleSort("location")}>
+            {t("models.col.location")}{sortIndicator("location")}
+          </button>
+          <button type="button" class="sort-btn" class:active={sortKey === "usedBy"} onclick={() => toggleSort("usedBy")}>
+            {t("models.col.usedBy")}{sortIndicator("usedBy")}
+          </button>
         </div>
       <ul class="model-list">
         {#each rows as row (row.key)}
@@ -295,7 +338,7 @@
     align-items: center;
   }
   .model-head {
-    padding: 8px 12px;
+    padding: 4px 6px;
     border-bottom: 1px solid var(--line);
     color: var(--muted);
     font-size: 11px;
@@ -303,7 +346,24 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
-  .model-head span:nth-child(2) { text-align: right; }
+  .sort-btn {
+    margin: 0;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+    cursor: pointer;
+  }
+  .sort-btn.num { text-align: right; }
+  .sort-btn:hover,
+  .sort-btn.active { color: var(--text); background: rgba(255, 255, 255, 0.04); }
   .model-list {
     list-style: none;
     margin: 0;

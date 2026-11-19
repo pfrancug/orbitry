@@ -4,6 +4,9 @@
   import { i18n, setLocale, t, type Locale } from "$lib/i18n.svelte";
   import { checkForUpdate, installUpdate, update } from "$lib/update.svelte";
   import type { ConfigBridgeMode, OpenInKind, ScriptKind, ScriptScope } from "$lib/types";
+  import Icon from "./Icon.svelte";
+
+  const CHANGELOG_URL = "https://github.com/pfrancug/orbitry/blob/main/CHANGELOG.md";
 
   const locale = $derived(i18n.locale);
 
@@ -283,15 +286,21 @@
 
   <section class="settings-card">
     <h2 class="settings-heading">{t("settings.updates")}</h2>
-    <p class="hint">
-      {t("settings.updatesOn", { version: update.current || "dev" })}
-      {#if update.dev}
-        {t("settings.updatesDev")}
-      {:else if update.updateAvailable && update.latest}
-        {t("settings.updatesAvailable", { version: update.latest })}
-      {:else if update.latest}
-        {t("settings.updatesCurrent")}
-      {/if}
+    <p class="hint version-line">
+      <span>
+        {t("settings.updatesOn", { version: update.current || "dev" })}
+        {#if update.dev}
+          {t("settings.updatesDev")}
+        {:else if update.updateAvailable && update.latest}
+          {t("settings.updatesAvailable", { version: update.latest })}
+        {:else if update.latest}
+          {t("settings.updatesCurrent")}
+        {/if}
+      </span>
+      <a class="changelog-link" href={CHANGELOG_URL} target="_blank" rel="noreferrer">
+        <Icon name="external" size={12} />
+        {t("settings.changelog")}
+      </a>
     </p>
     <label class="check-row">
       <input
@@ -370,4 +379,21 @@
   .update-inline .hint { margin: 0; }
   .update-inline .error { color: var(--danger); }
   .update-inline a { color: var(--accent); }
+  .version-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.75rem;
+  }
+  .changelog-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.88rem;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .changelog-link:hover { text-decoration: underline; }
 </style>

@@ -18,6 +18,7 @@
   const items = $derived([
     { href: "/", label: t("nav.overview"), icon: "overview", exact: true },
     { href: "/projects", label: t("nav.projects"), icon: "projects", exact: false },
+    { href: "/databases", label: t("nav.databases"), icon: "db", exact: false },
     { href: "/models", label: t("nav.models"), icon: "models", exact: false },
     { href: "/logs", label: t("nav.logs"), icon: "logs", exact: false },
     { href: "/settings", label: t("nav.settings"), icon: "settings", exact: false },

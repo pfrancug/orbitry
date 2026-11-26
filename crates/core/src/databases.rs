@@ -111,6 +111,7 @@ pub fn detect_databases(dir: &Path) -> Vec<DatabaseInfo> {
     collect_compose_databases(dir, &mut found);
     collect_dependency_databases(dir, &mut found);
     collect_sqlite_files(dir, &mut found);
+    collect_coredata_models(dir, &mut found);
     let mut merged = merge_databases(found);
     attach_file_sizes(dir, &mut merged);
     merged
@@ -983,6 +984,11 @@ fn collect_dependency_databases(dir: &Path, out: &mut Vec<DatabaseInfo>) {
             }
         }
     }
+    for name in crate::swift::read_swift_dep_tokens(dir) {
+        if let Some(engine) = engine_from_swift_dep(&name) {
+            engines.insert(engine.to_string());
+        }
+    }
     for engine in engines {
         out.push(DatabaseInfo {
             engine,
@@ -1159,6 +1165,53 @@ fn engine_from_go_dep(name: &str) -> Option<&'static str> {
         return Some("sqlite");
     }
     None
+}
+
+fn engine_from_swift_dep(name: &str) -> Option<&'static str> {
+    let n = name.to_ascii_lowercase();
+    if n.contains("sqlite") || n == "grdb" || n.contains("grdb") {
+        return Some("sqlite");
+    }
+    if n.contains("swiftdata") || n.contains("coredata") {
+        return Some("coredata");
+    }
+    if n.contains("postgres") || n.contains("postgresql") || n.contains("postgresnio") {
+        return Some("postgres");
+    }
+    if n.contains("mysql") || n.contains("mariadb") {
+        return Some("mysql");
+    }
+    if n.contains("mongodb") || n.contains("mongokitten") {
+        return Some("mongodb");
+    }
+    if n.contains("redis") || n.contains("rediskit") {
+        return Some("redis");
+    }
+    None
+}
+
+fn collect_coredata_models(dir: &Path, out: &mut Vec<DatabaseInfo>) {
+    for path in crate::swift::find_xcdatamodeld(dir) {
+        let rel = path
+            .strip_prefix(dir)
+            .map(|p| display_path(p))
+            .unwrap_or_else(|_| display_path(&path))
+            .replace('\\', "/");
+        if out.iter().any(|item| {
+            item.engine == "coredata" && item.path.as_deref() == Some(rel.as_str())
+        }) {
+            continue;
+        }
+        out.push(DatabaseInfo {
+            engine: "coredata".into(),
+            source: DatabaseSource::File,
+            detail: Some("Core Data model".into()),
+            host: None,
+            port: None,
+            path: Some(rel),
+            size_bytes: None,
+        });
+    }
 }
 
 fn collect_sqlite_files(dir: &Path, out: &mut Vec<DatabaseInfo>) {

@@ -326,6 +326,66 @@ const mocks = {
           }),
         ],
       },
+      {
+        id: "orbit-ios",
+        path: "/path/to/projects/orbit-ios",
+        name: "orbit-ios",
+        folder: "orbit-ios",
+        version: "1.2.0",
+        kind: "swift",
+        framework: "xcodegen",
+        git: { branch: "main", commit: "a1b2c3d", dirty: false },
+        build: { built: false, dir: null, stale: false, lastBuiltAt: null },
+        nodeModules: false,
+        parts: [
+          part({
+            id: "orbit-ios",
+            name: "orbit-ios",
+            path: "/path/to/projects/orbit-ios",
+            role: "root",
+            kind: "swift",
+            framework: "xcodegen",
+            nodeModules: false,
+            scripts: [],
+            databases: [
+              {
+                engine: "coredata",
+                source: "file",
+                path: "App/Model.xcdatamodeld",
+                detail: "Core Data model",
+              },
+              { engine: "sqlite", source: "dependency", detail: "package manifest" },
+            ],
+            aiDependencies: [],
+          }),
+        ],
+      },
+      {
+        id: "scratch-notes",
+        path: "/path/to/projects/scratch-notes",
+        name: "scratch-notes",
+        folder: "scratch-notes",
+        version: null,
+        kind: "generic",
+        framework: null,
+        git: { branch: "main", commit: "deadbeef", dirty: true },
+        build: { built: false, dir: null, stale: false, lastBuiltAt: null },
+        nodeModules: false,
+        parts: [
+          part({
+            id: "scratch-notes",
+            name: "scratch-notes",
+            path: "/path/to/projects/scratch-notes",
+            role: "root",
+            kind: "generic",
+            framework: null,
+            nodeModules: false,
+            scripts: [],
+            databases: [],
+            aiDependencies: [],
+          }),
+        ],
+      },
     ],
     warnings: [],
     scan: {
@@ -697,6 +757,24 @@ async function runSmoke(base) {
     // Projects must not show crash/fail dots — only running indicators.
     const failDots = await page.locator(".project-row .dot.fail, .app-row .status-dot.fail").count();
     if (failDots) errors.push(`Projects page still shows ${failDots} fail indicator(s)`);
+
+    // Swift + bare-git projects: tech tag, empty scripts, no crash.
+    const projectNames = await page.locator(".project-row h2").allTextContents();
+    if (!projectNames.some((name) => /orbit-ios/i.test(name))) errors.push("orbit-ios Swift project missing from list");
+    if (!projectNames.some((name) => /scratch-notes/i.test(name))) errors.push("scratch-notes generic project missing from list");
+    const swiftBadge = await page.locator(".project-row .tech-badge.tech-swift").count();
+    if (!swiftBadge) errors.push("Swift tech badge missing on Projects page");
+    for (const label of ["orbit-ios", "scratch-notes"]) {
+      const row = page.locator(".project-row", { hasText: label }).first();
+      if (await row.count()) {
+        await row.click();
+        await page.waitForTimeout(80);
+      }
+    }
+    const noScripts = await page.locator(".app-row", { hasText: "orbit-ios" }).locator("text=/No runnable scripts|Brak uruchamialnych/i").count();
+    const genericEmpty = await page.locator(".app-row", { hasText: "scratch-notes" }).locator("text=/No runnable scripts|Brak uruchamialnych/i").count();
+    if (!noScripts) errors.push("Swift project missing empty runnable-scripts state");
+    if (!genericEmpty) errors.push("Generic git project missing empty runnable-scripts state");
 
     // Settings categories + Plugins / Appearance.
     await page.goto(`${base}/settings`, { waitUntil: "networkidle" });

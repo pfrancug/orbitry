@@ -151,7 +151,14 @@ fn build_group(id: String, members: Vec<Project>) -> RepoGroup {
                 project
                     .framework
                     .clone()
-                    .filter(|value| value != "rust" && value != "python" && value != "go")
+                    .filter(|value| {
+                        value != "rust"
+                            && value != "python"
+                            && value != "go"
+                            && value != "swift"
+                            && value != "xcode"
+                            && value != "xcodegen"
+                    })
             })
         })
         .or_else(|| members.iter().find_map(|project| project.framework.clone()));

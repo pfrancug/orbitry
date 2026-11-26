@@ -23,6 +23,7 @@ mod process;
 mod scan;
 mod scan_cache;
 mod scripts;
+mod swift;
 mod util;
 mod warnings;
 

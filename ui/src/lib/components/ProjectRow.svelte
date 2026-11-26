@@ -10,6 +10,7 @@
   import AiBadge from "./AiBadge.svelte";
   import DepsBadge from "./DepsBadge.svelte";
   import DbBadge from "./DbBadge.svelte";
+  import TechBadge from "./TechBadge.svelte";
   import WarningBadge from "./WarningBadge.svelte";
 
   let {
@@ -45,6 +46,11 @@
   const compose = $derived(composeFor(group.id));
   const databases = $derived(groupDatabases(group));
   const aiSignals = $derived(aiSignalsForProject({ group }));
+  const techKind = $derived(
+    group.kind === "swift" || (group.parts ?? []).some((part) => part.kind === "swift")
+      ? "swift"
+      : group.kind,
+  );
 </script>
 
 <section class="project" class:open class:live={running.length > 0} class:removed={groupMarker === "removed"}>
@@ -57,7 +63,10 @@
           <span class="pulse" title={t("projects.runningLabel")} aria-label={t("projects.runningLabel")}></span>
           <span class="run-count">{running.length}</span>
         {/if}
-        <!-- Tag order: AI → DB → deps → warning (last). -->
+        <!-- Tag order: tech (Swift) → AI → DB → deps → warning (last). -->
+        <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
+          <TechBadge kind={techKind} />
+        </span>
         <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
           <AiBadge signals={aiSignals} />
         </span>

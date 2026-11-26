@@ -13,6 +13,7 @@ use crate::git::{detect_git, GitInfo};
 use crate::ports::{apply_port_overrides, detect_static_ports, PortInfo};
 use crate::ahk::{ahk_active, detect_ahk_scripts, dir_has_ahk};
 use crate::scripts::{detect_scripts, guess_js_framework, DetectedScript};
+use crate::swift::{self, is_swift_project};
 
 const SKIP_DIRS: &[&str] = &[
     "node_modules",
@@ -40,6 +41,10 @@ pub enum ProjectKind {
     Docker,
     /// Folder with top-level `.ahk` scripts (AutoHotkey plugin). Present from 0.14.0.
     Ahk,
+    /// Swift / Apple (SPM, Xcode, or XcodeGen). Present from 0.15.0.
+    Swift,
+    /// Bare git checkout with no language manifest. Present from 0.15.0.
+    Generic,
     Mixed,
 }
 
@@ -105,7 +110,10 @@ pub fn scan(config: &Config) -> Vec<Project> {
         if !root.exists() {
             continue;
         }
-        if is_project(&root, config) {
+        // Language / manifest projects at the root win and keep the existing
+        // nesting rules (workspace members only). A bare `.git` at the root
+        // must not block scanning children of a monorepo folder.
+        if is_language_project(&root, config) {
             collect_project(&root, None, config, &mut seen, &mut projects);
             continue;
         }
@@ -118,10 +126,16 @@ pub fn scan(config: &Config) -> Vec<Project> {
             .filter(|path| path.is_dir() && !should_skip(path))
             .collect();
         children.sort();
+        let before = projects.len();
         for child in children {
             if is_project(&child, config) {
                 collect_project(&child, None, config, &mut seen, &mut projects);
             }
+        }
+        // Only treat the configured root as a bare-git project when nothing
+        // else under it was recognised.
+        if projects.len() == before && is_git_only_project(&root, config) {
+            collect_project(&root, None, config, &mut seen, &mut projects);
         }
     }
     projects.sort_by(|a, b| {
@@ -158,7 +172,8 @@ fn collect_project(
             if member == dir {
                 continue;
             }
-            if is_project(&member, config) {
+            // Workspace members must be language packages — never bare-git fillers.
+            if is_language_project(&member, config) {
                 collect_project(&member, Some(id.clone()), config, seen, projects);
             }
         }
@@ -177,8 +192,18 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
         || dir.join("compose.yml").exists()
         || dir.join("compose.yaml").exists();
     let has_ahk = ahk_active(config) && dir_has_ahk(dir);
+    let has_swift = is_swift_project(dir);
+    let has_git_only = is_git_only_project(dir, config);
 
-    if !has_js && !has_rust && !has_python && !has_go && !has_docker && !has_ahk {
+    if !has_js
+        && !has_rust
+        && !has_python
+        && !has_go
+        && !has_docker
+        && !has_ahk
+        && !has_swift
+        && !has_git_only
+    {
         return None;
     }
 
@@ -186,14 +211,30 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
     let mut version = None;
     let mut scripts = Vec::new();
     let mut framework = None;
-    let mut kind = match (has_js, has_rust, has_python, has_go, has_docker, has_ahk) {
-        (true, false, false, false, _, false) => ProjectKind::Javascript,
-        (false, true, false, false, _, false) => ProjectKind::Rust,
-        (false, false, true, false, _, false) => ProjectKind::Python,
-        (false, false, false, true, _, false) => ProjectKind::Go,
-        (false, false, false, false, true, false) => ProjectKind::Docker,
-        (false, false, false, false, false, true) => ProjectKind::Ahk,
-        _ => ProjectKind::Mixed,
+    let language_count = [
+        has_js, has_rust, has_python, has_go, has_docker, has_ahk, has_swift,
+    ]
+    .into_iter()
+    .filter(|v| *v)
+    .count();
+    let mut kind = if language_count > 1 {
+        ProjectKind::Mixed
+    } else if has_js {
+        ProjectKind::Javascript
+    } else if has_rust {
+        ProjectKind::Rust
+    } else if has_python {
+        ProjectKind::Python
+    } else if has_go {
+        ProjectKind::Go
+    } else if has_docker {
+        ProjectKind::Docker
+    } else if has_ahk {
+        ProjectKind::Ahk
+    } else if has_swift {
+        ProjectKind::Swift
+    } else {
+        ProjectKind::Generic
     };
 
     if has_js {
@@ -225,9 +266,21 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
         scripts.extend(detect_ahk_scripts(dir, &existing));
         if framework.is_none() {
             framework = Some("autohotkey".to_string());
-        } else if !has_js || has_rust || has_python || has_go {
+        }
+        if has_js || has_rust || has_python || has_go || has_swift {
             kind = ProjectKind::Mixed;
-        } else if has_js {
+        }
+    }
+
+    if has_swift {
+        if let Some(pkg_name) = swift::read_package_swift_name(dir) {
+            if !has_js {
+                name = pkg_name;
+            }
+        }
+        if framework.is_none() {
+            framework = Some(swift::swift_framework(dir).to_string());
+        } else {
             kind = ProjectKind::Mixed;
         }
     }
@@ -258,6 +311,7 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
             framework = Some("docker".to_string());
         }
     } else if has_rust || has_python || has_go {
+        // Swift mixing is handled above when a JS framework was already set.
         kind = ProjectKind::Mixed;
     }
 
@@ -282,7 +336,8 @@ fn inspect_project(dir: &Path, parent: Option<String>, config: &Config) -> Optio
     })
 }
 
-fn is_project(dir: &Path, config: &Config) -> bool {
+/// Manifest / language project (not bare-git fallback).
+fn is_language_project(dir: &Path, config: &Config) -> bool {
     dir.join("package.json").exists()
         || dir.join("Cargo.toml").exists()
         || dir.join("pyproject.toml").exists()
@@ -293,6 +348,16 @@ fn is_project(dir: &Path, config: &Config) -> bool {
         || dir.join("compose.yml").exists()
         || dir.join("compose.yaml").exists()
         || (ahk_active(config) && dir_has_ahk(dir))
+        || is_swift_project(dir)
+}
+
+fn is_git_only_project(dir: &Path, config: &Config) -> bool {
+    dir.join(".git").exists() && !is_language_project(dir, config)
+}
+
+/// Language project or bare-git fallback.
+fn is_project(dir: &Path, config: &Config) -> bool {
+    is_language_project(dir, config) || is_git_only_project(dir, config)
 }
 
 fn should_skip(path: &Path) -> bool {

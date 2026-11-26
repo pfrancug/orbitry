@@ -5,6 +5,13 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-11-26
+
+### Added
+
+- Scanner recognises Swift / Apple projects via `Package.swift`, `*.xcodeproj` / `*.xcworkspace`, or an XcodeGen `project.yml` (`name:` + `targets:`). They show a Swift tech tag, usual git / DB / AI signals (including Package.swift / XcodeGen packages and `*.xcdatamodeld`), and no runnable scripts.
+- Fallback: a folder with its own `.git` that matches no language manifest is still listed as a generic project (no scripts). Bare-git roots do not block scanning language children of a monorepo folder. Scan cache version bumped.
+
 ## [0.14.3] - 2026-11-26
 
 ### Fixed

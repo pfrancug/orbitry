@@ -1,6 +1,15 @@
 export type ScriptKind = "dev" | "preview" | "build" | "other";
 export type ScriptScope = "fe" | "be" | "shared";
-export type ProjectKind = "javascript" | "rust" | "python" | "go" | "docker" | "ahk" | "mixed";
+export type ProjectKind =
+  | "javascript"
+  | "rust"
+  | "python"
+  | "go"
+  | "docker"
+  | "ahk"
+  | "swift"
+  | "generic"
+  | "mixed";
 export type PartRole = "root" | "fe" | "be" | "shared" | "lib";
 export type PortSource = "default" | "config" | "env" | "flag" | "bridge" | "log" | "process";
 export type DatabaseSource = "env" | "prisma" | "compose" | "dependency" | "file";

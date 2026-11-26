@@ -55,13 +55,42 @@ const PYTHON_AI_PACKAGES: &[&str] = &[
     "vllm",
 ];
 
+const SWIFT_AI_PACKAGES: &[&str] = &[
+    "mlx",
+    "mlx-swift",
+    "mlxsmooth",
+    "whisperkit",
+    "whisper.swift",
+    "openai",
+    "openai-kit",
+    "swiftopenai",
+    "langchain",
+    "similaritysearchkit",
+    "tokenizers",
+    "coreml",
+    "createml",
+];
+
 /// Detect AI dependency / tooling names under a project directory.
 pub fn detect_ai_dependencies(dir: &Path) -> Vec<String> {
     let mut found = BTreeSet::new();
     collect_js_ai(dir, &mut found);
     collect_python_ai(dir, &mut found);
+    collect_swift_ai(dir, &mut found);
     collect_path_hints(dir, &mut found);
     found.into_iter().collect()
+}
+
+fn collect_swift_ai(dir: &Path, out: &mut BTreeSet<String>) {
+    for token in crate::swift::read_swift_dep_tokens(dir) {
+        let lower = token.to_ascii_lowercase();
+        if SWIFT_AI_PACKAGES
+            .iter()
+            .any(|item| lower == *item || lower.contains(item))
+        {
+            out.insert(token);
+        }
+    }
 }
 
 fn collect_js_ai(dir: &Path, out: &mut BTreeSet<String>) {

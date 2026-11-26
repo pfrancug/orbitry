@@ -9,6 +9,7 @@
   import WarningBadge from "./WarningBadge.svelte";
   import DepsBadge from "./DepsBadge.svelte";
   import DbBadge from "./DbBadge.svelte";
+  import TechBadge from "./TechBadge.svelte";
   import ResourceChip from "./ResourceChip.svelte";
   import { runMetrics } from "$lib/metrics.svelte";
   import { aiSignalsForProject } from "$lib/models.svelte";
@@ -80,13 +81,16 @@
           aria-label={live ? t("projects.runningLabel") : undefined}
         ></span>
         <strong title={part.name}>{partTitle(part)}</strong>
-        {#if part.framework}
+        {#if part.framework && part.kind !== "swift" && part.framework !== "swift" && part.framework !== "xcode" && part.framework !== "xcodegen"}
           <span class="muted framework-tag">{part.framework}</span>
         {/if}
         {#if ahkProjectHint}
           <span class="muted framework-tag" title={ahkProjectHint}>{ahkProjectHint}</span>
         {/if}
-        <!-- Tag order: AI → DB → deps → warning (last). -->
+        <!-- Tag order: tech (Swift) → AI → DB → deps → warning (last). -->
+        <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
+          <TechBadge kind={part.kind} />
+        </span>
         <span onclick={(event) => event.stopPropagation()} onkeydown={(event) => event.stopPropagation()} role="presentation">
           <AiBadge signals={aiSignals} />
         </span>

@@ -36,7 +36,6 @@
   } from "$lib/runs.svelte";
   import type { Run } from "$lib/types";
   import Icon from "$lib/components/Icon.svelte";
-  import ActionMenu from "$lib/components/ActionMenu.svelte";
   import PortChips from "$lib/components/PortChips.svelte";
   import WarningBadge from "$lib/components/WarningBadge.svelte";
   import ResourceMeter from "$lib/components/ResourceMeter.svelte";
@@ -281,10 +280,9 @@
                 >
                   <Icon name="logs" />
                 </button>
-                <ActionMenu title={t("overview.more")}>
                   <button
+                    class="icon-btn ghost"
                     type="button"
-                    role="menuitem"
                     disabled={pending || Boolean(startBlockReason(run.partId, run.script))}
                     onclick={(event) => {
                       event.stopPropagation();
@@ -294,9 +292,8 @@
                     {t("overview.restart")}
                   </button>
                   <button
+                    class="icon-btn danger"
                     type="button"
-                    role="menuitem"
-                    class="danger"
                     disabled={pending}
                     onclick={(event) => {
                       event.stopPropagation();
@@ -305,7 +302,6 @@
                   >
                     {t("overview.stop")}
                   </button>
-                </ActionMenu>
               </td>
             </tr>
           {/each}

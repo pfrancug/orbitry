@@ -273,6 +273,7 @@
                   class="icon-btn ghost"
                   type="button"
                   title={t("overview.logs")}
+                  aria-label={t("overview.logs")}
                   onclick={(event) => {
                     event.stopPropagation();
                     showLogs(run);
@@ -280,28 +281,32 @@
                 >
                   <Icon name="logs" />
                 </button>
-                  <button
-                    class="icon-btn ghost"
-                    type="button"
-                    disabled={pending || Boolean(startBlockReason(run.partId, run.script))}
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      restartScript(run.partId, run.script, dash.groups);
-                    }}
-                  >
-                    {t("overview.restart")}
-                  </button>
-                  <button
-                    class="icon-btn danger"
-                    type="button"
-                    disabled={pending}
-                    onclick={(event) => {
-                      event.stopPropagation();
-                      stopScript(run.partId, run.script);
-                    }}
-                  >
-                    {t("overview.stop")}
-                  </button>
+                <button
+                  class="icon-btn ghost"
+                  type="button"
+                  title={t("overview.restart")}
+                  aria-label={t("overview.restart")}
+                  disabled={pending || Boolean(startBlockReason(run.partId, run.script))}
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    restartScript(run.partId, run.script, dash.groups);
+                  }}
+                >
+                  <Icon name="restart" />
+                </button>
+                <button
+                  class="icon-btn ghost danger"
+                  type="button"
+                  title={t("overview.stop")}
+                  aria-label={t("overview.stop")}
+                  disabled={pending}
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    stopScript(run.partId, run.script);
+                  }}
+                >
+                  <Icon name="stop" />
+                </button>
               </td>
             </tr>
           {/each}

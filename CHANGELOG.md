@@ -5,6 +5,18 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.3] - 2026-11-26
+
+### Fixed
+
+- Overview running-row Restart and Stop are icon buttons again (same size and alignment as Logs and other row actions). Removing the overflow menu in 0.14.2 had left text labels inside icon-sized controls.
+
+## [0.14.2] - 2026-11-26
+
+### Changed
+
+- Overview running-row actions no longer use the overflow ActionMenu; Restart and Stop are direct row buttons.
+
 ## [0.14.1] - 2026-11-19
 
 ### Changed

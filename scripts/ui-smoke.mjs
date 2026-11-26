@@ -348,7 +348,44 @@ const mocks = {
     ],
   },
   "GET /api/config": null,
-  "GET /api/runs": { runs: [], warnings: [] },
+  "GET /api/runs": {
+    runs: [
+      {
+        id: "run-demo-dev",
+        partId: "demo-app/web",
+        partName: "web",
+        partPath: "/path/to/projects/demo-app/web",
+        script: "dev",
+        command: "npm run dev",
+        cwd: "/path/to/projects/demo-app/web",
+        pid: 4242,
+        status: "running",
+        exitCode: null,
+        startedAt: Date.now() - 60_000,
+        endedAt: null,
+        ports: [{ port: 5173, source: "default", url: "http://127.0.0.1:5173" }],
+        health: { status: "ok", url: "http://127.0.0.1:5173", checkedAt: Date.now() },
+      },
+      {
+        id: "run-demo-build",
+        partId: "demo-app/web",
+        partName: "web",
+        partPath: "/path/to/projects/demo-app/web",
+        script: "build",
+        command: "npm run build",
+        cwd: "/path/to/projects/demo-app/web",
+        pid: null,
+        status: "exited",
+        exitCode: 0,
+        stopRequested: true,
+        startedAt: Date.now() - 120_000,
+        endedAt: Date.now() - 30_000,
+        ports: [],
+        health: { status: "unknown", url: null, checkedAt: null },
+      },
+    ],
+    warnings: [],
+  },
   "GET /api/version": { current: "0.6.0", latest: "0.6.0", updateAvailable: false, dev: true },
   "GET /api/update/status": { current: "0.6.0", latest: "0.6.0", updateAvailable: false, dev: true },
   "GET /api/tools": { vscodeInstalled: false },
@@ -523,6 +560,8 @@ async function runSmoke(base) {
       const text = msg.text();
       // Expected during the models-failure resilience check.
       if (expectingModelsFailure && /500|Failed to load resource/i.test(text)) return;
+      // Smoke HTTP server has no log WebSocket; visiting /logs with a mock run is expected noise.
+      if (/WebSocket connection to .*\/api\/runs\/.+\/logs/i.test(text)) return;
       errors.push(`console: ${text}`);
     });
 
@@ -545,6 +584,51 @@ async function runSmoke(base) {
     if (withNotice !== withoutNotice) {
       errors.push(`main content top offset changed with notices: ${withNotice} vs ${withoutNotice}`);
     }
+
+    // Overview running row: icon-only Logs / Restart / Stop (no ActionMenu, no text labels).
+    await page.waitForSelector(".run-table .row-actions", { timeout: 10_000 });
+    const runningActions = await page.locator(".run-table tbody tr").first().locator(".row-actions button").evaluateAll((buttons) =>
+      buttons.map((btn) => {
+        const rect = btn.getBoundingClientRect();
+        return {
+          title: btn.getAttribute("title") || "",
+          aria: btn.getAttribute("aria-label") || "",
+          text: (btn.textContent || "").replace(/\s+/g, " ").trim(),
+          hasSvg: Boolean(btn.querySelector("svg.icon")),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+          classes: btn.className,
+        };
+      }),
+    );
+    if (runningActions.length < 3) {
+      errors.push(`overview running row expected 3 action buttons, got ${runningActions.length}`);
+    } else {
+      const [logsBtn, restartBtn, stopBtn] = runningActions;
+      if (!/log/i.test(logsBtn.title || logsBtn.aria) || !logsBtn.hasSvg || logsBtn.text) {
+        errors.push(`overview logs button broken: ${JSON.stringify(logsBtn)}`);
+      }
+      if (!/restart|ponownie/i.test(restartBtn.title || restartBtn.aria) || !restartBtn.hasSvg || restartBtn.text) {
+        errors.push(`overview restart button broken: ${JSON.stringify(restartBtn)}`);
+      }
+      if (!/stop|zatrzymaj/i.test(stopBtn.title || stopBtn.aria) || !stopBtn.hasSvg || stopBtn.text) {
+        errors.push(`overview stop button broken: ${JSON.stringify(stopBtn)}`);
+      }
+      if (!stopBtn.classes.includes("danger")) {
+        errors.push(`overview stop button missing danger class: ${stopBtn.classes}`);
+      }
+      const sizes = runningActions.map((btn) => `${btn.width}x${btn.height}`);
+      if (new Set(sizes).size !== 1) {
+        errors.push(`overview running action buttons unequal size: ${sizes.join(", ")}`);
+      }
+    }
+    // Stopped/recently-done row should still expose icon actions.
+    const stoppedPlay = await page.locator(".section .run-table .row-actions button[title*='Start'], .section .run-table .row-actions button[title*='again'], .section .run-table .row-actions button[aria-label*='Start']").count().catch(() => 0);
+    const stoppedIcons = await page.locator(".section .run-table .row-actions svg.icon").count().catch(() => 0);
+    if (!stoppedIcons) {
+      errors.push("overview stopped section missing icon actions");
+    }
+    void stoppedPlay;
 
     await page.goto(`${base}/models`, { waitUntil: "networkidle" });
     await page.waitForSelector(".data-table .grid-row", { timeout: 10_000 });

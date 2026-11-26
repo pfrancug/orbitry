@@ -205,7 +205,11 @@ export type AppConfig = {
   configBridge?: ConfigBridgeMode;
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
-  autostartApps?: string[];
+  /**
+   * Present from 0.15.1 as `{ partId, script }[]`.
+   * Legacy bare id strings are still accepted by the server and migrated.
+   */
+  autostartApps?: AutostartAppEntry[];
   desktopNotifications?: boolean;
   ignoredProjects?: string[];
   /** Present from 0.11.0. Older configs omit it; every target stays visible. */
@@ -217,6 +221,12 @@ export type AppConfig = {
   bridgeStatus?: BridgeStatus;
   ahkStatus?: AhkStatus;
   autostart?: AutostartStatus;
+};
+
+/** Per-app autostart entry. Present from 0.15.1. */
+export type AutostartAppEntry = {
+  partId: string;
+  script: string;
 };
 
 export type AppAutostartOutcome = "started" | "skipped" | "blocked" | "failed";

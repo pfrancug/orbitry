@@ -5,6 +5,17 @@ All notable changes to Orbitry are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.1] - 2026-11-26
+
+### Changed
+
+- Autostart is offered only for apps that have at least one runnable script. Projects with none (Swift, bare git, Docker-only inventory, and similar) no longer show the option.
+- Enabling autostart now stores an explicit script name per app (`{ partId, script }`). The control panel shows a script picker when autostart is on.
+
+### Fixed
+
+- Legacy bare autostart app ids are migrated: the previous implicit pick (first `dev`, else first `preview`, else the first script) becomes the default script. Entries for apps with no runnable scripts are ignored at startup and pruned from config after scan; the API refuses to save autostart for non-runnable apps.
+
 ## [0.15.0] - 2026-11-26
 
 ### Added

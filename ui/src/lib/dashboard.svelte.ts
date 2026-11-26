@@ -2,7 +2,8 @@ import { fetchConfig, fetchProjects, pickFolder, requestScan, saveConfig } from 
 import { refreshRuns, restoreSelection, runState } from "./runs.svelte";
 import { findPart, normalizeScanDiff, pathsEqual } from "./format";
 import { t } from "./i18n.svelte";
-import type { AppAutostartReport, AppConfig, AppWarning, ComposeProject, ConfigBridgeMode, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanDiff, ScanStatus, ScriptPattern } from "./types";
+import type { AppAutostartReport, AppConfig, AppWarning, AutostartAppEntry, ComposeProject, ConfigBridgeMode, PortOverride, ProjectsResponse, RepoGroup, ScanChange, ScanDiff, ScanStatus, ScriptPattern } from "./types";
+import { defaultAutostartScript, runnableScripts } from "./format";
 
 const PROJECTS_CACHE_KEY = "orbitry.projects-cache";
 
@@ -324,7 +325,7 @@ function withOverrides(next: {
   configBridge?: ConfigBridgeMode;
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
-  autostartApps?: string[];
+  autostartApps?: AutostartAppEntry[];
   desktopNotifications?: boolean;
   ignoredProjects?: string[];
   openIn?: import("./types").OpenInTargets;
@@ -420,7 +421,7 @@ export async function persist(next: {
   configBridge?: ConfigBridgeMode;
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
-  autostartApps?: string[];
+  autostartApps?: AutostartAppEntry[];
   desktopNotifications?: boolean;
   ignoredProjects?: string[];
   openIn?: import("./types").OpenInTargets;
@@ -640,29 +641,77 @@ export function systemAutostartEnabled(): boolean {
   return dash.config?.autostart?.enabled === true;
 }
 
-export function appAutostartEnabled(partId: string): boolean {
-  return (dash.config?.autostartApps ?? []).some((id) => pathsEqual(id, partId));
+function normalizeAutostartEntry(entry: AutostartAppEntry | string): AutostartAppEntry | null {
+  if (typeof entry === "string") {
+    const partId = entry.trim();
+    return partId ? { partId, script: "" } : null;
+  }
+  const partId = (entry.partId ?? "").trim();
+  if (!partId) return null;
+  return { partId, script: (entry.script ?? "").trim() };
 }
 
-const APP_AUTOSTART_DISABLED =
-  "Aby aplikacje startowały automatycznie, włącz „Uruchamiaj Orbitry razem z systemem” w Ustawieniach.";
+export function appAutostartEntries(): AutostartAppEntry[] {
+  const raw = dash.config?.autostartApps ?? [];
+  const out: AutostartAppEntry[] = [];
+  for (const item of raw as Array<AutostartAppEntry | string>) {
+    const entry = normalizeAutostartEntry(item);
+    if (!entry) continue;
+    const existing = out.find((row) => pathsEqual(row.partId, entry.partId));
+    if (existing) {
+      if (entry.script) existing.script = entry.script;
+      continue;
+    }
+    out.push(entry);
+  }
+  return out;
+}
+
+export function appAutostartEnabled(partId: string): boolean {
+  return appAutostartEntries().some((entry) => pathsEqual(entry.partId, partId));
+}
+
+export function appAutostartScript(partId: string): string | null {
+  const entry = appAutostartEntries().find((item) => pathsEqual(item.partId, partId));
+  return entry?.script || null;
+}
 
 export function appAutostartTitle(): string {
-  return systemAutostartEnabled()
-    ? "Uruchamiaj przy starcie Orbitry"
-    : APP_AUTOSTART_DISABLED;
+  return systemAutostartEnabled() ? t("autostart.appFull") : t("autostart.disabled");
 }
 
-export async function setAppAutostart(partId: string, enabled: boolean) {
+export function partCanAutostart(partId: string): boolean {
+  const part = findPart(partId, dash.groups);
+  return runnableScripts(part).length > 0;
+}
+
+export async function setAppAutostart(partId: string, enabled: boolean, scriptName?: string) {
   if (!dash.config) return;
   dash.error = null;
   const previous = cloneConfig();
-  const current = dash.config.autostartApps ?? [];
-  const next = enabled
-    ? current.some((id) => pathsEqual(id, partId))
-      ? current
-      : [...current, partId]
-    : current.filter((id) => !pathsEqual(id, partId));
+  const current = appAutostartEntries();
+  let next: AutostartAppEntry[];
+  if (!enabled) {
+    next = current.filter((entry) => !pathsEqual(entry.partId, partId));
+  } else {
+    const part = findPart(partId, dash.groups);
+    const candidates = runnableScripts(part);
+    if (!candidates.length) {
+      dash.error = t("autostart.noScripts");
+      return;
+    }
+    const preferred =
+      (scriptName && candidates.find((script) => script.name === scriptName)?.name) ||
+      appAutostartScript(partId) ||
+      defaultAutostartScript(part)?.name ||
+      candidates[0]?.name;
+    if (!preferred) {
+      dash.error = t("autostart.noScripts");
+      return;
+    }
+    const rest = current.filter((entry) => !pathsEqual(entry.partId, partId));
+    next = [...rest, { partId, script: preferred }];
+  }
   patchConfig({ autostartApps: next });
   try {
     const payload = withOverrides({

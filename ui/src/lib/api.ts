@@ -43,7 +43,7 @@ export function saveConfig(config: {
   autoCheckUpdates?: boolean;
   logLimitMb?: number;
   startWithSystem?: boolean;
-  autostartApps?: string[];
+  autostartApps?: import("./types").AutostartAppEntry[];
   desktopNotifications?: boolean;
   ignoredProjects?: string[];
   openIn?: import("./types").OpenInTargets;

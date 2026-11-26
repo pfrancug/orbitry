@@ -212,6 +212,8 @@ const en: Record<string, string> = {
   "autostart.system": "Start Orbitry with the system",
   "autostart.systemHint": "After you log in, Orbitry starts in the tray and does not open the browser. When this is on, selected apps can start automatically with Orbitry.",
   "autostart.stale": "The registered path to Orbitry is out of date and will be updated.",
+  "autostart.script": "Script to start",
+  "autostart.noScripts": "Autostart needs a runnable script on this project.",
 
   "panel.title": "Control panel",
   "panel.pick": "Select an app to inspect it",
@@ -660,6 +662,8 @@ const pl: Record<string, string> = {
   "autostart.system": "Uruchamiaj Orbitry razem z systemem",
   "autostart.systemHint": "Po zalogowaniu Orbitry wystartuje w zasobniku, bez otwierania przeglądarki. Gdy to włączysz, wybrane aplikacje można uruchamiać automatycznie przy starcie Orbitry.",
   "autostart.stale": "Zarejestrowana ścieżka do Orbitry jest nieaktualna i zostanie zaktualizowana.",
+  "autostart.script": "Skrypt do uruchomienia",
+  "autostart.noScripts": "Autostart wymaga uruchamialnego skryptu w tym projekcie.",
 
   "panel.title": "Panel sterowania",
   "panel.pick": "Wybierz aplikację, aby zobaczyć szczegóły",

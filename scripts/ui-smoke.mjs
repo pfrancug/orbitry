@@ -80,7 +80,7 @@ const configState = {
   configBridge: "off",
   autoCheckUpdates: false,
   logLimitMb: 10,
-  autostartApps: [],
+  autostartApps: [{ partId: "demo-app/web", script: "dev" }],
   desktopNotifications: false,
   ignoredProjects: [],
   ahkPlugin: true,
@@ -98,7 +98,7 @@ const configState = {
       { version: "v2", installed: false, path: null },
     ],
   },
-  autostart: { enabled: false, stale: false },
+  autostart: { enabled: true, stale: false },
 };
 
 function serializeConfig() {
@@ -775,6 +775,79 @@ async function runSmoke(base) {
     const genericEmpty = await page.locator(".app-row", { hasText: "scratch-notes" }).locator("text=/No runnable scripts|Brak uruchamialnych/i").count();
     if (!noScripts) errors.push("Swift project missing empty runnable-scripts state");
     if (!genericEmpty) errors.push("Generic git project missing empty runnable-scripts state");
+
+    // Autostart: only for projects with runnable scripts; script picker when enabled.
+    await page.goto(`${base}/projects`, { waitUntil: "networkidle" });
+    await page.waitForSelector(".project-row", { timeout: 10_000 });
+    // Close any panel left open from Overview so togglePart opens rather than closes.
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(80);
+    async function openAppPanel(projectLabel, appLabel) {
+      const project = page.locator("button.project-row", { hasText: projectLabel }).first();
+      if (await project.count()) {
+        if ((await project.getAttribute("aria-expanded")) !== "true") {
+          await project.click();
+        }
+        await page.waitForFunction(
+          (label) => {
+            const btn = [...document.querySelectorAll("button.project-row")].find((el) =>
+              (el.textContent || "").includes(label),
+            );
+            return btn?.getAttribute("aria-expanded") === "true";
+          },
+          projectLabel,
+          { timeout: 3_000 },
+        ).catch(() => null);
+        await page.waitForTimeout(220);
+      }
+      const clicked = await page.evaluate(({ projectLabel: project, appLabel: app }) => {
+        const section = [...document.querySelectorAll("section.project")].find((el) => {
+          const title = el.querySelector("button.project-row h2")?.textContent?.trim() ?? "";
+          return title === project || title.includes(project);
+        });
+        if (!section) return { ok: false, reason: "section-missing" };
+        const button = [...section.querySelectorAll("button.app-main")].find((el) =>
+          (el.textContent || "").includes(app),
+        );
+        if (!button) return { ok: false, reason: "app-missing", html: section.className };
+        button.click();
+        return { ok: true, text: (button.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80) };
+      }, { projectLabel, appLabel });
+      if (!clicked?.ok) {
+        errors.push(`openAppPanel failed for ${projectLabel}/${appLabel}: ${JSON.stringify(clicked)}`);
+      }
+      await page.waitForSelector(".control-panel .panel-tabs", { timeout: 3_000 }).catch(() => null);
+      if (!(await page.locator(".control-panel .panel-tabs").count())) {
+        await page.evaluate(({ projectLabel: project, appLabel: app }) => {
+          const section = [...document.querySelectorAll("section.project")].find((el) => {
+            const title = el.querySelector("button.project-row h2")?.textContent?.trim() ?? "";
+            return title === project || title.includes(project);
+          });
+          const button = section && [...section.querySelectorAll("button.app-main")].find((el) =>
+            (el.textContent || "").includes(app),
+          );
+          button?.click();
+        }, { projectLabel, appLabel });
+        await page.waitForSelector(".control-panel .panel-tabs", { timeout: 3_000 }).catch(() => null);
+      }
+      const detailsTab = page.locator(".control-panel .panel-tab").first();
+      if (await detailsTab.count()) await detailsTab.click();
+      await page.waitForTimeout(80);
+    }
+    await openAppPanel("demo-app", "web");
+    await page.waitForSelector(".control-panel [data-autostart-section]", { timeout: 5_000 }).catch(() => null);
+    const runnableAutostart = await page.locator(".control-panel [data-autostart-section]").count();
+    if (!runnableAutostart) errors.push("Autostart section missing for runnable demo-app/web");
+    const autoScriptSelect = await page.locator(".control-panel [data-autostart-section] select").count();
+    if (!autoScriptSelect) errors.push("Autostart script picker missing when autostart is enabled");
+    const autoChecked = await page.locator(".control-panel [data-autostart-section] input[type='checkbox']").isChecked().catch(() => false);
+    if (!autoChecked) errors.push("Autostart checkbox should be checked for demo-app/web mock entry");
+    await openAppPanel("orbit-ios", "orbit-ios");
+    const swiftAutostart = await page.locator(".control-panel [data-autostart-section]").count();
+    if (swiftAutostart) errors.push("Autostart section should be hidden for Swift projects with no scripts");
+    await openAppPanel("scratch-notes", "scratch-notes");
+    const gitAutostart = await page.locator(".control-panel [data-autostart-section]").count();
+    if (gitAutostart) errors.push("Autostart section should be hidden for git-only projects with no scripts");
 
     // Settings categories + Plugins / Appearance.
     await page.goto(`${base}/settings`, { waitUntil: "networkidle" });

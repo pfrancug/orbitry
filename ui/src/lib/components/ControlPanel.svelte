@@ -1,11 +1,21 @@
 <script lang="ts">
-  import { appAutostartEnabled, appAutostartTitle, dash, setAppAutostart, startBlockReason, startWarnReason, systemAutostartEnabled } from "$lib/dashboard.svelte";
+  import {
+    appAutostartEnabled,
+    appAutostartScript,
+    appAutostartTitle,
+    dash,
+    setAppAutostart,
+    startBlockReason,
+    startWarnReason,
+    systemAutostartEnabled,
+  } from "$lib/dashboard.svelte";
   import { openPath } from "$lib/api";
   import {
     allScripts,
     anyOpenInEnabled,
     databaseEngineLabel,
     databaseSourceLabel,
+    defaultAutostartScript,
     desktopOs,
     displayPorts,
     formatUptime,
@@ -16,6 +26,7 @@
     partDatabases,
     partTitle,
     roleLabel,
+    runnableScripts,
     runExitLabel,
     scriptLabel,
     scriptSourceDiffers,
@@ -51,9 +62,17 @@
 
   const locale = $derived(i18n.locale);
   const systemOn = $derived(systemAutostartEnabled());
+  const canAutostart = $derived(runnableScripts(part).length > 0);
   const autoOn = $derived(part ? appAutostartEnabled(part.id) : false);
   const autoTitle = $derived(appAutostartTitle());
   const scripts = $derived(allScripts(part));
+  const autostartCandidates = $derived(runnableScripts(part));
+  const autoScript = $derived.by(() => {
+    if (!part || !canAutostart) return null;
+    const saved = appAutostartScript(part.id);
+    if (saved && autostartCandidates.some((script) => script.name === saved)) return saved;
+    return defaultAutostartScript(part)?.name ?? autostartCandidates[0]?.name ?? null;
+  });
   let tab = $state<"details" | "logs">("details");
 
   $effect(() => {
@@ -213,19 +232,46 @@
           </span>
         </div>
 
-        <section class="panel-section">
-          <h3>{t("panel.autostart")}</h3>
-          <label class="panel-autostart" class:off={!systemOn} title={autoTitle}>
-            <input
-              type="checkbox"
-              checked={autoOn}
-              disabled={!systemOn || !part}
-              aria-label={t("autostart.appFull")}
-              onchange={(event) => part && setAppAutostart(part.id, event.currentTarget.checked)}
-            />
-            {t("autostart.appFull")}
-          </label>
-        </section>
+        {#if canAutostart}
+          <section class="panel-section" data-autostart-section>
+            <h3>{t("panel.autostart")}</h3>
+            <label class="panel-autostart" class:off={!systemOn} title={autoTitle}>
+              <input
+                type="checkbox"
+                checked={autoOn}
+                disabled={!systemOn || !part}
+                aria-label={t("autostart.appFull")}
+                onchange={(event) =>
+                  part &&
+                  setAppAutostart(
+                    part.id,
+                    event.currentTarget.checked,
+                    autoScript ?? undefined,
+                  )}
+              />
+              {t("autostart.appFull")}
+            </label>
+            {#if autoOn && autostartCandidates.length}
+              <label class="script-picker autostart-script">
+                <span>{t("autostart.script")}</span>
+                <select
+                  value={autoScript ?? ""}
+                  disabled={!systemOn || !part}
+                  aria-label={t("autostart.script")}
+                  onchange={(event) => {
+                    if (!part) return;
+                    const value = (event.currentTarget as HTMLSelectElement).value;
+                    if (value) setAppAutostart(part.id, true, value);
+                  }}
+                >
+                  {#each autostartCandidates as script (scriptEachKey(script))}
+                    <option value={script.name}>{scriptLabel(script)}</option>
+                  {/each}
+                </select>
+              </label>
+            {/if}
+          </section>
+        {/if}
 
         <section class="panel-section">
           <h3>{t("panel.scripts")}</h3>
@@ -450,6 +496,9 @@
   .panel-autostart.off {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+  .autostart-script {
+    margin-top: 0.55rem;
   }
   .panel-tabs {
     display: flex;

@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{paths_equal, Config, ScriptKind};
-use crate::group::ProjectPart;
+use crate::config::{paths_equal, AutostartApp, Config, ScriptKind};
+use crate::group::{ProjectPart, RepoGroup};
 use crate::ports::{
     apply_port_overrides, detect_expected_ports, merge_ports, Listener, ListeningSnapshot, PortInfo,
 };
@@ -98,6 +98,8 @@ impl AppAutostartReport {
     }
 }
 
+/// Prefer first dev, else first preview (historical behaviour). If the part only
+/// has other runnable scripts (e.g. AutoHotkey), fall back to the first script.
 pub fn default_autostart_script(part: &ProjectPart) -> Option<&DetectedScript> {
     part.scripts
         .iter()
@@ -107,6 +109,52 @@ pub fn default_autostart_script(part: &ProjectPart) -> Option<&DetectedScript> {
                 .iter()
                 .find(|script| matches!(script.kind, ScriptKind::Preview))
         })
+        .or_else(|| part.scripts.first())
+}
+
+/// Resolve the script named in an autostart entry, or the historical default when
+/// the stored script is empty (legacy bare ids).
+pub fn resolve_autostart_script<'a>(
+    part: &'a ProjectPart,
+    script_name: &str,
+) -> Option<&'a DetectedScript> {
+    let wanted = script_name.trim();
+    if !wanted.is_empty() {
+        return part
+            .scripts
+            .iter()
+            .find(|script| script.name == wanted);
+    }
+    default_autostart_script(part)
+}
+
+/// Drop autostart entries for parts with no runnable scripts, fill empty script
+/// fields with the historical default pick, and drop entries whose script is gone.
+/// Returns true when the list changed.
+pub fn prune_autostart_apps(config: &mut Config, groups: &[RepoGroup]) -> bool {
+    let before = config.autostart_apps.clone();
+    let mut next = Vec::new();
+    for entry in &before {
+        let Some(part) = groups
+            .iter()
+            .flat_map(|group| group.parts.iter())
+            .find(|part| paths_equal(&part.id, &entry.part_id))
+        else {
+            // Keep temporarily missing parts so a flaky scan does not wipe them.
+            next.push(entry.clone());
+            continue;
+        };
+        if part.scripts.is_empty() {
+            continue;
+        }
+        let Some(script) = resolve_autostart_script(part, &entry.script) else {
+            continue;
+        };
+        next.push(AutostartApp::new(part.id.clone(), script.name.clone()));
+    }
+    config.autostart_apps = next;
+    config.normalize_autostart_apps();
+    config.autostart_apps != before
 }
 
 /// Listeners currently bound to any of the given ports (IPv4 and IPv6).
@@ -168,10 +216,11 @@ pub async fn run_app_autostart(
         .collect();
 
     let mut first = true;
-    for part_id in &config.autostart_apps {
+    for entry in &config.autostart_apps {
         if should_stop() {
             break;
         }
+        let part_id = &entry.part_id;
         let Some(item) = find_part(&parts, part_id) else {
             let reason = "not in the latest scan".to_string();
             eprintln!("orbitry: autostart: skipped {part_id} ({reason})");
@@ -209,14 +258,20 @@ pub async fn run_app_autostart(
             continue;
         }
 
-        let Some(script) = default_autostart_script(part) else {
-            let reason = "no dev or preview script".to_string();
-            eprintln!("orbitry: autostart: failed {name} ({reason})");
+        let Some(script) = resolve_autostart_script(part, &entry.script) else {
+            let reason = if part.scripts.is_empty() {
+                "no runnable scripts".to_string()
+            } else if entry.script.trim().is_empty() {
+                "no runnable scripts".to_string()
+            } else {
+                format!("script '{}' was not found", entry.script.trim())
+            };
+            eprintln!("orbitry: autostart: skipped {name} ({reason})");
             report.push(AppAutostartEvent {
                 part_id: part.id.clone(),
                 part_name: name,
                 script: None,
-                outcome: AppAutostartOutcome::Failed,
+                outcome: AppAutostartOutcome::Skipped,
                 reason: Some(reason),
                 port: None,
                 process: None,

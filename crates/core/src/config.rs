@@ -132,6 +132,49 @@ fn default_log_limit_mb() -> u32 {
     crate::logs::DEFAULT_LOG_LIMIT_MB
 }
 
+/// Per-app autostart entry. `script` is the package/AHK script name to run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutostartApp {
+    pub part_id: String,
+    pub script: String,
+}
+
+impl<'de> Deserialize<'de> for AutostartApp {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Legacy(String),
+            Entry {
+                #[serde(alias = "part_id")]
+                part_id: String,
+                #[serde(default)]
+                script: String,
+            },
+        }
+        match Raw::deserialize(deserializer)? {
+            Raw::Legacy(part_id) => Ok(Self {
+                part_id,
+                script: String::new(),
+            }),
+            Raw::Entry { part_id, script } => Ok(Self { part_id, script }),
+        }
+    }
+}
+
+impl AutostartApp {
+    pub fn new(part_id: impl Into<String>, script: impl Into<String>) -> Self {
+        Self {
+            part_id: part_id.into(),
+            script: script.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
@@ -147,10 +190,11 @@ pub struct Config {
     pub auto_check_updates: bool,
     #[serde(default = "default_log_limit_mb")]
     pub log_limit_mb: u32,
-    /// Stable app ids (canonical display paths) to start when Orbitry starts.
-    /// Kept even if a later scan temporarily misses the app.
+    /// Apps to start when Orbitry starts. Present from 0.15.1 as
+    /// `{ partId, script }` objects. Legacy bare id strings still deserialize
+    /// (script empty) and are resolved or pruned against the inventory.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub autostart_apps: Vec<String>,
+    pub autostart_apps: Vec<AutostartApp>,
     /// Desktop notifications for app crashes and red health. Off by default.
     #[serde(default, skip_serializing_if = "is_false")]
     pub desktop_notifications: bool,
@@ -206,7 +250,26 @@ impl Config {
     }
 
     pub fn normalize_autostart_apps(&mut self) {
-        normalize_id_list(&mut self.autostart_apps);
+        let mut unique: Vec<AutostartApp> = Vec::new();
+        for mut entry in self.autostart_apps.drain(..) {
+            entry.part_id = entry.part_id.trim().to_string();
+            entry.script = entry.script.trim().to_string();
+            if entry.part_id.is_empty() {
+                continue;
+            }
+            if let Some(existing) = unique
+                .iter_mut()
+                .find(|item| paths_equal(&item.part_id, &entry.part_id))
+            {
+                // Last write wins for the script when the same part appears twice.
+                if !entry.script.is_empty() {
+                    existing.script = entry.script;
+                }
+                continue;
+            }
+            unique.push(entry);
+        }
+        self.autostart_apps = unique;
     }
 
     pub fn normalize_ignored_projects(&mut self) {

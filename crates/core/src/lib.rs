@@ -28,7 +28,8 @@ mod util;
 mod warnings;
 
 pub use app_autostart::{
-    run_app_autostart, AppAutostartEvent, AppAutostartOutcome, AppAutostartReport, AppAutostartState,
+    default_autostart_script, prune_autostart_apps, resolve_autostart_script, run_app_autostart,
+    AppAutostartEvent, AppAutostartOutcome, AppAutostartReport, AppAutostartState,
 };
 pub use artifacts::BuildInfo;
 pub use autostart::{
@@ -42,8 +43,8 @@ pub use docker::{
 };
 pub use config::{
     canonical, config_path, default_kind_patterns, display_path, instance_path, load_config,
-    paths_equal, save_config, Config, ConfigBridgeMode, OpenInTargets, PortOverride, ScriptKind,
-    ScriptPattern, ScriptScope,
+    paths_equal, save_config, AutostartApp, Config, ConfigBridgeMode, OpenInTargets, PortOverride,
+    ScriptKind, ScriptPattern, ScriptScope,
 };
 pub use ai::detect_ai_dependencies;
 pub use databases::{detect_databases, DatabaseInfo, DatabaseSource};

@@ -11,16 +11,17 @@ use axum::routing::{get, post};
 use axum::Router;
 use orbitry_core::{
     ahk_status, apply_port_overrides, attach_run_warnings, autostart_status, bridge_status,
-    clamp_log_limit_mb,
-    config_fingerprint, diff_groups, evaluate_warnings, export_cache, group_projects, load_config, paths_equal,
+    clamp_log_limit_mb, config_fingerprint, diff_groups,
+    evaluate_warnings, export_cache, group_projects, load_config, paths_equal,
     empty_models_inventory, load_models_cache, load_scan_cache, models_cache_path, now_ms,
-    refresh_compose, run_app_autostart, run_compose_action, compose_logs, save_config,
-    save_models_cache, save_scan_cache, scan, scan_cache_path, scan_models_with_sink,
-    set_autostart_enabled, static_compose_projects, AppAutostartReport, AutostartStatus,
-    AhkStatus, BridgeStatus, ComposeAction, ComposeProject, Config, ConfigBridgeMode,
-    ListeningSnapshot, MetricsHub, MetricsSnapshot, ModelsInventory, ModelsScanState, OpenInTargets,
-    PortOverride, ProcessManager, Project, RepoGroup, Run, RunStatus, SCANNER_VERSION, ScanCache,
-    ScanDiff, ScanState, ScanStatus, StartError, Subscription, Warning,
+    prune_autostart_apps, refresh_compose, resolve_autostart_script, run_app_autostart,
+    run_compose_action, compose_logs, save_config, save_models_cache, save_scan_cache, scan,
+    scan_cache_path, scan_models_with_sink, set_autostart_enabled, static_compose_projects,
+    AhkStatus, AppAutostartReport, AutostartApp, AutostartStatus, BridgeStatus, ComposeAction,
+    ComposeProject, Config, ConfigBridgeMode, ListeningSnapshot, MetricsHub, MetricsSnapshot,
+    ModelsInventory, ModelsScanState, OpenInTargets, PortOverride, ProcessManager, Project,
+    RepoGroup, Run, RunStatus, SCANNER_VERSION, ScanCache, ScanDiff, ScanState, ScanStatus,
+    StartError, Subscription, Warning,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -355,7 +356,7 @@ struct ConfigBody {
     start_with_system: Option<bool>,
     /// Replaces the per-app autostart list when present. Omitted keeps the saved list.
     #[serde(default)]
-    autostart_apps: Option<Vec<String>>,
+    autostart_apps: Option<Vec<AutostartApp>>,
     #[serde(default)]
     desktop_notifications: Option<bool>,
     /// Replaces the ignored-project list when present. Omitted keeps the saved list.
@@ -377,6 +378,7 @@ async fn put_config(
     Json(body): Json<ConfigBody>,
 ) -> Result<Json<ConfigResponse>, (StatusCode, String)> {
     let existing = load_config(&state.config_path).map_err(internal)?;
+    let autostart_apps_provided = body.autostart_apps.is_some();
     let mut config = Config {
         roots: body.roots,
         script_patterns: body.script_patterns,
@@ -415,6 +417,11 @@ async fn put_config(
     config
         .script_patterns
         .retain(|pattern| !pattern.pattern.trim().is_empty());
+    if autostart_apps_provided {
+        if let Err(err) = validate_autostart_apps(&state, &mut config) {
+            return Err((StatusCode::BAD_REQUEST, err));
+        }
+    }
     let roots_or_patterns_changed =
         config.roots != existing.roots || config.script_patterns != existing.script_patterns;
     let bridge_changed = config.config_bridge != existing.config_bridge;
@@ -732,6 +739,7 @@ fn start_scan(state: Arc<AppState>) {
         maybe_send_notifications(&state).await;
         if result.is_ok() {
             refresh_compose_state(&state).await;
+            prune_autostart_after_scan(&state);
             maybe_run_app_autostart(&state).await;
         }
         if let Err(err) = result {
@@ -898,6 +906,69 @@ fn app_autostart_report(state: &AppState) -> AppAutostartReport {
         .unwrap_or_default()
 }
 
+fn prune_autostart_after_scan(state: &AppState) {
+    let groups = match state.inventory.lock() {
+        Ok(inventory) => inventory.groups.clone(),
+        Err(_) => return,
+    };
+    let Ok(mut config) = load_config(&state.config_path) else {
+        return;
+    };
+    if prune_autostart_apps(&mut config, &groups) {
+        let _ = save_config(&state.config_path, &config);
+    }
+}
+
+fn validate_autostart_apps(state: &AppState, config: &mut Config) -> Result<(), String> {
+    let groups = state
+        .inventory
+        .lock()
+        .ok()
+        .map(|inventory| inventory.groups.clone())
+        .unwrap_or_default();
+    if groups.is_empty() {
+        for entry in &config.autostart_apps {
+            if entry.script.trim().is_empty() {
+                return Err(
+                    "Autostart needs an explicit script. Pick a script, or turn the option off."
+                        .into(),
+                );
+            }
+        }
+        return Ok(());
+    }
+    let mut resolved = Vec::new();
+    for entry in &config.autostart_apps {
+        let Some(part) = groups
+            .iter()
+            .flat_map(|group| group.parts.iter())
+            .find(|part| paths_equal(&part.id, &entry.part_id))
+        else {
+            return Err(format!(
+                "Autostart app was not found in the latest scan: {}",
+                entry.part_id
+            ));
+        };
+        if part.scripts.is_empty() {
+            return Err(format!(
+                "Autostart is not available for '{}' — it has no runnable scripts.",
+                part.name
+            ));
+        }
+        let Some(script) = resolve_autostart_script(part, &entry.script) else {
+            return Err(format!(
+                "Autostart script '{}' was not found on '{}'.",
+                entry.script.trim(),
+                part.name
+            ));
+        };
+        resolved.push(AutostartApp::new(part.id.clone(), script.name.clone()));
+    }
+    config.autostart_apps = resolved;
+    config.normalize_autostart_apps();
+    Ok(())
+}
+
 async fn maybe_run_app_autostart(state: &AppState) {
     if !state.startup_autostart.swap(false, Ordering::SeqCst) {
         return;
@@ -908,16 +979,13 @@ async fn maybe_run_app_autostart(state: &AppState) {
         );
         return;
     }
-    let config = match load_config(&state.config_path) {
+    let mut config = match load_config(&state.config_path) {
         Ok(config) => config,
         Err(err) => {
             eprintln!("orbitry: autostart: {err}");
             return;
         }
     };
-    if config.autostart_apps.is_empty() {
-        return;
-    }
     let (fresh, groups) = match state.inventory.lock() {
         Ok(inventory) => (
             inventory.scan.state == ScanState::Fresh,
@@ -930,6 +998,12 @@ async fn maybe_run_app_autostart(state: &AppState) {
     };
     if !fresh {
         eprintln!("orbitry: autostart: skipped (scan is not fresh)");
+        return;
+    }
+    if prune_autostart_apps(&mut config, &groups) {
+        let _ = save_config(&state.config_path, &config);
+    }
+    if config.autostart_apps.is_empty() {
         return;
     }
     if let Ok(mut report) = state.app_autostart.lock() {

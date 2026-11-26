@@ -390,6 +390,22 @@ export function runScripts(part: ProjectPart | null | undefined): DetectedScript
   return allScripts(part).filter((script) => isRunKind(script.kind));
 }
 
+/** Scripts eligible for autostart / start actions (any detected script). */
+export function runnableScripts(part: ProjectPart | null | undefined): DetectedScript[] {
+  return allScripts(part);
+}
+
+/** Historical autostart pick: first dev, else first preview, else first script. */
+export function defaultAutostartScript(part: ProjectPart | null | undefined): DetectedScript | null {
+  const scripts = runnableScripts(part);
+  return (
+    scripts.find((script) => script.kind === "dev") ??
+    scripts.find((script) => script.kind === "preview") ??
+    scripts[0] ??
+    null
+  );
+}
+
 /** All package.json scripts, collapsing identical command + cwd duplicates. */
 export function allScripts(part: ProjectPart | null | undefined): DetectedScript[] {
   const seen = new Map<string, DetectedScript>();
